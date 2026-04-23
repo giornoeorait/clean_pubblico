@@ -1,0 +1,41 @@
+{
+  "summary": "Backend-only regression testing on CleanTec ERP/MES/WMS/TMS API. Ran 27 pytest cases against public REACT_APP_BACKEND_URL covering auth (5 roles), RBAC, CRUD (clienti/articoli/macchine), ritiri, lotti with full 9-state traceability chain, lavorazioni, consegne, non-conformita, fatture auto-calc, dashboard KPI, users, audit-log and health. All 27 tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ritiri", "issue": "numero generation uses count_documents() which is non-atomic; under concurrent inserts two ritiri could get the same numero. Same for /api/lotti, /api/consegne, /api/fatture. Use findAndModify on a counter collection for production."},
+      {"endpoint": "/api/auth/login", "issue": "Cookie set with secure=False and SameSite=lax, so cross-site cookie auth from HTTPS frontend won't work reliably -- frontend uses Bearer token from localStorage (per design note). OK for current arch but worth revisiting for prod hardening."},
+      {"endpoint": "/api/fatture", "issue": "GET checks user['role']=='cliente' but role 'cliente' is never seeded/documented. Dead branch or missing role definition."},
+      {"endpoint": "/api/dashboard/kpi", "issue": "puntualita_pct = consegne_puntuali/consegne_totali uses stato=='consegnata' as numerator but lacks a timestamp comparison vs data_prevista, so it measures completion rate not punctuality."},
+      {"endpoint": "/api/lotti KPI trend", "issue": "Regex on created_at with leading ^YYYY-MM-DD is fine but inefficient at scale; consider storing created_at as datetime + range queries."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional/hardening) Replace count_documents()+1 numbering with an atomic counters collection to avoid duplicate numero under concurrency.",
+    "(Optional) Clarify or remove the unused 'cliente' role branch in GET /api/fatture.",
+    "(Optional) Add true on-time calculation for puntualita_pct (compare actual delivery vs data_prevista)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~900 lines monolithic; recommend splitting into routers (auth, users, catalog, operations, billing, dashboard) as features grow.",
+    "Numero-sequence generators are not concurrency-safe (race condition on count_documents).",
+    "JWT_SECRET has a safe default fallback value in code but .env provides a strong secret -- default fallback should be removed to fail-fast if env is missing.",
+    "clean_doc mutates the input dict in place; acceptable but worth documenting.",
+    "require_roles implicitly allows 'admin' even if not listed -- documented in problem statement, verified by tests.",
+    "All tested endpoints correctly exclude _id and password_hash from responses.",
+    "Indexes created correctly on startup (users.email unique, users.id, lotti.stato_corrente, lotti.cliente_id, consegne.data_prevista, fatture.cliente_id)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin@cleantec.it/admin123, produzione@cleantec.it/produzione123, logistica@cleantec.it/logistica123, qualita@cleantec.it/qualita123, contabilita@cleantec.it/contabilita123 - all verified working",
+  "seed_data_creation": "No new seed data created. Tests create TEST_Cliente_X (deleted in same test), plus a few transient ritiri/lotti/lavorazioni/consegne/NC/fatture that persist under LOT-/CON-/FT-/RIT- auto-numbering. No cleanup performed for those but they don't pollute the dashboard significantly.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "backend_test.py covers the full API surface and uses public URL + Bearer tokens. Re-run with: pytest /app/backend/tests/backend_test.py -v. All 27 tests passed on first full run. Next agent can focus on frontend testing; backend is solid."
+}
