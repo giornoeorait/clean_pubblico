@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends
-from core import db, new_id, now_utc, get_current_user, require_roles, log_audit, next_seq
+from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, next_seq
 from schemas import FatturaIn, PatchFatturaIn
 
 router = APIRouter(prefix="/fatture", tags=["billing"])
@@ -13,7 +13,6 @@ async def list_fatture(user: Dict = Depends(get_current_user), cliente_id: Optio
     query: Dict[str, Any] = {}
     if cliente_id:
         query["cliente_id"] = cliente_id
-    # Optional filter: if a "cliente" portal user is wired in future, restrict to their invoices.
     if user["role"] == "cliente" and user.get("cliente_id"):
         query["cliente_id"] = user["cliente_id"]
     return await db.fatture.find(query, {"_id": 0}).sort("data", -1).to_list(limit)
@@ -31,7 +30,10 @@ async def create_fattura(body: FatturaIn, user: Dict = Depends(require_roles("ad
     doc["iva"] = round(iva, 2)
     doc["totale"] = round(imponibile + iva, 2)
     doc["stato"] = "bozza"
-    doc["created_at"] = now_utc().isoformat()
+    doc["data"] = to_dt(doc.get("data")) or now_utc()
+    if doc.get("scadenza"):
+        doc["scadenza"] = to_dt(doc["scadenza"])
+    doc["created_at"] = now_utc()
     await db.fatture.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "fattura", doc["id"])
@@ -43,7 +45,12 @@ async def update_fattura(fid: str, body: PatchFatturaIn, user: Dict = Depends(re
     data = body.model_dump(exclude_unset=True)
     if not data:
         return {"ok": True}
-    data["updated_at"] = now_utc().isoformat()
+    for f in ("data", "scadenza"):
+        if f in data and data[f] is not None:
+            dt = to_dt(data[f])
+            if dt is not None:
+                data[f] = dt
+    data["updated_at"] = now_utc()
     await db.fatture.update_one({"id": fid}, {"$set": data})
-    await log_audit(user, "UPDATE", "fattura", fid, data)
+    await log_audit(user, "UPDATE", "fattura", fid, {"stato": data.get("stato")})
     return {"ok": True}

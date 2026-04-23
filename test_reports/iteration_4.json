@@ -1,0 +1,32 @@
+{
+  "summary": "Validated P2 datetime migration (ISO strings → native BSON datetime) for CleanTec backend. Extended /app/backend/tests/backend_test.py with 15 new tests covering to_dt() helper, BSON type verification via direct pymongo, startup migrate_dates() completeness, datetime indexes, KPI range queries ($gte/$lt), and ISO serialization in API responses. Fixed 2 pre-existing tests that broke due to the datetime serialization change. Ran full suite — 65/65 passed (48 regression + 2 fixed + 15 new).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core.to_dt(): solid — handles None/'' (→None), YYYY-MM-DD (→midnight UTC), ISO with Z or +00:00, naive datetime (tagged UTC), aware datetime (converted to UTC). Returns None for unparseable strings which migrate_dates uses to $unset bad fields — good defensive design.",
+    "seed.migrate_dates(): idempotent; queries $type:string per field and either converts via to_dt or $unset. Also handles nested lotti.storico_stati[].timestamp. Verified post-startup: 0 string-typed datetime fields remain in any configured collection.",
+    "seed.ensure_indexes(): datetime indexes present on created_at (users/clienti/lotti/lavorazioni/non_conformita), data_ritiro (ritiri), data_prevista + data_consegna_effettiva (consegne), data (fatture), timestamp (audit_log) — all verified via index_information().",
+    "dashboard.dashboard_kpi(): correctly uses aware datetime boundaries (today_start / tomorrow_start / first_day_month) with $gte/$lt range queries — efficient with indexes. trend_kg_7gg builds 7 daily buckets. fatturato_mese uses $gte first_of_month only (no upper bound) — acceptable since future-dated fatture would otherwise be excluded; monitor if future-dated invoices become a concern.",
+    "operations.py + billing.py: all create endpoints call to_dt() on incoming date strings and now_utc() for timestamps — no bare isoformat() remaining. PATCH handlers coerce date fields via to_dt() before $set.",
+    "API responses: FastAPI/pydantic default serializes datetime as ISO 8601 (e.g. '2026-04-23T15:49:59.822000'). Verified /api/clienti[0].created_at matches regex ^YYYY-MM-DDTHH:MM:SS(.ffffff)?([+]HH:MM|Z)?$. Frontend compat is preserved because .slice(0,10) still yields 'YYYY-MM-DD'.",
+    "users.delete_user is a soft-delete (sets attivo=False). list_users returns all users regardless of attivo — this is why reusing the same test email across runs triggers 400 'Email già registrata'. Non-blocking for production but worth noting: consider filtering out attivo=False in POST /users email-unique check, or excluding soft-deleted users from list by default."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (65/65)", "frontend": "not tested (backend-only review)"},
+  "test_credentials": "Used credentials from /app/memory/test_credentials.md (admin/produzione/logistica/qualita/contabilita).",
+  "seed_data_creation": "Tests create TEST_-prefixed ephemeral records (clienti, ritiri, lotti, consegne, lavorazioni, non-conformita, fatture) and one per-run unique user (test_patchuser_<uuid>@cleantec.it). The user PATCH test now uses a UUID-suffixed email to tolerate soft-delete behavior.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression baseline is now 65 tests. P2 datetime migration is fully validated: (1) all new writes store datetime as native BSON via to_dt()+now_utc(); (2) migrate_dates() on startup cleaned any legacy string dates incl. nested lotti.storico_stati[].timestamp; (3) indexes exist on all range-queried datetime fields; (4) dashboard KPI uses $gte/$lt with aware UTC boundaries; (5) API responses still serialize as ISO strings for frontend compat. Note: /api/users DELETE is a soft-delete — if future tests reuse the same email they must either use a unique email per run or hard-delete via direct DB.",
+  "rca of the issue": "Two pre-existing tests failed on first run: (a) test_patch_consegna_consegnata_sets_data_effettiva compared data_consegna_effettiva == 'YYYY-MM-DD' but after the migration the field is a full datetime serialized as 'YYYY-MM-DDTHH:MM:SS.ffffff' — fix: assert startswith(today_iso). (b) test_patch_user_password_hashed_and_reloginable reused a fixed email and the API does a soft-delete, so stale attivo=False user with the same email caused POST /users to return 400 — fix: generate a UUID-suffixed unique email per run. Both are test-side fixes; no backend code changes were required."
+}

@@ -25,7 +25,7 @@ async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admi
         "role": body.role,
         "cliente_id": body.cliente_id,
         "attivo": True,
-        "created_at": now_utc().isoformat(),
+        "created_at": now_utc(),
     }
     await db.users.insert_one(doc)
     await log_audit(user, "CREATE", "user", doc["id"], {"email": doc["email"]})

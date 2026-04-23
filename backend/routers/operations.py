@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from core import (
-    db, new_id, now_utc, STATI_LOTTO,
+    db, new_id, now_utc, to_dt, STATI_LOTTO,
     get_current_user, require_roles, log_audit, next_seq,
 )
 from schemas import (
@@ -27,7 +27,8 @@ async def create_ritiro(body: RitiroIn, user: Dict = Depends(require_roles("admi
     seq = await next_seq("ritiro")
     doc["numero"] = f"RIT-{datetime.now().year}-{seq:05d}"
     doc["stato"] = "creato"
-    doc["created_at"] = now_utc().isoformat()
+    doc["data_ritiro"] = to_dt(doc.get("data_ritiro")) or now_utc()
+    doc["created_at"] = now_utc()
     await db.ritiri.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "ritiro", doc["id"])
@@ -68,12 +69,12 @@ async def create_lotto(body: LottoIn, user: Dict = Depends(require_roles("admin"
     doc["stato_corrente"] = "ritirato"
     doc["storico_stati"] = [{
         "stato": "ritirato",
-        "timestamp": now_utc().isoformat(),
+        "timestamp": now_utc(),
         "operatore": user["name"],
         "note": "Creato all'accettazione",
         "esito": "ok",
     }]
-    doc["created_at"] = now_utc().isoformat()
+    doc["created_at"] = now_utc()
     await db.lotti.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "lotto", doc["id"])
@@ -93,7 +94,7 @@ async def cambia_stato_lotto(
         raise HTTPException(404, "Lotto non trovato")
     entry = {
         "stato": body.nuovo_stato,
-        "timestamp": now_utc().isoformat(),
+        "timestamp": now_utc(),
         "operatore": user["name"],
         "macchina_id": body.macchina_id,
         "note": body.note,
@@ -103,7 +104,7 @@ async def cambia_stato_lotto(
         {"id": lid},
         {"$set": {"stato_corrente": body.nuovo_stato}, "$push": {"storico_stati": entry}},
     )
-    await log_audit(user, "STATE_CHANGE", "lotto", lid, entry)
+    await log_audit(user, "STATE_CHANGE", "lotto", lid, {"nuovo_stato": body.nuovo_stato, "operatore": user["name"]})
     return {"ok": True, "nuovo_stato": body.nuovo_stato}
 
 
@@ -131,7 +132,7 @@ async def create_lavorazione(body: LavorazioneIn, user: Dict = Depends(require_r
     doc["stato"] = "pending"
     doc["operatore_id"] = user["id"]
     doc["operatore_nome"] = user["name"]
-    doc["created_at"] = now_utc().isoformat()
+    doc["created_at"] = now_utc()
     await db.lavorazioni.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "lavorazione", doc["id"])
@@ -143,13 +144,19 @@ async def update_lavorazione(lid: str, body: PatchLavorazioneIn, user: Dict = De
     data = body.model_dump(exclude_unset=True)
     if not data:
         return {"ok": True}
-    data["updated_at"] = now_utc().isoformat()
+    # Coerce incoming date fields
+    for f in ("inizio", "fine"):
+        if f in data and data[f] is not None:
+            dt = to_dt(data[f])
+            if dt is not None:
+                data[f] = dt
+    data["updated_at"] = now_utc()
     if data.get("stato") == "in_corso" and "inizio" not in data:
-        data["inizio"] = now_utc().isoformat()
+        data["inizio"] = now_utc()
     if data.get("stato") == "completato" and "fine" not in data:
-        data["fine"] = now_utc().isoformat()
+        data["fine"] = now_utc()
     await db.lavorazioni.update_one({"id": lid}, {"$set": data})
-    await log_audit(user, "UPDATE", "lavorazione", lid, data)
+    await log_audit(user, "UPDATE", "lavorazione", lid, {"stato": data.get("stato")})
     return {"ok": True}
 
 
@@ -166,7 +173,8 @@ async def create_consegna(body: ConsegnaIn, user: Dict = Depends(require_roles("
     seq = await next_seq("consegna")
     doc["numero"] = f"CON-{datetime.now().year}-{seq:05d}"
     doc["stato"] = "pianificata"
-    doc["created_at"] = now_utc().isoformat()
+    doc["data_prevista"] = to_dt(doc.get("data_prevista")) or now_utc()
+    doc["created_at"] = now_utc()
     await db.consegne.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "consegna", doc["id"])
@@ -178,12 +186,18 @@ async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(
     data = body.model_dump(exclude_unset=True)
     if not data:
         return {"ok": True}
-    data["updated_at"] = now_utc().isoformat()
+    # Coerce incoming date fields
+    for f in ("data_prevista", "data_consegna_effettiva"):
+        if f in data and data[f] is not None:
+            dt = to_dt(data[f])
+            if dt is not None:
+                data[f] = dt
+    data["updated_at"] = now_utc()
     # Track real delivery date when transitioning to "consegnata" for real punctuality KPI
-    if data.get("stato") == "consegnata":
-        data.setdefault("data_consegna_effettiva", now_utc().date().isoformat())
+    if data.get("stato") == "consegnata" and "data_consegna_effettiva" not in data:
+        data["data_consegna_effettiva"] = now_utc()
     await db.consegne.update_one({"id": cid}, {"$set": data})
-    await log_audit(user, "UPDATE", "consegna", cid, data)
+    await log_audit(user, "UPDATE", "consegna", cid, {"stato": data.get("stato")})
     return {"ok": True}
 
 
@@ -199,7 +213,7 @@ async def create_nc(body: NonConformitaIn, user: Dict = Depends(require_roles("a
     doc["id"] = new_id()
     doc["stato"] = "aperta"
     doc["segnalato_da"] = user["name"]
-    doc["created_at"] = now_utc().isoformat()
+    doc["created_at"] = now_utc()
     await db.non_conformita.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "non_conformita", doc["id"])
@@ -211,7 +225,7 @@ async def update_nc(nid: str, body: PatchNonConformitaIn, user: Dict = Depends(r
     data = body.model_dump(exclude_unset=True)
     if not data:
         return {"ok": True}
-    data["updated_at"] = now_utc().isoformat()
+    data["updated_at"] = now_utc()
     await db.non_conformita.update_one({"id": nid}, {"$set": data})
-    await log_audit(user, "UPDATE", "non_conformita", nid, data)
+    await log_audit(user, "UPDATE", "non_conformita", nid, {"stato": data.get("stato")})
     return {"ok": True}

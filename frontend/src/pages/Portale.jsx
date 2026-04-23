@@ -84,7 +84,7 @@ export default function Portale() {
                 {fatture.map(f => (
                   <tr key={f.id}>
                     <td className="font-mono font-bold text-indaco">{f.numero}</td>
-                    <td className="font-mono text-xs">{f.data}</td>
+                    <td className="font-mono text-xs">{(f.data || "").slice(0,10)}</td>
                     <td className="font-mono font-bold">€ {f.totale?.toFixed(2)}</td>
                     <td><StatoBadge stato={f.stato} /></td>
                   </tr>

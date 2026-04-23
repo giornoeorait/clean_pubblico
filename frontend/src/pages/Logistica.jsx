@@ -117,7 +117,7 @@ export default function Logistica() {
               </div>
               <div className="font-display font-bold mt-1 truncate">{cm[c.cliente_id]}</div>
               <div className="text-xs text-slate-500 font-mono flex flex-wrap items-center gap-3 mt-1">
-                <span><Calendar size={12} className="inline mr-1" />{c.data_prevista}</span>
+                <span><Calendar size={12} className="inline mr-1" />{(c.data_prevista || "").slice(0,10)}</span>
                 {c.autista && <span>Autista: {c.autista}</span>}
                 <span>{c.lotti_ids?.length || 0} lotti</span>
               </div>

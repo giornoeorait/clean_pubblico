@@ -1,32 +1,50 @@
-"""Seed demo data + MongoDB indexes + counter sync."""
+"""Seed demo data + MongoDB indexes + counter sync + legacy-string to datetime migration."""
 import random
 import logging
 from datetime import datetime, timedelta
-from core import db, new_id, now_utc, hash_password, verify_password, STATI_LOTTO, ADMIN_EMAIL, ADMIN_PASSWORD
+from core import (
+    db, new_id, now_utc, hash_password, verify_password, to_dt,
+    STATI_LOTTO, ADMIN_EMAIL, ADMIN_PASSWORD,
+)
 
 logger = logging.getLogger("cleantec.seed")
 
 
+# =====================================================================
+# Indexes
+# =====================================================================
 async def ensure_indexes():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
+    await db.users.create_index("created_at")
     await db.clienti.create_index("id", unique=True)
+    await db.clienti.create_index("created_at")
     await db.articoli.create_index("id", unique=True)
     await db.articoli.create_index("barcode")
     await db.macchine.create_index("id", unique=True)
     await db.lotti.create_index("id", unique=True)
     await db.lotti.create_index("stato_corrente")
     await db.lotti.create_index("cliente_id")
+    await db.lotti.create_index("created_at")
     await db.ritiri.create_index("id", unique=True)
+    await db.ritiri.create_index("data_ritiro")
     await db.consegne.create_index("id", unique=True)
     await db.consegne.create_index("data_prevista")
+    await db.consegne.create_index("data_consegna_effettiva")
+    await db.consegne.create_index("stato")
     await db.fatture.create_index("id", unique=True)
     await db.fatture.create_index("cliente_id")
+    await db.fatture.create_index("data")
     await db.lavorazioni.create_index("id", unique=True)
+    await db.lavorazioni.create_index("created_at")
     await db.non_conformita.create_index("id", unique=True)
+    await db.non_conformita.create_index("created_at")
     await db.audit_log.create_index("timestamp")
 
 
+# =====================================================================
+# Counters
+# =====================================================================
 async def ensure_counters():
     """Align counters with existing collection counts so new inserts never reuse a numero."""
     mapping = {
@@ -42,6 +60,61 @@ async def ensure_counters():
             await db.counters.insert_one({"_id": name, "seq": count})
 
 
+# =====================================================================
+# Legacy date-string → BSON datetime migration
+# =====================================================================
+_DATETIME_FIELDS = {
+    "users": ["created_at"],
+    "clienti": ["created_at", "updated_at"],
+    "articoli": ["created_at", "updated_at"],
+    "macchine": ["created_at", "updated_at", "manutenzione_prossima"],
+    "ritiri": ["created_at", "data_ritiro"],
+    "lotti": ["created_at"],
+    "consegne": ["created_at", "updated_at", "data_prevista", "data_consegna_effettiva"],
+    "fatture": ["created_at", "updated_at", "data", "scadenza"],
+    "lavorazioni": ["created_at", "updated_at", "inizio", "fine"],
+    "non_conformita": ["created_at", "updated_at"],
+    "audit_log": ["timestamp"],
+}
+
+
+async def migrate_dates():
+    """One-shot: convert string date/datetime fields into native BSON datetime."""
+    total = 0
+    for coll_name, fields in _DATETIME_FIELDS.items():
+        coll = db[coll_name]
+        for field in fields:
+            cursor = coll.find({field: {"$type": "string"}}, {"_id": 1, field: 1})
+            async for doc in cursor:
+                dt = to_dt(doc.get(field))
+                if dt is not None:
+                    await coll.update_one({"_id": doc["_id"]}, {"$set": {field: dt}})
+                    total += 1
+                else:
+                    # Unparseable → drop it to avoid $type mismatch in range queries
+                    await coll.update_one({"_id": doc["_id"]}, {"$unset": {field: ""}})
+
+    # Nested: lotti.storico_stati[].timestamp
+    async for lotto in db.lotti.find({"storico_stati.timestamp": {"$type": "string"}}):
+        storico = lotto.get("storico_stati", [])
+        changed = False
+        for entry in storico:
+            ts = entry.get("timestamp")
+            if isinstance(ts, str):
+                dt = to_dt(ts)
+                if dt is not None:
+                    entry["timestamp"] = dt
+                    changed = True
+        if changed:
+            await db.lotti.update_one({"_id": lotto["_id"]}, {"$set": {"storico_stati": storico}})
+            total += 1
+    if total:
+        logger.info(f"[MIGRATE] Convertiti {total} campi stringa → BSON datetime")
+
+
+# =====================================================================
+# Demo seed
+# =====================================================================
 async def seed_admin_and_users():
     admin = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
     if admin is None:
@@ -52,7 +125,7 @@ async def seed_admin_and_users():
             "name": "Amministratore",
             "role": "admin",
             "attivo": True,
-            "created_at": now_utc().isoformat(),
+            "created_at": now_utc(),
         })
         logger.info(f"[SEED] Admin creato: {ADMIN_EMAIL}")
     elif not verify_password(ADMIN_PASSWORD, admin["password_hash"]):
@@ -76,12 +149,11 @@ async def seed_admin_and_users():
                 "name": name,
                 "role": role,
                 "attivo": True,
-                "created_at": now_utc().isoformat(),
+                "created_at": now_utc(),
             })
 
 
 async def seed_catalog_and_lotti():
-    # Clienti
     if await db.clienti.count_documents({}) == 0:
         clienti_demo = [
             {"ragione_sociale": "Hotel Excelsior Roma", "partita_iva": "IT01234567890", "indirizzo": "Via Veneto 125, Roma", "email": "info@excelsior-roma.it", "telefono": "+39 06 47081", "tipologia": "hotel", "giorni_ritiro": [1, 3, 5], "sla_ore": 48},
@@ -92,10 +164,9 @@ async def seed_catalog_and_lotti():
         ]
         for c in clienti_demo:
             c.update({"id": new_id(), "listino": "standard", "condizioni_pagamento": "30gg",
-                      "attivo": True, "created_at": now_utc().isoformat(), "note": ""})
+                      "attivo": True, "created_at": now_utc(), "note": ""})
         await db.clienti.insert_many(clienti_demo)
 
-    # Articoli
     if await db.articoli.count_documents({}) == 0:
         articoli_demo = [
             {"codice": "LEN-MAT", "descrizione": "Lenzuolo Matrimoniale", "categoria": "biancheria", "tipo": "capo", "materiale": "cotone", "lavaggio": "standard", "temperatura": 60, "barcode": "8001234500001", "peso_medio": 0.9, "prezzo": 1.2, "prezzo_tipo": "capo"},
@@ -106,10 +177,9 @@ async def seed_catalog_and_lotti():
             {"codice": "KIT-CAM", "descrizione": "Kit Camera Completo", "categoria": "kit", "tipo": "kit", "materiale": "misto", "lavaggio": "standard", "temperatura": 60, "barcode": "", "peso_medio": 2.5, "prezzo": 4.5, "prezzo_tipo": "capo"},
         ]
         for a in articoli_demo:
-            a.update({"id": new_id(), "created_at": now_utc().isoformat()})
+            a.update({"id": new_id(), "created_at": now_utc()})
         await db.articoli.insert_many(articoli_demo)
 
-    # Macchine
     if await db.macchine.count_documents({}) == 0:
         macchine_demo = [
             {"codice": "LAV-01", "tipo": "lavatrice", "capacita_kg": 100, "stato": "in_uso", "reparto": "lavaggio", "ore_lavoro": 12450},
@@ -121,11 +191,10 @@ async def seed_catalog_and_lotti():
             {"codice": "STI-02", "tipo": "stiratrice", "capacita_kg": 0, "stato": "disponibile", "reparto": "stiratura", "ore_lavoro": 7600},
         ]
         for m in macchine_demo:
-            m.update({"id": new_id(), "created_at": now_utc().isoformat(),
-                      "manutenzione_prossima": (now_utc() + timedelta(days=30)).date().isoformat()})
+            m.update({"id": new_id(), "created_at": now_utc(),
+                      "manutenzione_prossima": now_utc() + timedelta(days=30)})
         await db.macchine.insert_many(macchine_demo)
 
-    # Lotti demo
     if await db.lotti.count_documents({}) == 0:
         clienti = await db.clienti.find({}, {"_id": 0}).to_list(100)
         articoli = await db.articoli.find({}, {"_id": 0}).to_list(100)
@@ -145,7 +214,7 @@ async def seed_catalog_and_lotti():
                 for j in range(idx + 1):
                     storico.append({
                         "stato": STATI_LOTTO[j],
-                        "timestamp": (base_time + timedelta(hours=j * 2)).isoformat(),
+                        "timestamp": base_time + timedelta(hours=j * 2),
                         "operatore": "Sistema Demo",
                         "note": "",
                         "esito": "ok",
@@ -161,11 +230,12 @@ async def seed_catalog_and_lotti():
                     "priorita": random.choice(["normale", "normale", "alta", "urgente"]),
                     "stato_corrente": stato,
                     "storico_stati": storico,
-                    "created_at": base_time.isoformat(),
+                    "created_at": base_time,
                 })
 
 
 async def run_all():
+    await migrate_dates()
     await seed_admin_and_users()
     await seed_catalog_and_lotti()
     await ensure_indexes()

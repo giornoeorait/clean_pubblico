@@ -117,7 +117,7 @@ export default function Fatture() {
                 <tr key={f.id} data-testid={`fattura-${f.numero}`}>
                   <td className="font-mono font-bold text-indaco">{f.numero}</td>
                   <td>{cm[f.cliente_id]}</td>
-                  <td className="text-xs font-mono">{f.data}</td>
+                  <td className="text-xs font-mono">{(f.data || "").slice(0,10)}</td>
                   <td className="font-mono">€ {f.imponibile?.toFixed(2)}</td>
                   <td className="font-mono text-xs">€ {f.iva?.toFixed(2)}</td>
                   <td className="font-mono font-bold">€ {f.totale?.toFixed(2)}</td>

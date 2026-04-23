@@ -2,13 +2,28 @@
 from typing import Dict, Any, Optional, Type
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from core import db, new_id, now_utc, get_current_user, require_roles, log_audit
+from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit
 from schemas import (
     ClienteIn, ArticoloIn, MacchinaIn,
     PatchClienteIn, PatchArticoloIn, PatchMacchinaIn,
 )
 
 router = APIRouter(tags=["catalog"])
+
+# Fields that must be stored as BSON datetime (not string)
+_DATE_FIELDS_BY_COLL = {
+    "clienti": set(),
+    "articoli": set(),
+    "macchine": {"manutenzione_prossima"},
+}
+
+
+def _coerce_dates(coll_name: str, data: Dict[str, Any]) -> None:
+    for f in _DATE_FIELDS_BY_COLL.get(coll_name, ()):
+        if f in data and data[f] is not None:
+            dt = to_dt(data[f])
+            if dt is not None:
+                data[f] = dt
 
 
 def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Type[BaseModel],
@@ -30,8 +45,9 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
     @router.post(f"/{path}")
     async def create_one(body: Model, user: Dict = Depends(require_roles(*write_roles))):
         doc = body.model_dump()
+        _coerce_dates(coll_name, doc)
         doc["id"] = new_id()
-        doc["created_at"] = now_utc().isoformat()
+        doc["created_at"] = now_utc()
         doc["updated_at"] = doc["created_at"]
         await coll.insert_one(doc)
         doc.pop("_id", None)
@@ -50,7 +66,8 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
         data = body.model_dump(exclude_unset=True)
         if not data:
             return {"ok": True}
-        data["updated_at"] = now_utc().isoformat()
+        _coerce_dates(coll_name, data)
+        data["updated_at"] = now_utc()
         res = await coll.update_one({"id": item_id}, {"$set": data})
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail=f"{entity} non trovato")

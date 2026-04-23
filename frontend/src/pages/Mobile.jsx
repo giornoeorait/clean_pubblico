@@ -78,7 +78,7 @@ export default function Mobile() {
                 )}
                 <div className="flex items-center gap-2 text-xs text-slate-500 py-2 border-t border-slate-100">
                   <Package size={14} />
-                  <span>{c.lotti_ids?.length || 0} lotti · data {c.data_prevista}</span>
+                  <span>{c.lotti_ids?.length || 0} lotti · data {(c.data_prevista || "").slice(0,10)}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   <button className="py-3 bg-slate-100 text-slate-700 rounded-lg flex flex-col items-center gap-1 text-xs font-medium active:bg-slate-200"><Camera size={18} weight="duotone" />Foto</button>

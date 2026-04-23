@@ -410,8 +410,10 @@ def test_patch_consegna_consegnata_sets_data_effettiva(tokens):
     from datetime import datetime as _dt, timezone as _tz
     today_iso = _dt.now(_tz.utc).date().isoformat()
     assert target2["stato"] == "consegnata"
-    assert target2.get("data_consegna_effettiva") == today_iso, (
-        f"Expected data_consegna_effettiva={today_iso}, got {target2.get('data_consegna_effettiva')}"
+    # After datetime migration: serialized as full ISO 8601 string; date portion must match today.
+    val = target2.get("data_consegna_effettiva")
+    assert isinstance(val, str) and val.startswith(today_iso), (
+        f"Expected data_consegna_effettiva starting with {today_iso}, got {val}"
     )
 
 
@@ -666,18 +668,16 @@ def test_patch_fattura_invalid_iva_pct_422(tokens):
 
 def test_patch_user_password_hashed_and_reloginable(tokens):
     """Admin PATCH user password -> old pwd rejected, new pwd works, hash not leaked."""
-    # Create TEST_ user
+    # Unique email per run (DELETE is a soft-delete so reusing the same email would 400)
+    import uuid as _uuid
+    unique = _uuid.uuid4().hex[:8]
+    email = f"test_patchuser_{unique}@cleantec.it"
     create_payload = {
-        "email": "test_patchuser@cleantec.it",
+        "email": email,
         "password": "initial123",
         "name": "TEST_Patch_User",
         "role": "produzione",
     }
-    # Delete if lingering from previous run
-    users_all = requests.get(f"{API}/users", headers=H(tokens["admin"])).json()
-    existing = [u for u in users_all if u["email"] == create_payload["email"]]
-    for u in existing:
-        requests.delete(f"{API}/users/{u['id']}", headers=H(tokens["admin"]))
 
     r = requests.post(f"{API}/users", headers=H(tokens["admin"]), json=create_payload)
     assert r.status_code == 200, r.text
@@ -686,7 +686,7 @@ def test_patch_user_password_hashed_and_reloginable(tokens):
     uid = new_user["id"]
 
     # Verify initial login
-    lg1 = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "initial123"})
+    lg1 = requests.post(f"{API}/auth/login", json={"email": email, "password": "initial123"})
     assert lg1.status_code == 200, lg1.text
 
     # PATCH password with unknown extras
@@ -698,12 +698,12 @@ def test_patch_user_password_hashed_and_reloginable(tokens):
     assert "phantom_field" not in patched
 
     # Old pwd rejected, new works
-    lg_old = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "initial123"})
+    lg_old = requests.post(f"{API}/auth/login", json={"email": email, "password": "initial123"})
     assert lg_old.status_code == 401
-    lg_new = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "newpass456"})
+    lg_new = requests.post(f"{API}/auth/login", json={"email": email, "password": "newpass456"})
     assert lg_new.status_code == 200, lg_new.text
 
-    # Cleanup
+    # Cleanup (soft delete)
     requests.delete(f"{API}/users/{uid}", headers=H(tokens["admin"]))
 
 
@@ -743,3 +743,265 @@ def test_modular_file_structure_importable():
     with open("/app/backend/server.py") as f:
         line_count = sum(1 for _ in f)
     assert line_count <= 80, f"server.py is {line_count} lines, expected <= 80"
+
+
+
+# =========== P2: Datetime migration (BSON native datetime) ===========
+import asyncio as _asyncio
+import re as _re
+from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+
+def _mongo_db():
+    """Direct pymongo client to verify native BSON types."""
+    from pymongo import MongoClient
+    url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    name = os.environ.get("DB_NAME", "test_database")
+    return MongoClient(url)[name]
+
+
+# regex for ISO 8601 strings returned by FastAPI/pydantic for datetime
+_ISO_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+\d{2}:\d{2}|Z)?$")
+
+
+def test_to_dt_helper_parses_all_forms():
+    """Unit-test core.to_dt() directly for None / '' / YYYY-MM-DD / ISO Z / ISO +00:00 / datetime passthrough."""
+    import sys
+    sys.path.insert(0, "/app/backend")
+    from core import to_dt
+    assert to_dt(None) is None
+    assert to_dt("") is None
+    assert to_dt("not-a-date") is None
+    d1 = to_dt("2026-04-23")
+    assert d1 is not None and d1.tzinfo is not None
+    assert (d1.year, d1.month, d1.day, d1.hour, d1.minute, d1.second) == (2026, 4, 23, 0, 0, 0)
+    d2 = to_dt("2026-04-23T10:15:00Z")
+    assert d2 is not None and d2.tzinfo is not None
+    assert d2.hour == 10 and d2.minute == 15
+    d3 = to_dt("2026-04-23T10:15:00+00:00")
+    assert d3 is not None and d3 == d2
+    now = _dt.now(_tz.utc)
+    d4 = to_dt(now)
+    assert d4 == now
+    # naive datetime is tagged UTC
+    naive = _dt(2026, 4, 23, 12, 0, 0)
+    d5 = to_dt(naive)
+    assert d5.tzinfo is not None and d5.replace(tzinfo=None) == naive
+
+
+def test_ritiri_created_at_and_data_ritiro_are_bson_datetime(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    payload = {"cliente_id": clienti[0]["id"], "data_ritiro": "2026-01-20", "operatore": "BSONTest"}
+    r = requests.post(f"{API}/ritiri", headers=H(tokens["logistica"]), json=payload)
+    assert r.status_code == 200, r.text
+    rid = r.json()["id"]
+    db = _mongo_db()
+    doc = db.ritiri.find_one({"id": rid})
+    assert doc is not None
+    assert isinstance(doc["created_at"], _dt), f"created_at not datetime: {type(doc['created_at'])}"
+    assert isinstance(doc["data_ritiro"], _dt), f"data_ritiro not datetime: {type(doc['data_ritiro'])}"
+
+
+def test_lotti_created_at_and_storico_timestamp_are_bson_datetime(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    articoli = requests.get(f"{API}/articoli", headers=H(tokens["admin"])).json()
+    rit = requests.post(f"{API}/ritiri", headers=H(tokens["logistica"]),
+                        json={"cliente_id": clienti[0]["id"], "data_ritiro": "2026-01-20", "operatore": "X"}).json()
+    lot = requests.post(f"{API}/lotti", headers=H(tokens["produzione"]), json={
+        "ritiro_id": rit["id"], "cliente_id": clienti[0]["id"],
+        "articolo_id": articoli[0]["id"], "quantita": 10, "peso": 5.0,
+    }).json()
+    lid = lot["id"]
+
+    # cambia-stato appends another history entry
+    r = requests.post(f"{API}/lotti/{lid}/cambia-stato", headers=H(tokens["produzione"]),
+                      json={"nuovo_stato": "ricevuto", "esito": "ok"})
+    assert r.status_code == 200
+
+    db = _mongo_db()
+    doc = db.lotti.find_one({"id": lid})
+    assert isinstance(doc["created_at"], _dt)
+    assert isinstance(doc["storico_stati"], list) and len(doc["storico_stati"]) >= 2
+    for entry in doc["storico_stati"]:
+        assert isinstance(entry["timestamp"], _dt), f"storico timestamp not datetime: {type(entry['timestamp'])}"
+
+
+def test_consegne_dates_are_bson_datetime(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    c = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]), json={
+        "cliente_id": clienti[0]["id"], "lotti_ids": [], "data_prevista": "2026-05-01", "autista": "BSON"
+    }).json()
+    cid = c["id"]
+    p = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]), json={"stato": "consegnata"})
+    assert p.status_code == 200
+    db = _mongo_db()
+    doc = db.consegne.find_one({"id": cid})
+    assert isinstance(doc["created_at"], _dt)
+    assert isinstance(doc["data_prevista"], _dt)
+    assert isinstance(doc["data_consegna_effettiva"], _dt)
+
+
+def test_fatture_dates_are_bson_datetime(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    f = requests.post(f"{API}/fatture", headers=H(tokens["contabilita"]), json={
+        "cliente_id": clienti[0]["id"], "data": "2026-01-20",
+        "scadenza": "2026-02-20",
+        "righe": [{"descrizione": "X", "quantita": 1, "prezzo": 10}], "iva_pct": 22,
+    }).json()
+    fid = f["id"]
+    db = _mongo_db()
+    doc = db.fatture.find_one({"id": fid})
+    assert isinstance(doc["created_at"], _dt)
+    assert isinstance(doc["data"], _dt)
+    assert isinstance(doc["scadenza"], _dt)
+
+
+def test_non_conformita_created_at_is_bson_datetime(tokens):
+    nc = requests.post(f"{API}/non-conformita", headers=H(tokens["qualita"]),
+                       json={"tipo_difetto": "BSON_NC", "gravita": "bassa"}).json()
+    db = _mongo_db()
+    doc = db.non_conformita.find_one({"id": nc["id"]})
+    assert isinstance(doc["created_at"], _dt)
+
+
+def test_lavorazioni_inizio_fine_are_bson_datetime(tokens):
+    lotti = requests.get(f"{API}/lotti", headers=H(tokens["admin"])).json()
+    lav = requests.post(f"{API}/lavorazioni", headers=H(tokens["produzione"]),
+                        json={"lotto_id": lotti[0]["id"], "tipo": "lavaggio"}).json()
+    lid = lav["id"]
+    requests.patch(f"{API}/lavorazioni/{lid}", headers=H(tokens["produzione"]), json={"stato": "in_corso"})
+    requests.patch(f"{API}/lavorazioni/{lid}", headers=H(tokens["produzione"]), json={"stato": "completato"})
+    db = _mongo_db()
+    doc = db.lavorazioni.find_one({"id": lid})
+    assert isinstance(doc["created_at"], _dt)
+    assert isinstance(doc["inizio"], _dt), f"inizio type: {type(doc.get('inizio'))}"
+    assert isinstance(doc["fine"], _dt), f"fine type: {type(doc.get('fine'))}"
+
+
+def test_audit_log_timestamp_is_bson_datetime(tokens):
+    # Trigger any audited action to ensure audit insert
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    c = requests.post(f"{API}/clienti", headers=H(tokens["contabilita"]),
+                      json={"ragione_sociale": "TEST_AuditDT", "tipologia": "hotel"}).json()
+    requests.delete(f"{API}/clienti/{c['id']}", headers=H(tokens["contabilita"]))
+    db = _mongo_db()
+    entries = list(db.audit_log.find().sort("timestamp", -1).limit(5))
+    assert entries, "audit_log empty"
+    for e in entries:
+        assert isinstance(e["timestamp"], _dt), f"audit timestamp not datetime: {type(e['timestamp'])}"
+
+
+def test_api_responses_serialize_datetime_as_iso_strings(tokens):
+    """FastAPI default: datetime → ISO 8601 string in JSON responses."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    assert clienti, "no clienti seeded"
+    first = clienti[0]
+    assert "created_at" in first
+    assert isinstance(first["created_at"], str)
+    assert _ISO_RE.match(first["created_at"]), f"created_at not ISO: {first['created_at']}"
+
+
+def test_migrate_dates_left_no_string_date_fields_in_seeded_collections():
+    """After startup migrate_dates() + all new inserts use datetime, no $type:string should remain
+    in configured datetime fields."""
+    db = _mongo_db()
+    collections = {
+        "users": ["created_at"],
+        "clienti": ["created_at"],
+        "articoli": ["created_at"],
+        "macchine": ["created_at", "manutenzione_prossima"],
+        "ritiri": ["created_at", "data_ritiro"],
+        "lotti": ["created_at"],
+        "consegne": ["created_at", "data_prevista", "data_consegna_effettiva"],
+        "fatture": ["created_at", "data", "scadenza"],
+        "lavorazioni": ["created_at", "inizio", "fine"],
+        "non_conformita": ["created_at"],
+        "audit_log": ["timestamp"],
+    }
+    offenders = []
+    for coll, fields in collections.items():
+        for f in fields:
+            n = db[coll].count_documents({f: {"$type": "string"}})
+            if n:
+                offenders.append(f"{coll}.{f}={n}")
+    assert not offenders, f"String datetime fields remaining: {offenders}"
+
+    # Nested lotti.storico_stati[].timestamp
+    n = db.lotti.count_documents({"storico_stati.timestamp": {"$type": "string"}})
+    assert n == 0, f"lotti.storico_stati[].timestamp still string in {n} docs"
+
+
+def test_indexes_on_datetime_fields_exist():
+    db = _mongo_db()
+    expected = {
+        "users": ["created_at"],
+        "clienti": ["created_at"],
+        "lotti": ["created_at"],
+        "ritiri": ["data_ritiro"],
+        "consegne": ["data_prevista", "data_consegna_effettiva"],
+        "fatture": ["data"],
+        "lavorazioni": ["created_at"],
+        "non_conformita": ["created_at"],
+        "audit_log": ["timestamp"],
+    }
+    missing = []
+    for coll, fields in expected.items():
+        idxs = db[coll].index_information()
+        indexed_fields = set()
+        for name, info in idxs.items():
+            for k, _ in info.get("key", []):
+                indexed_fields.add(k)
+        for f in fields:
+            if f not in indexed_fields:
+                missing.append(f"{coll}.{f}")
+    assert not missing, f"Missing indexes: {missing}"
+
+
+def test_kpi_range_queries_use_datetime_correctly(tokens):
+    """POST a fattura dated today and verify fatturato_mese increases; KPI uses $gte first_of_month."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    kpi_before = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+
+    today = _dt.now(_tz.utc).date().isoformat()
+    body = {
+        "cliente_id": clienti[0]["id"], "data": today,
+        "righe": [{"descrizione": "KPI", "quantita": 1, "prezzo": 17.0}], "iva_pct": 0,
+    }
+    r = requests.post(f"{API}/fatture", headers=H(tokens["contabilita"]), json=body)
+    assert r.status_code == 200, r.text
+    created_total = r.json()["totale"]
+
+    kpi_after = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    # fatturato_mese must increase by at least `created_total` (allow rounding slack)
+    delta = round(kpi_after["fatturato_mese"] - kpi_before["fatturato_mese"], 2)
+    assert delta >= created_total - 0.01, (
+        f"fatturato_mese did not include today's fattura: before={kpi_before['fatturato_mese']} "
+        f"after={kpi_after['fatturato_mese']} delta={delta} expected>={created_total}"
+    )
+
+
+def test_kpi_consegne_oggi_counts_today_range(tokens):
+    """POST consegna with data_prevista=today and verify consegne_oggi KPI increments by >=1."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    kpi_before = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    today = _dt.now(_tz.utc).date().isoformat()
+    r = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]), json={
+        "cliente_id": clienti[0]["id"], "lotti_ids": [], "data_prevista": today, "autista": "KPI"
+    })
+    assert r.status_code == 200, r.text
+    kpi_after = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    assert kpi_after["consegne_oggi"] >= kpi_before["consegne_oggi"] + 1
+
+
+def test_kpi_trend_kg_7gg_has_7_buckets(tokens):
+    kpi = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    assert len(kpi["trend_kg_7gg"]) == 7
+    # last bucket corresponds to today (MM-DD)
+    today_mmdd = _dt.now(_tz.utc).strftime("%m-%d")
+    assert kpi["trend_kg_7gg"][-1]["giorno"] == today_mmdd
+
+
+def test_users_created_at_is_bson_datetime(tokens):
+    db = _mongo_db()
+    for u in db.users.find({}, {"_id": 0, "password_hash": 0}):
+        assert isinstance(u["created_at"], _dt), f"users.created_at not datetime: {u.get('email')}"

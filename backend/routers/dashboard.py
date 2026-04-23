@@ -1,4 +1,7 @@
-"""Dashboard KPIs, audit log, health."""
+"""Dashboard KPIs, audit log, health.
+
+Uses native BSON datetime fields for efficient range queries.
+"""
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from fastapi import APIRouter, Depends
@@ -7,14 +10,23 @@ from core import db, get_current_user, require_roles, STATI_LOTTO
 router = APIRouter(tags=["dashboard"])
 
 
+def _today_utc_start() -> datetime:
+    now = datetime.now(timezone.utc)
+    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+
+
 @router.get("/dashboard/kpi")
 async def dashboard_kpi(user: Dict = Depends(get_current_user)):
-    today = datetime.now(timezone.utc).date().isoformat()
-    first_day_month = datetime.now(timezone.utc).replace(day=1).date().isoformat()
+    today_start = _today_utc_start()
+    tomorrow_start = today_start + timedelta(days=1)
+    first_day_month = today_start.replace(day=1)
 
     lotti_totali = await db.lotti.count_documents({})
     lotti_attivi = await db.lotti.count_documents({"stato_corrente": {"$nin": ["consegnato"]}})
-    lotti_oggi = await db.lotti.find({"created_at": {"$gte": today}}, {"peso": 1, "_id": 0}).to_list(5000)
+    lotti_oggi = await db.lotti.find(
+        {"created_at": {"$gte": today_start, "$lt": tomorrow_start}},
+        {"peso": 1, "_id": 0},
+    ).to_list(5000)
     kg_oggi = sum(l.get("peso", 0) for l in lotti_oggi)
 
     macchine = await db.macchine.find({}, {"_id": 0}).to_list(500)
@@ -22,7 +34,9 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     macchine_disp = sum(1 for m in macchine if m.get("stato") == "disponibile")
 
     nc_aperte = await db.non_conformita.count_documents({"stato": "aperta"})
-    consegne_oggi = await db.consegne.count_documents({"data_prevista": today})
+    consegne_oggi = await db.consegne.count_documents(
+        {"data_prevista": {"$gte": today_start, "$lt": tomorrow_start}}
+    )
 
     # Real punctuality KPI: % of delivered consegne where data_consegna_effettiva <= data_prevista
     consegne_consegnate = await db.consegne.find(
@@ -42,14 +56,19 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     ).to_list(2000)
     fatturato_mese = sum(f.get("totale", 0) for f in fatture_mese)
 
+    # Trend last 7 days (range query per day, Mongo-indexed)
     trend = []
     for i in range(6, -1, -1):
-        d = (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat()
+        day_start = today_start - timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
         lotti_d = await db.lotti.find(
-            {"created_at": {"$gte": f"{d}T00:00:00", "$lt": f"{d}T23:59:59"}},
+            {"created_at": {"$gte": day_start, "$lt": day_end}},
             {"peso": 1, "_id": 0},
         ).to_list(5000)
-        trend.append({"giorno": d[5:], "kg": round(sum(l.get("peso", 0) for l in lotti_d), 1)})
+        trend.append({
+            "giorno": day_start.strftime("%m-%d"),
+            "kg": round(sum(l.get("peso", 0) for l in lotti_d), 1),
+        })
 
     stati_dist = []
     for s in STATI_LOTTO:
@@ -81,7 +100,7 @@ async def get_audit(user: Dict = Depends(require_roles("admin")), limit: int = 5
 
 @router.get("/")
 async def root():
-    return {"app": "CleanTec", "status": "ok", "version": "1.1.0"}
+    return {"app": "CleanTec", "status": "ok", "version": "1.2.0"}
 
 
 @router.get("/health")

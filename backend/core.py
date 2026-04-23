@@ -47,6 +47,37 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def to_dt(value) -> Optional[datetime]:
+    """Convert an incoming value (None, str YYYY-MM-DD, ISO datetime, datetime) to a tz-aware UTC datetime.
+
+    Returns None if value is None/empty/unparseable — caller decides whether to keep it.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    # Normalize trailing Z
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        if len(s) == 10 and s[4] == "-" and s[7] == "-":
+            # YYYY-MM-DD → midnight UTC
+            return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -98,7 +129,7 @@ async def log_audit(user: Dict[str, Any], azione: str, entita: str,
         "entita": entita,
         "entita_id": entita_id,
         "dettagli": dettagli or {},
-        "timestamp": now_utc().isoformat(),
+        "timestamp": now_utc(),
     })
 
 
