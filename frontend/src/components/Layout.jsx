@@ -48,7 +48,7 @@ export default function Layout({ children }) {
   return (
     <div className="min-h-screen flex bg-slate-50">
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 z-40 w-64 h-screen bg-slate-900 text-white flex flex-col border-r border-slate-800 transform transition-transform ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+      <aside className={`fixed xl:sticky top-0 left-0 z-40 w-64 h-screen bg-slate-900 text-white flex flex-col border-r border-slate-800 transform transition-transform ${mobileOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"}`}>
         <div className="h-16 flex items-center gap-2 px-5 border-b border-slate-800">
           <div className="w-8 h-8 rounded-md bg-gradient-to-br from-azzurro to-indaco flex items-center justify-center">
             <Sparkle size={18} weight="fill" className="text-white" />
@@ -57,7 +57,7 @@ export default function Layout({ children }) {
             <div className="font-display font-bold text-lg leading-none tracking-tight">CleanTec</div>
             <div className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">ERP • MES • WMS</div>
           </div>
-          <button className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setMobileOpen(false)} data-testid="close-menu-btn">
+          <button className="ml-auto xl:hidden text-slate-400 hover:text-white" onClick={() => setMobileOpen(false)} data-testid="close-menu-btn">
             <X size={20} />
           </button>
         </div>
@@ -115,7 +115,7 @@ export default function Layout({ children }) {
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         <TrialBanner />
-        <header className="h-16 lg:hidden bg-white border-b border-slate-200 flex items-center px-4 sticky top-0 z-30">
+        <header className="h-16 xl:hidden bg-white border-b border-slate-200 flex items-center px-4 sticky top-0 z-30">
           <button onClick={() => setMobileOpen(true)} className="text-slate-600" data-testid="open-menu-btn">
             <List size={24} />
           </button>
@@ -127,7 +127,7 @@ export default function Layout({ children }) {
         </main>
       </div>
 
-      {mobileOpen && <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setMobileOpen(false)}></div>}
+      {mobileOpen && <div className="fixed inset-0 bg-black/40 z-30 xl:hidden" onClick={() => setMobileOpen(false)}></div>}
     </div>
   );
 }
