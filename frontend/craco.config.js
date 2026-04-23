@@ -61,6 +61,22 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  // Disable the overlay for runtime errors coming from browser extensions (MetaMask etc.)
+  devServerConfig.client = {
+    ...(devServerConfig.client || {}),
+    overlay: {
+      errors: true,
+      warnings: false,
+      runtimeErrors: (error) => {
+        const msg = String((error && (error.message || error.stack)) || error || "");
+        const src = String((error && error.filename) || "");
+        const noise = /MetaMask|chrome-extension:\/\/|moz-extension:\/\/|safari-web-extension:\/\/|ethereum|web3|Cannot redefine property|inpage\.js|evmAsk|contentscript|Non-Error promise rejection|ResizeObserver loop/i;
+        if (noise.test(msg) || noise.test(src)) return false;
+        return true;
+      },
+    },
+  };
+
   // Add health check endpoints if enabled
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;

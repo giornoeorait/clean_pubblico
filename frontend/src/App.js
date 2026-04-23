@@ -1,54 +1,69 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from "react";
+import "./App.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from "./components/Layout";
+import { Toaster } from "sonner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Clienti from "./pages/Clienti";
+import Articoli from "./pages/Articoli";
+import Macchine from "./pages/Macchine";
+import Accettazione from "./pages/Accettazione";
+import Lotti from "./pages/Lotti";
+import Produzione from "./pages/Produzione";
+import Qualita from "./pages/Qualita";
+import Logistica from "./pages/Logistica";
+import Fatture from "./pages/Fatture";
+import Utenti from "./pages/Utenti";
+import Touch from "./pages/Touch";
+import Mobile from "./pages/Mobile";
+import Portale from "./pages/Portale";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+function WithLayout({ children, roles }) {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <ProtectedRoute roles={roles}>
+      <Layout>{children}</Layout>
+    </ProtectedRoute>
   );
 }
 
-export default App;
+function RootRedirect() {
+  const { user } = useAuth();
+  if (user === null) return null;
+  if (user === false) return <Navigate to="/login" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
+export default function App() {
+  return (
+    <div className="App">
+      <AuthProvider>
+        <Toaster position="top-right" richColors closeButton />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/dashboard" element={<WithLayout><Dashboard /></WithLayout>} />
+            <Route path="/clienti" element={<WithLayout><Clienti /></WithLayout>} />
+            <Route path="/articoli" element={<WithLayout><Articoli /></WithLayout>} />
+            <Route path="/macchine" element={<WithLayout><Macchine /></WithLayout>} />
+            <Route path="/accettazione" element={<WithLayout><Accettazione /></WithLayout>} />
+            <Route path="/lotti" element={<WithLayout><Lotti /></WithLayout>} />
+            <Route path="/produzione" element={<WithLayout><Produzione /></WithLayout>} />
+            <Route path="/qualita" element={<WithLayout><Qualita /></WithLayout>} />
+            <Route path="/logistica" element={<WithLayout><Logistica /></WithLayout>} />
+            <Route path="/fatture" element={<WithLayout><Fatture /></WithLayout>} />
+            <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
+            <Route path="/touch" element={<ProtectedRoute><Touch /></ProtectedRoute>} />
+            <Route path="/mobile" element={<ProtectedRoute><Mobile /></ProtectedRoute>} />
+            <Route path="/portale" element={<ProtectedRoute><Portale /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </div>
+  );
+}
