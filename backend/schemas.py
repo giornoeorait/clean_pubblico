@@ -119,6 +119,28 @@ class FatturaIn(BaseModel):
     scadenza: Optional[str] = None
 
 
+class MagazzinoIn(BaseModel):
+    codice: str
+    descrizione: str
+    categoria: str = "detergente"   # detergente | dpi | consumabile | chimico | altro
+    unita_misura: str = "pz"        # pz | kg | L | m | conf
+    scorta_attuale: float = 0
+    scorta_minima: float = 0
+    prezzo_unitario: float = 0
+    fornitore: Optional[str] = ""
+    scadenza: Optional[str] = None
+    note: Optional[str] = ""
+    attivo: bool = True
+
+
+class MovimentoIn(BaseModel):
+    tipo: str                        # carico | scarico | rettifica
+    quantita: float
+    motivo: Optional[str] = ""       # scarico: lavaggio/pulizia/smaltito ; carico: acquisto/reso
+    lotto_fornitore: Optional[str] = ""
+    note: Optional[str] = ""
+
+
 # ----------------------------------------------------------------------
 # PATCH schemas — all fields optional, extras ignored.
 # Use `.model_dump(exclude_unset=True)` in handlers to update only set fields.
@@ -218,3 +240,16 @@ class PatchFatturaIn(_PatchBase):
     data: Optional[str] = None
     righe: Optional[List[Dict[str, Any]]] = None
     iva_pct: Optional[float] = None
+
+
+class PatchMagazzinoIn(_PatchBase):
+    codice: Optional[str] = None
+    descrizione: Optional[str] = None
+    categoria: Optional[str] = None
+    unita_misura: Optional[str] = None
+    scorta_minima: Optional[float] = None
+    prezzo_unitario: Optional[float] = None
+    fornitore: Optional[str] = None
+    scadenza: Optional[str] = None
+    note: Optional[str] = None
+    attivo: Optional[bool] = None

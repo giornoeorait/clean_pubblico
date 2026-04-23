@@ -40,6 +40,11 @@ async def ensure_indexes():
     await db.non_conformita.create_index("id", unique=True)
     await db.non_conformita.create_index("created_at")
     await db.audit_log.create_index("timestamp")
+    await db.magazzino.create_index("id", unique=True)
+    await db.magazzino.create_index("categoria")
+    await db.magazzino.create_index("codice")
+    await db.magazzino_movimenti.create_index("articolo_id")
+    await db.magazzino_movimenti.create_index("timestamp")
 
 
 # =====================================================================
@@ -264,11 +269,32 @@ async def seed_catalog_and_lotti():
                 })
 
 
+async def seed_magazzino():
+    if await db.magazzino.count_documents({}) > 0:
+        return
+    now = now_utc()
+    items = [
+        {"codice": "DET-UNI-25", "descrizione": "Detergente Universale 25L", "categoria": "detergente", "unita_misura": "L", "scorta_attuale": 140.0, "scorta_minima": 50.0, "prezzo_unitario": 4.2, "fornitore": "Ecolab", "scadenza": now + timedelta(days=320)},
+        {"codice": "DET-SAN-10", "descrizione": "Detergente Sanitario 10L", "categoria": "detergente", "unita_misura": "L", "scorta_attuale": 18.0, "scorta_minima": 20.0, "prezzo_unitario": 8.5, "fornitore": "Diversey", "scadenza": now + timedelta(days=180)},
+        {"codice": "SBI-CLO-5", "descrizione": "Sbiancante al cloro 5L", "categoria": "chimico", "unita_misura": "L", "scorta_attuale": 62.0, "scorta_minima": 25.0, "prezzo_unitario": 3.1, "fornitore": "Ecolab", "scadenza": now + timedelta(days=25)},
+        {"codice": "AMM-SOF-20", "descrizione": "Ammorbidente Soft 20L", "categoria": "detergente", "unita_misura": "L", "scorta_attuale": 0.0, "scorta_minima": 10.0, "prezzo_unitario": 5.8, "fornitore": "Ecolab", "scadenza": now + timedelta(days=210)},
+        {"codice": "DPI-GUA-M", "descrizione": "Guanti protettivi Taglia M", "categoria": "dpi", "unita_misura": "conf", "scorta_attuale": 24.0, "scorta_minima": 10.0, "prezzo_unitario": 12.0, "fornitore": "3M", "scadenza": None},
+        {"codice": "DPI-MSK-FFP2", "descrizione": "Mascherine FFP2 (conf. 20 pz)", "categoria": "dpi", "unita_misura": "conf", "scorta_attuale": 8.0, "scorta_minima": 15.0, "prezzo_unitario": 18.5, "fornitore": "3M", "scadenza": now + timedelta(days=500)},
+        {"codice": "DPI-GRE-L", "descrizione": "Grembiule impermeabile L", "categoria": "dpi", "unita_misura": "pz", "scorta_attuale": 35.0, "scorta_minima": 15.0, "prezzo_unitario": 8.0, "fornitore": "Safety Srl", "scadenza": None},
+        {"codice": "CON-SAC-80L", "descrizione": "Sacchi biancheria 80L (500 pz)", "categoria": "consumabile", "unita_misura": "conf", "scorta_attuale": 6.0, "scorta_minima": 3.0, "prezzo_unitario": 22.0, "fornitore": "Packaging Plus", "scadenza": None},
+    ]
+    for it in items:
+        it.update({"id": new_id(), "attivo": True, "note": "", "created_at": now, "updated_at": now})
+    await db.magazzino.insert_many(items)
+    logger.info(f"[SEED] Magazzino: {len(items)} articoli")
+
+
 async def run_all():
     await migrate_dates()
     await seed_admin_and_users()
     await seed_catalog_and_lotti()
     await seed_portale_cliente_user()
+    await seed_magazzino()
     await ensure_indexes()
     await ensure_counters()
     logger.info("[SEED] Completato.")

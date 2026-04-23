@@ -34,6 +34,22 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     macchine_disp = sum(1 for m in macchine if m.get("stato") == "disponibile")
 
     nc_aperte = await db.non_conformita.count_documents({"stato": "aperta"})
+
+    # Magazzino: conta gli articoli in allarme (scorta <= minima oppure scadenza imminente/scaduta)
+    magazzino_items = await db.magazzino.find({}, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}).to_list(2000)
+    magazzino_allarmi = 0
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    for it in magazzino_items:
+        scorta = float(it.get("scorta_attuale", 0) or 0)
+        minima = float(it.get("scorta_minima", 0) or 0)
+        alarm = scorta <= minima
+        sc = it.get("scadenza")
+        if sc and isinstance(sc, datetime):
+            sc_naive = sc.replace(tzinfo=None) if sc.tzinfo else sc
+            if (sc_naive - now_naive).days <= 30:
+                alarm = True
+        if alarm:
+            magazzino_allarmi += 1
     consegne_oggi = await db.consegne.count_documents(
         {"data_prevista": {"$gte": today_start, "$lt": tomorrow_start}}
     )
@@ -83,6 +99,7 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         "macchine_disponibili": macchine_disp,
         "macchine_totali": len(macchine),
         "nc_aperte": nc_aperte,
+        "magazzino_allarmi": magazzino_allarmi,
         "consegne_oggi": consegne_oggi,
         "consegne_consegnate": total_delivered,
         "consegne_puntuali": puntuali,

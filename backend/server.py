@@ -5,7 +5,7 @@ from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
 from core import client
-from routers import auth, users, catalog, operations, billing, dashboard
+from routers import auth, users, catalog, operations, billing, dashboard, magazzino
 from seed import run_all as run_seed
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -20,6 +20,7 @@ api.include_router(catalog.router)
 api.include_router(operations.router)
 api.include_router(billing.router)
 api.include_router(dashboard.router)
+api.include_router(magazzino.router)
 app.include_router(api)
 
 app.add_middleware(
