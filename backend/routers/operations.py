@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core import (
     db, new_id, now_utc, to_dt, STATI_LOTTO,
     get_current_user, require_roles, log_audit, next_seq,
-    tenant_scope, merge_scope, inject_tenant,
+    tenant_scope, merge_scope, inject_tenant, enforce_quota,
 )
 from schemas import (
     RitiroIn, LottoIn, CambiaStatoIn, LavorazioneIn, ConsegnaIn, NonConformitaIn,
@@ -68,6 +68,7 @@ async def list_lotti(
 
 @router.post("/lotti")
 async def create_lotto(body: LottoIn, user: Dict = Depends(require_roles("admin", "produzione", "logistica"))):
+    await enforce_quota(user, "lotti_monthly")
     doc = body.model_dump()
     doc["id"] = new_id()
     seq = await next_seq("lotto")

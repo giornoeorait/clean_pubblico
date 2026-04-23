@@ -224,6 +224,38 @@ export default function Billing() {
           </div>
         )}
       </div>
+
+      {/* Cancel / Resume subscription */}
+      {(t.stato === "active" || t.stato === "canceled") && (
+        <div className="kpi-card mt-6 border-red-100" data-testid="billing-cancel-card">
+          <h3 className="font-display text-lg font-bold mb-2">{t.stato === "canceled" ? "Riattiva abbonamento" : "Cancella abbonamento"}</h3>
+          <p className="text-sm text-slate-600 mb-3">
+            {t.stato === "canceled"
+              ? "Il tuo abbonamento è cancellato ma mantieni l'accesso fino a scadenza periodo. Riattiva per continuare senza interruzione."
+              : "Puoi cancellare in qualsiasi momento. Manterrai l'accesso fino alla scadenza del periodo già pagato, poi l'account verrà sospeso."}
+          </p>
+          {t.stato === "canceled" ? (
+            <button
+              onClick={async () => {
+                try { await api.post("/subscriptions/resume"); toast.success("Abbonamento riattivato"); fetchAll(); }
+                catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-sm"
+              data-testid="resume-btn"
+            >Riattiva abbonamento</button>
+          ) : (
+            <button
+              onClick={async () => {
+                if (!window.confirm("Confermi la cancellazione? Manterrai l'accesso fino alla scadenza del periodo.")) return;
+                try { await api.post("/subscriptions/cancel"); toast.info("Abbonamento cancellato"); fetchAll(); }
+                catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+              }}
+              className="px-4 py-2 bg-white border border-red-300 hover:bg-red-50 text-red-700 rounded-md font-semibold text-sm"
+              data-testid="cancel-btn"
+            >Cancella abbonamento</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Intercept 402 (quota/subscription expired) globally
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 402) {
+      // Lazy-import to avoid circular deps
+      import("sonner").then(({ toast }) => {
+        toast.error(err.response?.data?.detail || "Limite piano raggiunto", {
+          action: { label: "Aggiorna piano", onClick: () => { window.location.href = "/billing"; } },
+          duration: 7000,
+        });
+      });
+    }
+    return Promise.reject(err);
+  }
+);
+
 export default api;
 
 export function formatApiErrorDetail(detail) {

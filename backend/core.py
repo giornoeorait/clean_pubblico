@@ -248,13 +248,55 @@ async def is_tenant_active(user: Dict[str, Any]) -> bool:
         return False
     stato = t.get("stato", "trial")
     if stato == "active":
+        # Also check current_period_end not elapsed
+        pe = t.get("current_period_end")
+        if isinstance(pe, datetime):
+            pe_aware = pe if pe.tzinfo else pe.replace(tzinfo=timezone.utc)
+            if pe_aware > now_utc():
+                return True
+            return False
         return True
     if stato == "trial":
         ends = t.get("trial_ends_at")
-        if isinstance(ends, datetime) and ends > now_utc():
-            return True
+        if isinstance(ends, datetime):
+            ends_aware = ends if ends.tzinfo else ends.replace(tzinfo=timezone.utc)
+            if ends_aware > now_utc():
+                return True
         return False
     return False
+
+
+async def enforce_quota(user: Dict[str, Any], resource: str) -> None:
+    """Raise 402 if tenant exceeds the resource quota for its plan.
+
+    Resources supported:
+      - 'users'         → max concurrent active users
+      - 'lotti_monthly' → max lotti created this calendar month
+    """
+    if user["role"] == "superadmin":
+        return
+    tenant = await db.tenants.find_one({"id": tenant_id_of(user)}, {"_id": 0})
+    if not tenant:
+        return  # defensive
+    if tenant.get("is_demo"):
+        return  # demo tenant always unlimited
+    limit = int(tenant.get("limits", {}).get(resource, 0) or 0)
+    if limit == -1:
+        return  # unlimited
+    tid = tenant["id"]
+    if resource == "users":
+        current = await db.users.count_documents({"tenant_id": tid, "attivo": True})
+    elif resource == "lotti_monthly":
+        today = now_utc()
+        month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        current = await db.lotti.count_documents({"tenant_id": tid, "created_at": {"$gte": month_start}})
+    else:
+        return
+    if current >= limit:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Limite '{resource}' raggiunto ({current}/{limit}) per il piano '{tenant.get('piano')}'. Aggiorna il piano.",
+        )
 
 
 def require_active_tenant():

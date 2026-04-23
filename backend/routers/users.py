@@ -1,7 +1,7 @@
 """Users management (admin only)."""
 from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
-from core import db, new_id, now_utc, hash_password, require_roles, log_audit, tenant_scope, inject_tenant, merge_scope
+from core import db, new_id, now_utc, hash_password, require_roles, log_audit, tenant_scope, inject_tenant, merge_scope, enforce_quota
 from schemas import UserCreate, PatchUserIn
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -15,6 +15,7 @@ async def list_users(user: Dict = Depends(require_roles("admin"))):
 
 @router.post("")
 async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admin"))):
+    await enforce_quota(user, "users")
     if await db.users.find_one({"email": body.email.lower()}):
         raise HTTPException(status_code=400, detail="Email già registrata")
     doc = {

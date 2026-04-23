@@ -95,6 +95,7 @@ async def register_tenant(body: RegisterIn, request: Request):
 
     # Admin user
     user_id = new_id()
+    verification_token = new_id()
     user_doc = {
         "id": user_id,
         "email": email_norm,
@@ -104,9 +105,26 @@ async def register_tenant(body: RegisterIn, request: Request):
         "tenant_id": tenant_id,
         "attivo": True,
         "email_verified": False,
+        "verification_token": verification_token,
+        "verification_sent_at": now,
         "created_at": now,
     }
     await db.users.insert_one(user_doc)
+
+    # Stub email verification — log token, ready for Resend/SendGrid hook later
+    import logging
+    logging.getLogger("cleantec.email").info(
+        f"[EMAIL-STUB] verify URL for {email_norm}: /verify?token={verification_token}"
+    )
+    await db.email_events.insert_one({
+        "id": new_id(),
+        "kind": "verification_request",
+        "to": email_norm,
+        "token": verification_token,
+        "tenant_id": tenant_id,
+        "status": "logged",
+        "created_at": now,
+    })
 
     token = create_access_token(user_id, email_norm, "admin", tenant_id)
 
@@ -172,4 +190,47 @@ async def update_tenant(body: TenantUpdateIn, user: Dict = Depends(get_current_u
     data["updated_at"] = now_utc()
     await db.tenants.update_one({"id": user["tenant_id"]}, {"$set": data})
     await log_audit(user, "UPDATE", "tenant", user["tenant_id"], data)
+    return {"ok": True}
+
+
+# --- Email verification -----------------------------------------------------
+class VerifyIn(BaseModel):
+    token: str
+
+
+@router.post("/auth/verify-email")
+async def verify_email(body: VerifyIn):
+    user = await db.users.find_one({"verification_token": body.token})
+    if not user:
+        raise HTTPException(400, "Token non valido o già utilizzato")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"email_verified": True}, "$unset": {"verification_token": ""}},
+    )
+    return {"ok": True, "email": user["email"]}
+
+
+@router.post("/auth/resend-verification")
+async def resend_verification(user: Dict = Depends(get_current_user)):
+    fresh = await db.users.find_one({"id": user["id"]})
+    if not fresh:
+        raise HTTPException(404, "Utente non trovato")
+    if fresh.get("email_verified"):
+        return {"ok": True, "already_verified": True}
+    token = new_id()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"verification_token": token, "verification_sent_at": now_utc()}},
+    )
+    import logging
+    logging.getLogger("cleantec.email").info(f"[EMAIL-STUB] verify URL for {fresh['email']}: /verify?token={token}")
+    await db.email_events.insert_one({
+        "id": new_id(),
+        "kind": "verification_resend",
+        "to": fresh["email"],
+        "token": token,
+        "tenant_id": user["tenant_id"],
+        "status": "logged",
+        "created_at": now_utc(),
+    })
     return {"ok": True}

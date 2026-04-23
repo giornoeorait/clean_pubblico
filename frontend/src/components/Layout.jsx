@@ -5,7 +5,7 @@ import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, HardDrives, ClipboardText, Path, Kanban,
   ShieldCheck, Truck, Receipt, UserList, Hand, DeviceMobile, Storefront,
-  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard,
+  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard, ChartLineUp, Crown,
 } from "@phosphor-icons/react";
 
 const ALL_ITEMS = [
@@ -24,7 +24,9 @@ const ALL_ITEMS = [
   { to: "/notifiche", label: "Notifiche", icon: ChatCircleText, roles: ["admin", "logistica", "produzione", "qualita"] },
   { to: "/hardware", label: "Console Hardware", icon: Scan, roles: ["admin", "produzione", "logistica"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
+  { to: "/insights", label: "Insights & Forecast", icon: ChartLineUp, roles: ["admin", "produzione", "contabilita"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
+  { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
 ];
 
 const SPECIAL_ITEMS = [
@@ -82,7 +84,11 @@ export default function Layout({ children }) {
     };
   }, [mobileOpen]);
 
-  const items = ALL_ITEMS.filter(i => !i.roles || i.roles.includes(user.role) || user.role === "admin");
+  const items = ALL_ITEMS.filter(i => {
+    if (!i.roles) return true;
+    if (user.role === "superadmin") return i.roles.includes("superadmin") || true;
+    return i.roles.includes(user.role) || user.role === "admin";
+  });
 
   const handleLogout = async () => {
     await logout();

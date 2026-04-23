@@ -28,6 +28,9 @@ import Hardware from "./pages/Hardware";
 import Pricing from "./pages/Pricing";
 import Register from "./pages/Register";
 import Billing from "./pages/Billing";
+import SuperAdmin from "./pages/SuperAdmin";
+import Insights from "./pages/Insights";
+import VerifyEmail from "./pages/VerifyEmail";
 
 function WithLayout({ children, roles }) {
   return (
@@ -55,7 +58,10 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
+            <Route path="/insights" element={<WithLayout roles={["admin","produzione","contabilita"]}><Insights /></WithLayout>} />
+            <Route path="/admin" element={<WithLayout roles={["superadmin"]}><SuperAdmin /></WithLayout>} />
             <Route path="/dashboard" element={<WithLayout><Dashboard /></WithLayout>} />
             <Route path="/clienti" element={<WithLayout><Clienti /></WithLayout>} />
             <Route path="/articoli" element={<WithLayout><Articoli /></WithLayout>} />

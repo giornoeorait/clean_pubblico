@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 9 testing — quota enforcement + email verification + superadmin dashboard + insights BI + cancel/resume. 17/17 backend pytest passed, all 4 critical frontend flows visually confirmed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login", "issue": "tenant field returned at login only contains {nome, piano, stato, trial_ends_at} — no id/slug. Downstream clients that need tenant.id must use /api/tenants/me. Spec only required 'tenant field present' so PASS, but worth noting."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter9.py", "/app/test_reports/pytest/iter9_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/superadmin.py:41 contains a dead/obfuscated line that evaluates datetime comparisons and is immediately overwritten on line 42 (trials_90d = 0). Remove dead code.",
+    "routers/subscriptions.py:261 uses __import__('datetime').datetime for an isinstance check — replace with the already-imported datetime for clarity.",
+    "routers/insights.py consumi-detergenti: `ratio_l_per_kg` variable name suggests liters but unit is generic (could be any qty). Consider renaming / documenting unit.",
+    "core.py:291 enforce_quota for lotti_monthly uses created_at month — if a tenant changes plan mid-month, the counter doesn't reset. Acceptable MVP but document behavior."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "super@cleantec.it/Superadmin123! (superadmin), admin@cleantec.it/admin123 (DEMO), owner@lavtest.it/segretaPWD1! (trial Pro tenant)",
+  "seed_data_creation": "Created 2 registered tenants via /api/tenants/register (TestIter9 2f570c55, TestIter9 4b14ad98) as part of email-verification flow test. Visible in SuperAdmin panel.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iteration-9 features passed. Backend test suite at /app/backend/tests/test_iter9.py is idempotent and can be reused for regression. Quota enforcement was not stress-tested beyond the happy path because Pro limits (10000 lotti/month, 20 users) are too high for e2e — confirmed no exceptions & 402 code path reachable via DEMO bypass test (non-402 assertion). To stress-test quota, temporarily override tenant.limits via PATCH /api/admin/tenants/{tid} as superadmin, or seed a Starter tenant.",
+  "rca of the issue": "N/A — no bugs found. One test expectation initially too strict (expected tenant.id in login response); adjusted per actual contract.",
+  "backend_test_results": "17 passed, 0 failed — /app/test_reports/pytest/iter9_results.xml",
+  "frontend_verified_flows": [
+    "Superadmin login → /admin renders 4 KPI cards (MRR €0, Tenants 3, Conversione 0%, Incassato €0), distribuzione piani (Starter/Pro/Enterprise), distribuzione stati (Trial 3), tabella tenants registrati con 3 righe (escludendo DEMO), ultime transazioni. Sidebar mostra 'Pannello SaaS' con crown icon.",
+    "Admin DEMO login → /insights renders 4 KPI cards (Media storica 179.5 kg/giorno, Trend Crescita, Atteso 5509.2 kg, Costo/kg €0), recharts line chart con storico blu e forecast tratteggiata verde, card Consumo detergenti 30gg + Top consumi per articolo bar chart. Sidebar mostra 'Insights & Forecast'.",
+    "/verify?token=invalid-xyz mostra XCircle rosso + 'Link non valido' + 'Token non valido o già utilizzato' + link 'Torna al login'. Backend risponde 400 come atteso.",
+    "Owner (trial) /billing: card 'Attiva l'abbonamento' visibile con form piano+ciclo+CTA; card cancel/resume correttamente NASCOSTA per tenant in trial. Banner 'Prova gratuita: 14 giorni rimanenti' visibile."
+  ]
+}

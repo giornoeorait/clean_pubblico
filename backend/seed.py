@@ -24,30 +24,45 @@ TENANT_SCOPED_COLLECTIONS = [
 
 
 async def ensure_demo_tenant():
-    """Create the DEMO tenant if missing. Idempotent."""
+    """Create the DEMO tenant + superadmin user if missing. Idempotent."""
     existing = await db.tenants.find_one({"id": DEMO_TENANT_ID})
-    if existing:
-        return
-    now = now_utc()
-    await db.tenants.insert_one({
-        "id": DEMO_TENANT_ID,
-        "slug": "demo",
-        "nome": "CleanTec Demo",
-        "partita_iva": "",
-        "email_admin": ADMIN_EMAIL.lower(),
-        "piano": "enterprise",  # demo has full features unlocked
-        "stato": "active",
-        "trial_ends_at": None,
-        "current_period_end": now + timedelta(days=3650),  # 10 years
-        "stripe_customer_id": None,
-        "stripe_subscription_id": None,
-        "limits": {"users": -1, "lotti_monthly": -1, "sms_monthly": 500},
-        "usage": {"users": 0, "lotti_this_month": 0, "sms_this_month": 0, "last_reset": now},
-        "is_demo": True,
-        "created_at": now,
-        "updated_at": now,
-    })
-    logger.info(f"[SEED] DEMO tenant creato: {DEMO_TENANT_ID}")
+    if not existing:
+        now = now_utc()
+        await db.tenants.insert_one({
+            "id": DEMO_TENANT_ID,
+            "slug": "demo",
+            "nome": "CleanTec Demo",
+            "partita_iva": "",
+            "email_admin": ADMIN_EMAIL.lower(),
+            "piano": "enterprise",  # demo has full features unlocked
+            "stato": "active",
+            "trial_ends_at": None,
+            "current_period_end": now + timedelta(days=3650),
+            "stripe_customer_id": None,
+            "stripe_subscription_id": None,
+            "limits": {"users": -1, "lotti_monthly": -1, "sms_monthly": 500},
+            "usage": {"users": 0, "lotti_this_month": 0, "sms_this_month": 0, "last_reset": now},
+            "is_demo": True,
+            "created_at": now,
+            "updated_at": now,
+        })
+        logger.info(f"[SEED] DEMO tenant creato: {DEMO_TENANT_ID}")
+
+    # Seed superadmin user — global SaaS operator
+    super_email = "super@cleantec.it"
+    if not await db.users.find_one({"email": super_email}):
+        await db.users.insert_one({
+            "id": new_id(),
+            "email": super_email,
+            "password_hash": hash_password("Superadmin123!"),
+            "name": "Super Admin",
+            "role": "superadmin",
+            "tenant_id": DEMO_TENANT_ID,  # belongs to DEMO for cross-references
+            "attivo": True,
+            "email_verified": True,
+            "created_at": now_utc(),
+        })
+        logger.info(f"[SEED] superadmin creato: {super_email}")
 
 
 async def backfill_tenant_id():

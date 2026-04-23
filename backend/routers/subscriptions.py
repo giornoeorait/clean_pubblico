@@ -226,3 +226,45 @@ async def my_transactions(user: Dict = Depends(get_current_user), limit: int = 5
         {"tenant_id": user["tenant_id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(limit)
     return items
+
+
+@router.post("/subscriptions/cancel")
+async def cancel_subscription(user: Dict = Depends(get_current_user)):
+    """Mark subscription as canceled. Access remains until current_period_end."""
+    if user["role"] != "admin":
+        raise HTTPException(403, "Solo admin")
+    tenant = await db.tenants.find_one({"id": user["tenant_id"]}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(404, "Tenant non trovato")
+    if tenant.get("stato") == "trial":
+        raise HTTPException(400, "Non puoi cancellare un trial — basta non attivare l'abbonamento")
+    if tenant.get("stato") != "active":
+        raise HTTPException(400, f"Stato attuale '{tenant.get('stato')}': nulla da cancellare")
+    await db.tenants.update_one(
+        {"id": user["tenant_id"]},
+        {"$set": {"stato": "canceled", "canceled_at": now_utc(), "updated_at": now_utc()}},
+    )
+    await log_audit(user, "CANCEL", "subscription", user["tenant_id"])
+    return {"ok": True, "current_period_end": tenant.get("current_period_end")}
+
+
+@router.post("/subscriptions/resume")
+async def resume_subscription(user: Dict = Depends(get_current_user)):
+    """Reactivate a canceled subscription if period still valid."""
+    if user["role"] != "admin":
+        raise HTTPException(403, "Solo admin")
+    tenant = await db.tenants.find_one({"id": user["tenant_id"]}, {"_id": 0})
+    if not tenant or tenant.get("stato") != "canceled":
+        raise HTTPException(400, "Abbonamento non in stato 'canceled'")
+    pe = tenant.get("current_period_end")
+    from datetime import timezone as _tz
+    if isinstance(pe, __import__("datetime").datetime):
+        pe_aware = pe if pe.tzinfo else pe.replace(tzinfo=_tz.utc)
+        if pe_aware <= now_utc():
+            raise HTTPException(400, "Periodo scaduto — rinnova manualmente con un nuovo checkout")
+    await db.tenants.update_one(
+        {"id": user["tenant_id"]},
+        {"$set": {"stato": "active", "updated_at": now_utc()}, "$unset": {"canceled_at": ""}},
+    )
+    await log_audit(user, "RESUME", "subscription", user["tenant_id"])
+    return {"ok": True}
