@@ -1,4 +1,5 @@
 """Tenant registration + profile + plans catalog (public + authenticated)."""
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -111,20 +112,40 @@ async def register_tenant(body: RegisterIn, request: Request):
     }
     await db.users.insert_one(user_doc)
 
-    # Stub email verification — log token, ready for Resend/SendGrid hook later
-    import logging
-    logging.getLogger("cleantec.email").info(
-        f"[EMAIL-STUB] verify URL for {email_norm}: /verify?token={verification_token}"
-    )
-    await db.email_events.insert_one({
-        "id": new_id(),
-        "kind": "verification_request",
-        "to": email_norm,
-        "token": verification_token,
-        "tenant_id": tenant_id,
-        "status": "logged",
-        "created_at": now,
-    })
+    # Send verification email (SMTP if configured, stub fallback)
+    from smtp_service import send_email
+    frontend_base = os.environ.get("FRONTEND_URL", "").rstrip("/") or None
+    try:
+        request_url = str(request.base_url).rstrip("/")
+        origin = request.headers.get("origin") or frontend_base or request_url
+        verify_link = f"{origin}/verify?token={verification_token}"
+        body_text = (
+            f"Ciao {body.nome_admin},\n\n"
+            f"Benvenuto in CleanTec! Conferma la tua email cliccando il link qui sotto:\n\n"
+            f"{verify_link}\n\n"
+            f"Il link scade in 48 ore.\n\n"
+            f"— Il team CleanTec"
+        )
+        body_html = (
+            f"<div style='font-family:system-ui,sans-serif;max-width:560px;margin:auto'>"
+            f"<h2 style='color:#6366f1'>Benvenuto in CleanTec!</h2>"
+            f"<p>Ciao <strong>{body.nome_admin}</strong>,</p>"
+            f"<p>Grazie per esserti registrato. Conferma la tua email per attivare il tuo account:</p>"
+            f"<p><a href='{verify_link}' style='display:inline-block;background:#6366f1;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:600'>Conferma email</a></p>"
+            f"<p style='color:#64748b;font-size:13px'>Oppure copia e incolla: {verify_link}</p>"
+            f"<p style='color:#64748b;font-size:12px;margin-top:32px'>— Il team CleanTec</p></div>"
+        )
+        await send_email(
+            to=email_norm,
+            subject="CleanTec — Conferma la tua email",
+            body_text=body_text,
+            body_html=body_html,
+            context={"trigger": "verification_request", "user_id": user_id},
+            tenant_id=tenant_id,
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger("cleantec.email").error(f"Send verification failed: {e}")
 
     token = create_access_token(user_id, email_norm, "admin", tenant_id)
 
@@ -222,15 +243,15 @@ async def resend_verification(user: Dict = Depends(get_current_user)):
         {"id": user["id"]},
         {"$set": {"verification_token": token, "verification_sent_at": now_utc()}},
     )
-    import logging
-    logging.getLogger("cleantec.email").info(f"[EMAIL-STUB] verify URL for {fresh['email']}: /verify?token={token}")
-    await db.email_events.insert_one({
-        "id": new_id(),
-        "kind": "verification_resend",
-        "to": fresh["email"],
-        "token": token,
-        "tenant_id": user["tenant_id"],
-        "status": "logged",
-        "created_at": now_utc(),
-    })
+    from smtp_service import send_email
+    frontend_base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    verify_link = f"{frontend_base}/verify?token={token}" if frontend_base else f"/verify?token={token}"
+    await send_email(
+        to=fresh["email"],
+        subject="CleanTec — Conferma la tua email",
+        body_text=f"Ciao,\n\nConferma la tua email: {verify_link}\n\n— CleanTec",
+        body_html=f"<p>Ciao,</p><p>Conferma la tua email: <a href='{verify_link}'>{verify_link}</a></p><p>— CleanTec</p>",
+        context={"trigger": "verification_resend", "user_id": user["id"]},
+        tenant_id=user["tenant_id"],
+    )
     return {"ok": True}

@@ -1,8 +1,10 @@
-"""Superadmin router: cross-tenant SaaS operations metrics."""
+"""Superadmin router: cross-tenant SaaS operations metrics + SMTP config."""
 from datetime import timedelta, datetime, timezone
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr, Field
 from core import db, now_utc, get_current_user, PLANS
+from smtp_service import get_smtp_config, save_smtp_config, send_email, is_smtp_configured
 
 router = APIRouter(prefix="/admin", tags=["superadmin"])
 
@@ -122,3 +124,62 @@ async def update_tenant_as_super(tid: str, body: Dict[str, Any], user: Dict = De
         "timestamp": now_utc(),
     })
     return {"ok": True}
+
+
+# ---- SMTP configuration ---------------------------------------------------
+class SmtpConfigIn(BaseModel):
+    host: Optional[str] = Field(None, max_length=200)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=200)
+    password: Optional[str] = Field(None, max_length=500)  # only updated if non-empty
+    from_email: Optional[EmailStr] = None
+    from_name: Optional[str] = Field(None, max_length=100)
+    use_tls: Optional[bool] = None  # STARTTLS
+    use_ssl: Optional[bool] = None  # implicit SSL
+    enabled: Optional[bool] = None
+
+
+class SmtpTestIn(BaseModel):
+    to: EmailStr
+
+
+@router.get("/smtp-config")
+async def smtp_config(user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    cfg = await get_smtp_config() or {}
+    # Never reveal password to client
+    safe = {k: v for k, v in cfg.items() if k != "password"}
+    safe["password_set"] = bool(cfg.get("password"))
+    safe["configured"] = await is_smtp_configured()
+    return safe
+
+
+@router.patch("/smtp-config")
+async def update_smtp_config(body: SmtpConfigIn, user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    data = body.model_dump(exclude_unset=True)
+    cfg = await save_smtp_config(data, user)
+    safe = {k: v for k, v in (cfg or {}).items() if k != "password"}
+    safe["password_set"] = bool((cfg or {}).get("password"))
+    return safe
+
+
+@router.post("/smtp-test")
+async def smtp_test(body: SmtpTestIn, user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    if not await is_smtp_configured():
+        raise HTTPException(400, "SMTP non configurato o disabilitato")
+    result = await send_email(
+        to=body.to,
+        subject="CleanTec — Test SMTP",
+        body_text="Questa è un'email di test inviata dal pannello SaaS CleanTec.\n\nSe leggi questo messaggio, il server SMTP è configurato correttamente.",
+        body_html="<p>Questa è un'email di test inviata dal pannello <strong>SaaS CleanTec</strong>.</p><p>Se leggi questo messaggio, il server SMTP è configurato correttamente. ✓</p>",
+        context={"trigger": "smtp_test", "by": user["email"]},
+    )
+    return result
+
+
+@router.get("/email-events")
+async def list_email_events(user: Dict = Depends(get_current_user), limit: int = 100):
+    _require_super(user)
+    return await db.email_events.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
