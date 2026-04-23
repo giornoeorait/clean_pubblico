@@ -20,7 +20,7 @@ is skipped (requires Stripe full SDK) — we offer manual upgrade/renewal instea
 import os
 import logging
 from typing import Dict, Optional
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -257,9 +257,8 @@ async def resume_subscription(user: Dict = Depends(get_current_user)):
     if not tenant or tenant.get("stato") != "canceled":
         raise HTTPException(400, "Abbonamento non in stato 'canceled'")
     pe = tenant.get("current_period_end")
-    from datetime import timezone as _tz
-    if isinstance(pe, __import__("datetime").datetime):
-        pe_aware = pe if pe.tzinfo else pe.replace(tzinfo=_tz.utc)
+    if isinstance(pe, datetime):
+        pe_aware = pe if pe.tzinfo else pe.replace(tzinfo=timezone.utc)
         if pe_aware <= now_utc():
             raise HTTPException(400, "Periodo scaduto — rinnova manualmente con un nuovo checkout")
     await db.tenants.update_one(

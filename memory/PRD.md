@@ -1,93 +1,80 @@
-# CleanTec - PRD
+# CleanTec - PRD (updated 23 Apr 2026)
 
-## Original Problem
-Build "CleanTec" - integrated ERP+MES+WMS+TMS SaaS for industrial laundry.
-Full multi-tenant self-service SaaS with Stripe subscriptions.
+## Problem
+Industrial laundry full-stack SaaS — ERP+MES+WMS+TMS, multi-tenant with Stripe subscriptions and self-service onboarding.
 
 ## Stack
 - Backend: FastAPI + Motor + MongoDB (maxPoolSize=200)
 - Frontend: React 19 + Tailwind + Shadcn/UI + Phosphor Icons + Recharts
-- Auth: JWT (Bearer + cookie) with tenant_id in claims
-- i18n (IT default)
-- Object Storage: Emergent Object Storage (EMERGENT_LLM_KEY)
+- Auth: JWT with tenant_id in claims
+- Storage: Emergent Object Storage
 - Notifications: Twilio (optional) + stub fallback
 - Payments: Stripe via emergentintegrations
+- Email: stub (logged to db.email_events, ready for Resend/SendGrid)
 
-## Multi-tenant SaaS (23 Apr 2026)
-- Collection `tenants`: slug, piano, stato (trial|active|past_due|canceled|suspended), trial_ends_at, limits, usage, stripe_*
-- Every data collection carries `tenant_id` enforced via `tenant_scope(user)` / `merge_scope` / `inject_tenant` helpers in core.py
-- JWT token includes tenant_id for O(1) auth+scoping
-- Self-service registration at `/register` creates tenant + admin user + 14-day trial (no card)
-- Public pricing page at `/pricing` with monthly/annual toggle (annual = -17%)
-- Admin billing page at `/billing` with plan switcher, Stripe checkout, payment history
-- Trial banner on every page showing days remaining
-- Backfill migration: all legacy data assigned to DEMO_TENANT_ID
+## Implemented
 
-## Plans (server-side authoritative)
-| Piano | Mensile | Annuale (/mese) | Utenti | Lotti/mese | SMS |
-|-------|---------|-----------------|--------|-----------|------|
+### Core SaaS (this session)
+- **Multi-tenant** complete: `tenants` collection + `tenant_id` on all 18 data collections. `tenant_scope`/`merge_scope`/`inject_tenant` helpers applied in every router. JWT carries tenant_id.
+- **Self-service registration** `/register` + `/pricing` public page + 14-day trial (no card)
+- **Stripe Subscriptions**: checkout (monthly/annual), webhook, polling status, transactions history
+- **Cancel/Resume subscription**: access retained until current_period_end
+- **Plan enforcement**: `require_active_tenant()` + `enforce_quota(user, 'users'|'lotti_monthly')` on critical POSTs. Returns 402 → frontend interceptor shows "Aggiorna piano" toast with redirect to /billing
+- **Email verification stub**: verification_token on register, POST /api/auth/verify-email, resend endpoint, /verify page with status UI. Logs link in db.email_events (Resend-ready)
+- **Superadmin dashboard** `/admin`: MRR/ARR, tenant count, conversion rate 90d, revenue this month, tenant distribution by plan/status, tenants list, transactions list. Role `superadmin` seeded as super@cleantec.it
+- **BI Insights** `/insights`: linear-regression forecast kg/day (history 21d → predict 7d), consumi detergenti vs kg lavati, costo per kg, top consumi per articolo
+- **Trial banner** global (red when ≤3 days) + **iPad swipe gesture** from left to open sidebar + `xl:` breakpoint for sticky sidebar
+
+### Core app (cumulative)
+- Clienti/Articoli/Macchine/Utenti CRUD
+- Accettazione → Ritiri → Lotti (9 stati) → MES Kanban → Qualità → Logistica → Fatturazione
+- Magazzino detergenti/DPI + Manutenzione macchine
+- Object Storage (foto + firme)
+- Notifiche SMS/WhatsApp (Twilio stub)
+- Hardware ingestion (barcode/bilancia/RFID)
+- Dashboard KPI, Touch tablet, Mobile autista, Portale Cliente
+
+## Plans
+| Piano | Mensile | Annuale | Utenti | Lotti/mese | SMS |
+|-------|---------|---------|--------|-----------|------|
 | Starter | €59 | €49 | 5 | 1.000 | 0 |
-| Pro (raccomandato) | €179 | €149 | 20 | 10.000 | 100 |
+| Pro | €179 | €149 | 20 | 10.000 | 100 |
 | Enterprise | €449 | €379 | ∞ | ∞ | 500 |
 
-Trial: **14 giorni**, no card required.
-
-## Core Features (cumulative)
-### Ops
-- Clienti/Articoli/Macchine/Utenti CRUD
-- Accettazione → Ritiri → Lotti (9 stati)
-- MES Kanban + Controllo Qualità + Logistica + Fatturazione
-
-### Add-ons (P1 complete)
-- Magazzino detergenti/DPI con scorte minime
-- Manutenzione macchine con ticket + interventi
-- Object Storage (foto + firme digitali)
-- Notifiche SMS/WhatsApp (Twilio + stub)
-- Hardware ingestion REST (barcode, bilancia, RFID)
-
-### Interfaces
-- Dashboard, Touch (tablet), Mobile (autisti), Portale Cliente
-
-## Stripe Integration
-- `POST /api/subscriptions/checkout` — crea sessione Stripe (monthly|annual)
-- `GET /api/subscriptions/status/{session_id}` — polling post-return
-- `POST /api/webhook/stripe` — webhook handler
-- `GET /api/subscriptions/transactions` — storico
-- Collezione `payment_transactions` con tenant_id + session_id + plan_id + billing_cycle + status
-- Env: `STRIPE_API_KEY=sk_test_emergent` (già in .env)
-
-## Security
-- Every write endpoint enforces `tenant_id` filter via `merge_scope(user, {...})`
-- JWT carries tenant_id; mismatch = 404 on queries (data invisible)
-- Rate limit naive su `/tenants/register` (5/min/IP)
-- Password policy: min 8 chars
-- Plan enforcement ready via `require_active_tenant()` (to be wired progressively)
-
-## Demo credentials (DEMO tenant, shared across agent testing)
+## Demo credentials
 | Email | Password | Role |
 |-------|----------|------|
-| admin@cleantec.it | admin123 | admin |
+| super@cleantec.it | Superadmin123! | **superadmin** |
+| admin@cleantec.it | admin123 | admin (DEMO tenant) |
 | produzione@cleantec.it | produzione123 | produzione |
 | logistica@cleantec.it | logistica123 | logistica |
 | qualita@cleantec.it | qualita123 | qualita |
 | contabilita@cleantec.it | contabilita123 | contabilita |
-| cliente@cleantec.it | cliente123 | cliente → Hotel Excelsior Roma |
-| owner@lavtest.it | segretaPWD1! | NEW tenant (Pro trial) |
+| cliente@cleantec.it | cliente123 | cliente → Hotel Excelsior |
+| owner@lavtest.it | segretaPWD1! | admin of Lavanderia Test Srl (Pro trial) |
 
-## Backlog (P2)
-- Plan limit enforcement in CREATE endpoints (block if over quota)
-- Email verification flow
-- Stripe Customer Portal (update card, download invoices) — richiede Stripe full SDK
-- Superadmin dashboard (MRR, churn, tenants list)
-- BI reporting avanzato
-- Inventario biancheria noleggio per cliente
-- Short-lived signed URLs per /api/files (HMAC invece di `?auth=`)
-- TTL index `db.hardware_events` (retention)
-- SDI fatturazione elettronica italiana XML
-- 2FA OTP
-- Test regression multi-tenant isolation con testing agent
+## Architecture
+- Backend routers (14): auth, users, catalog, operations, billing, dashboard, magazzino, manutenzione, files, notifications, hardware, tenants, subscriptions, superadmin, insights
+- Frontend pages (25+): Dashboard, Clienti, Articoli, Macchine, Accettazione, Lotti, Produzione, Qualita, Logistica, Fatture, Magazzino, Manutenzione, Notifiche, Hardware, Utenti, Touch, Mobile, Portale, Pricing, Register, Billing, SuperAdmin, Insights, VerifyEmail, Login
+
+## Testing status
+- Iteration 1-7: core features
+- Iteration 8: object storage + notifications + hardware (100% pass)
+- Iteration 9 (today): quota enforcement + email verification + cancel/resume + superadmin + insights (17/17 backend, 4/4 frontend flows — 100%)
+
+## Backlog (P2 / Future)
+- 2FA OTP for admin accounts
+- Stripe Customer Portal (update card, download invoices) — requires full Stripe SDK
+- Fatturazione elettronica italiana SDI XML
+- Inventario biancheria a noleggio per cliente (rotazione capi RFID)
+- Short-lived signed URLs per /api/files (HMAC vs `?auth=` query param)
+- TTL index db.hardware_events (retention)
+- Resend/SendGrid integration for email verification
+- Multi-sede warehouse per tenant Enterprise
+- Webhook delivery receipts Twilio per Portale Cliente
+- Onboarding wizard (import Excel, first ritiro)
 
 ## Next Action Items
-- Run testing_agent_v3 to validate multi-tenant isolation + Stripe flow
-- Wire plan limit enforcement on create endpoints (users, lotti)
-- Admin side: superadmin dashboard
+- Configurare Resend API key per email verification reali (stub pronto)
+- Configurare Stripe LIVE key in produzione (ora test)
+- (Opzionale) Superadmin: CRUD manuale tenants, reset limits, force status

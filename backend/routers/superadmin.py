@@ -38,7 +38,6 @@ async def stats(user: Dict = Depends(get_current_user)):
 
     # Trial conversion: active signed up in last 90d / trials started in last 90d
     d90 = today - timedelta(days=90)
-    trials_90d = sum(1 for t in tenants if isinstance(t.get("created_at"), datetime) and t["created_at"].replace(tzinfo=timezone.utc) if (t["created_at"].replace(tzinfo=timezone.utc) if not t["created_at"].tzinfo else t["created_at"]) > d90)  # keep simple
     trials_90d = 0
     actives_90d = 0
     for t in tenants:
