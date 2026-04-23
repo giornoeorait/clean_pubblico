@@ -19,6 +19,7 @@ import Logistica from "./pages/Logistica";
 import Fatture from "./pages/Fatture";
 import Utenti from "./pages/Utenti";
 import Magazzino from "./pages/Magazzino";
+import Manutenzione from "./pages/Manutenzione";
 import Touch from "./pages/Touch";
 import Mobile from "./pages/Mobile";
 import Portale from "./pages/Portale";
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/logistica" element={<WithLayout><Logistica /></WithLayout>} />
             <Route path="/fatture" element={<WithLayout><Fatture /></WithLayout>} />
             <Route path="/magazzino" element={<WithLayout roles={["admin","produzione","contabilita","logistica"]}><Magazzino /></WithLayout>} />
+            <Route path="/manutenzione" element={<WithLayout roles={["admin","produzione"]}><Manutenzione /></WithLayout>} />
             <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
             <Route path="/touch" element={<ProtectedRoute><Touch /></ProtectedRoute>} />
             <Route path="/mobile" element={<ProtectedRoute><Mobile /></ProtectedRoute>} />

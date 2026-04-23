@@ -34,6 +34,7 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     macchine_disp = sum(1 for m in macchine if m.get("stato") == "disponibile")
 
     nc_aperte = await db.non_conformita.count_documents({"stato": "aperta"})
+    tickets_aperti = await db.tickets.count_documents({"stato": {"$in": ["aperto", "in_lavorazione"]}})
 
     # Magazzino: conta gli articoli in allarme (scorta <= minima oppure scadenza imminente/scaduta)
     magazzino_items = await db.magazzino.find({}, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}).to_list(2000)
@@ -99,6 +100,7 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         "macchine_disponibili": macchine_disp,
         "macchine_totali": len(macchine),
         "nc_aperte": nc_aperte,
+        "tickets_aperti": tickets_aperti,
         "magazzino_allarmi": magazzino_allarmi,
         "consegne_oggi": consegne_oggi,
         "consegne_consegnate": total_delivered,

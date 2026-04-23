@@ -45,6 +45,12 @@ async def ensure_indexes():
     await db.magazzino.create_index("codice")
     await db.magazzino_movimenti.create_index("articolo_id")
     await db.magazzino_movimenti.create_index("timestamp")
+    await db.tickets.create_index("id", unique=True)
+    await db.tickets.create_index("macchina_id")
+    await db.tickets.create_index("stato")
+    await db.tickets.create_index("created_at")
+    await db.interventi.create_index("ticket_id")
+    await db.interventi.create_index("data_intervento")
 
 
 # =====================================================================
@@ -57,6 +63,7 @@ async def ensure_counters():
         "lotto": db.lotti,
         "consegna": db.consegne,
         "fattura": db.fatture,
+        "ticket": db.tickets,
     }
     for name, coll in mapping.items():
         existing = await db.counters.find_one({"_id": name})
@@ -289,12 +296,88 @@ async def seed_magazzino():
     logger.info(f"[SEED] Magazzino: {len(items)} articoli")
 
 
+async def seed_tickets():
+    if await db.tickets.count_documents({}) > 0:
+        return
+    macchine = await db.macchine.find({}, {"_id": 0}).to_list(50)
+    if not macchine:
+        return
+    now = now_utc()
+    by_codice = {m["codice"]: m for m in macchine}
+    demo = [
+        {"mac": "ASC-02", "tipo": "guasto", "priorita": "critica", "stato": "in_lavorazione", "titolo": "Guasto resistenza riscaldamento",
+         "descrizione": "La macchina non raggiunge la temperatura di 80°C. Ciclo interrotto a metà.", "fermo": True, "age_h": 12,
+         "interventi": [{"operatore": "Franco Tecnici Srl", "descrizione": "Diagnosi iniziale: resistenza bruciata, richiesto ricambio.", "durata_min": 45, "pezzi_usati": [], "costo": 120.0}]},
+        {"mac": "LAV-01", "tipo": "preventiva", "priorita": "media", "stato": "chiuso", "titolo": "Sostituzione cuscinetti annuali",
+         "descrizione": "Manutenzione programmata annuale come da piano fornitore.", "fermo": False, "age_h": 240,
+         "interventi": [
+             {"operatore": "Matteo Rossi", "descrizione": "Smontaggio cestello, ispezione.", "durata_min": 90, "pezzi_usati": ["Cuscinetti X2"], "costo": 180.0},
+             {"operatore": "Matteo Rossi", "descrizione": "Montaggio nuovi cuscinetti + test 30'.", "durata_min": 120, "pezzi_usati": [], "costo": 0.0},
+         ]},
+        {"mac": "STI-01", "tipo": "guasto", "priorita": "alta", "stato": "aperto", "titolo": "Rumore anomalo rullo principale",
+         "descrizione": "Al terzo ciclo della giornata il rullo emette un rumore metallico intermittente.", "fermo": False, "age_h": 3,
+         "interventi": []},
+        {"mac": "LAV-02", "tipo": "revisione", "priorita": "bassa", "stato": "risolto", "titolo": "Revisione semestrale pompe",
+         "descrizione": "Controllo e pulizia pompe di scarico + sostituzione filtri.", "fermo": False, "age_h": 96,
+         "interventi": [{"operatore": "Giorgio Impiantisti", "descrizione": "Pulizia pompe e sostituzione filtri std.", "durata_min": 75, "pezzi_usati": ["Filtro STD-02"], "costo": 45.0}]},
+    ]
+    for idx, d in enumerate(demo, start=1):
+        mac = by_codice.get(d["mac"])
+        if not mac:
+            continue
+        created = now - timedelta(hours=d["age_h"])
+        tid = new_id()
+        costo_tot = sum(i["costo"] for i in d["interventi"])
+        durata_tot = sum(i["durata_min"] for i in d["interventi"])
+        t_doc = {
+            "id": tid,
+            "numero": f"TKT-{datetime.now().year}-{idx:05d}",
+            "macchina_id": mac["id"],
+            "macchina_codice": mac["codice"],
+            "tipo": d["tipo"],
+            "priorita": d["priorita"],
+            "stato": d["stato"],
+            "titolo": d["titolo"],
+            "descrizione": d["descrizione"],
+            "segnalato_da": "Sistema Demo",
+            "assegnato_a": d["interventi"][0]["operatore"] if d["interventi"] else "",
+            "fermo_macchina": d["fermo"],
+            "interventi_count": len(d["interventi"]),
+            "durata_totale_min": durata_tot,
+            "costo_totale": round(costo_tot, 2),
+            "created_at": created,
+            "updated_at": created,
+        }
+        if d["stato"] in ("risolto", "chiuso"):
+            t_doc["chiuso_at"] = created + timedelta(hours=max(2, d["age_h"] // 4))
+        await db.tickets.insert_one(t_doc)
+        for j, iv in enumerate(d["interventi"]):
+            await db.interventi.insert_one({
+                "id": new_id(),
+                "ticket_id": tid,
+                "macchina_id": mac["id"],
+                "data_intervento": created + timedelta(hours=j + 1),
+                "operatore": iv["operatore"],
+                "descrizione": iv["descrizione"],
+                "durata_min": iv["durata_min"],
+                "pezzi_usati": iv["pezzi_usati"],
+                "costo": iv["costo"],
+                "note": "",
+                "created_at": created + timedelta(hours=j + 1),
+            })
+        # Seed-time: allinea stato macchina
+        if d["fermo"] and d["stato"] not in ("risolto", "chiuso"):
+            await db.macchine.update_one({"id": mac["id"]}, {"$set": {"stato": "guasto"}})
+    logger.info(f"[SEED] Tickets: {len(demo)}")
+
+
 async def run_all():
     await migrate_dates()
     await seed_admin_and_users()
     await seed_catalog_and_lotti()
     await seed_portale_cliente_user()
     await seed_magazzino()
+    await seed_tickets()
     await ensure_indexes()
     await ensure_counters()
     logger.info("[SEED] Completato.")

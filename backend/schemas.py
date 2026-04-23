@@ -141,6 +141,26 @@ class MovimentoIn(BaseModel):
     note: Optional[str] = ""
 
 
+class TicketIn(BaseModel):
+    macchina_id: str
+    tipo: str = "guasto"           # guasto | programmata | preventiva | revisione
+    priorita: str = "media"        # bassa | media | alta | critica
+    titolo: str
+    descrizione: str = ""
+    assegnato_a: Optional[str] = ""
+    fermo_macchina: bool = False
+
+
+class InterventoIn(BaseModel):
+    data_intervento: Optional[str] = None
+    operatore: str
+    descrizione: str
+    durata_min: int = 0
+    pezzi_usati: List[str] = Field(default_factory=list)
+    costo: float = 0
+    note: Optional[str] = ""
+
+
 # ----------------------------------------------------------------------
 # PATCH schemas — all fields optional, extras ignored.
 # Use `.model_dump(exclude_unset=True)` in handlers to update only set fields.
@@ -253,3 +273,14 @@ class PatchMagazzinoIn(_PatchBase):
     scadenza: Optional[str] = None
     note: Optional[str] = None
     attivo: Optional[bool] = None
+
+
+class PatchTicketIn(_PatchBase):
+    stato: Optional[str] = None          # aperto | in_lavorazione | risolto | chiuso
+    priorita: Optional[str] = None
+    tipo: Optional[str] = None
+    titolo: Optional[str] = None
+    descrizione: Optional[str] = None
+    assegnato_a: Optional[str] = None
+    fermo_macchina: Optional[bool] = None
+    soluzione: Optional[str] = None
