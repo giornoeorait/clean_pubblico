@@ -138,7 +138,6 @@ export default function Hardware() {
             <Select value={sLotto} onValueChange={setSLotto}>
               <SelectTrigger data-testid="hw-scale-lotto"><SelectValue placeholder="Lotto (opzionale)" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— libero —</SelectItem>
                 {lotti.slice(0, 50).map(l => <SelectItem key={l.id} value={l.id}>{l.numero}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -157,7 +156,6 @@ export default function Hardware() {
             <Select value={rfidLotto} onValueChange={setRfidLotto}>
               <SelectTrigger data-testid="hw-rfid-lotto"><SelectValue placeholder="Lotto (opzionale)" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— libero —</SelectItem>
                 {lotti.slice(0, 50).map(l => <SelectItem key={l.id} value={l.id}>{l.numero}</SelectItem>)}
               </SelectContent>
             </Select>

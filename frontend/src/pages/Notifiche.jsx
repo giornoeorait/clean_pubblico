@@ -93,7 +93,6 @@ export default function Notifiche() {
                   <Select value={form.template} onValueChange={v => setForm({...form, template: v})}>
                     <SelectTrigger data-testid="notif-template"><SelectValue placeholder="Nessuno — testo libero" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">— Nessuno —</SelectItem>
                       {status.templates.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
