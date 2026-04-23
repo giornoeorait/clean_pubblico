@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends
-from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, next_seq
+from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, next_seq, tenant_scope, merge_scope, inject_tenant
 from schemas import FatturaIn, PatchFatturaIn
 
 router = APIRouter(prefix="/fatture", tags=["billing"])
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/fatture", tags=["billing"])
 
 @router.get("")
 async def list_fatture(user: Dict = Depends(get_current_user), cliente_id: Optional[str] = None, limit: int = 200):
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = dict(tenant_scope(user))
     if cliente_id:
         query["cliente_id"] = cliente_id
     if user["role"] == "cliente" and user.get("cliente_id"):
@@ -34,6 +34,7 @@ async def create_fattura(body: FatturaIn, user: Dict = Depends(require_roles("ad
     if doc.get("scadenza"):
         doc["scadenza"] = to_dt(doc["scadenza"])
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.fatture.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "fattura", doc["id"])
@@ -51,6 +52,6 @@ async def update_fattura(fid: str, body: PatchFatturaIn, user: Dict = Depends(re
             if dt is not None:
                 data[f] = dt
     data["updated_at"] = now_utc()
-    await db.fatture.update_one({"id": fid}, {"$set": data})
+    await db.fatture.update_one(merge_scope(user, {"id": fid}), {"$set": data})
     await log_audit(user, "UPDATE", "fattura", fid, {"stato": data.get("stato")})
     return {"ok": True}

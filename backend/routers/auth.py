@@ -1,7 +1,7 @@
 """Auth routes."""
 from typing import Dict
 from fastapi import APIRouter, HTTPException, Depends, Response
-from core import db, verify_password, create_access_token, clean_doc, get_current_user
+from core import db, verify_password, create_access_token, clean_doc, get_current_user, DEMO_TENANT_ID
 from schemas import LoginIn
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -15,13 +15,16 @@ async def login(body: LoginIn, response: Response):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     if not user.get("attivo", True):
         raise HTTPException(status_code=403, detail="Utente disattivato")
-    token = create_access_token(user["id"], user["email"], user["role"])
+    tenant_id = user.get("tenant_id") or DEMO_TENANT_ID  # legacy fallback
+    token = create_access_token(user["id"], user["email"], user["role"], tenant_id)
     response.set_cookie(
         key="access_token", value=token, httponly=True, secure=False,
         samesite="lax", max_age=43200, path="/",
     )
     clean_doc(user)
-    return {"user": user, "token": token}
+    # Enrich with tenant basic info
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "piano": 1, "stato": 1, "nome": 1, "trial_ends_at": 1})
+    return {"user": user, "token": token, "tenant": tenant}
 
 
 @router.post("/logout")

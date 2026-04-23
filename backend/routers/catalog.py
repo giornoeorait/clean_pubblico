@@ -2,7 +2,7 @@
 from typing import Dict, Any, Optional, Type
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit
+from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, tenant_scope, merge_scope, inject_tenant
 from schemas import (
     ClienteIn, ArticoloIn, MacchinaIn,
     PatchClienteIn, PatchArticoloIn, PatchMacchinaIn,
@@ -32,13 +32,13 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
 
     @router.get(f"/{path}")
     async def list_all(user: Dict = Depends(get_current_user), q: Optional[str] = None, limit: int = 500):
-        query: Dict[str, Any] = {}
+        query: Dict[str, Any] = dict(tenant_scope(user))
         if q:
-            query = {"$or": [
+            query["$or"] = [
                 {"descrizione": {"$regex": q, "$options": "i"}},
                 {"codice": {"$regex": q, "$options": "i"}},
                 {"ragione_sociale": {"$regex": q, "$options": "i"}},
-            ]}
+            ]
         items = await coll.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
         return items
 
@@ -49,6 +49,7 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
         doc["id"] = new_id()
         doc["created_at"] = now_utc()
         doc["updated_at"] = doc["created_at"]
+        inject_tenant(doc, user)
         await coll.insert_one(doc)
         doc.pop("_id", None)
         await log_audit(user, "CREATE", entity, doc["id"])
@@ -56,7 +57,7 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
 
     @router.get(f"/{path}/{{item_id}}")
     async def get_one(item_id: str, user: Dict = Depends(get_current_user)):
-        doc = await coll.find_one({"id": item_id}, {"_id": 0})
+        doc = await coll.find_one(merge_scope(user, {"id": item_id}), {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail=f"{entity} non trovato")
         return doc
@@ -68,7 +69,7 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
             return {"ok": True}
         _coerce_dates(coll_name, data)
         data["updated_at"] = now_utc()
-        res = await coll.update_one({"id": item_id}, {"$set": data})
+        res = await coll.update_one(merge_scope(user, {"id": item_id}), {"$set": data})
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail=f"{entity} non trovato")
         await log_audit(user, "UPDATE", entity, item_id, data)
@@ -76,7 +77,7 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
 
     @router.delete(f"/{path}/{{item_id}}")
     async def delete_one(item_id: str, user: Dict = Depends(require_roles(*write_roles))):
-        await coll.delete_one({"id": item_id})
+        await coll.delete_one(merge_scope(user, {"id": item_id}))
         await log_audit(user, "DELETE", entity, item_id)
         return {"ok": True}
 

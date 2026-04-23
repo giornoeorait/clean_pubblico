@@ -1,7 +1,7 @@
 """Users management (admin only)."""
 from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
-from core import db, new_id, now_utc, hash_password, require_roles, log_audit
+from core import db, new_id, now_utc, hash_password, require_roles, log_audit, tenant_scope, inject_tenant, merge_scope
 from schemas import UserCreate, PatchUserIn
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -9,7 +9,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("")
 async def list_users(user: Dict = Depends(require_roles("admin"))):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(5000)
+    users = await db.users.find(tenant_scope(user), {"_id": 0, "password_hash": 0}).to_list(5000)
     return users
 
 
@@ -27,6 +27,7 @@ async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admi
         "attivo": True,
         "created_at": now_utc(),
     }
+    inject_tenant(doc, user)
     await db.users.insert_one(doc)
     await log_audit(user, "CREATE", "user", doc["id"], {"email": doc["email"]})
     doc.pop("password_hash", None)
@@ -43,13 +44,13 @@ async def update_user(uid: str, body: PatchUserIn, user: Dict = Depends(require_
         data.pop("password", None)
     if not data:
         return {"ok": True}
-    await db.users.update_one({"id": uid}, {"$set": data})
+    await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": data})
     await log_audit(user, "UPDATE", "user", uid, data)
     return {"ok": True}
 
 
 @router.delete("/{uid}")
 async def delete_user(uid: str, user: Dict = Depends(require_roles("admin"))):
-    await db.users.update_one({"id": uid}, {"$set": {"attivo": False}})
+    await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": False}})
     await log_audit(user, "DEACTIVATE", "user", uid)
     return {"ok": True}

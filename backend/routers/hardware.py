@@ -48,6 +48,7 @@ async def _log_event(kind: str, payload: Dict[str, Any], user: Dict, extra: Opti
         "operatore": user["name"],
         "created_at": now_utc(),
     }
+    inject_tenant(event, user)
     await db.hardware_events.insert_one(event)
     event.pop("_id", None)
     return event
@@ -55,7 +56,7 @@ async def _log_event(kind: str, payload: Dict[str, Any], user: Dict, extra: Opti
 
 @router.get("/hardware/events")
 async def list_events(user: Dict = Depends(get_current_user), kind: Optional[str] = None, limit: int = 200):
-    q: Dict[str, Any] = {}
+    q: Dict[str, Any] = dict(tenant_scope(user))
     if kind:
         q["kind"] = kind
     return await db.hardware_events.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
@@ -68,22 +69,22 @@ async def barcode_scan(body: ScanIn, user: Dict = Depends(require_roles(*_WRITE)
     code = body.code.strip()
     matched: Dict[str, Any] = {"code": code, "match": None, "entity": None}
 
-    lotto = await db.lotti.find_one({"$or": [{"numero": code}, {"id": code}]}, {"_id": 0})
+    lotto = await db.lotti.find_one(merge_scope(user, {"$or": [{"numero": code}, {"id": code}]}), {"_id": 0})
     if lotto:
         matched["match"] = "lotto"
         matched["entity"] = lotto
     else:
-        articolo = await db.articoli.find_one({"$or": [{"codice": code}, {"barcode": code}]}, {"_id": 0})
+        articolo = await db.articoli.find_one(merge_scope(user, {"$or": [{"codice": code}, {"barcode": code}]}), {"_id": 0})
         if articolo:
             matched["match"] = "articolo"
             matched["entity"] = articolo
         else:
-            consegna = await db.consegne.find_one({"numero": code}, {"_id": 0})
+            consegna = await db.consegne.find_one(merge_scope(user, {"numero": code}), {"_id": 0})
             if consegna:
                 matched["match"] = "consegna"
                 matched["entity"] = consegna
             else:
-                ritiro = await db.ritiri.find_one({"numero": code}, {"_id": 0})
+                ritiro = await db.ritiri.find_one(merge_scope(user, {"numero": code}), {"_id": 0})
                 if ritiro:
                     matched["match"] = "ritiro"
                     matched["entity"] = ritiro
@@ -102,7 +103,7 @@ async def scale_reading(body: ScaleIn, user: Dict = Depends(require_roles(*_WRIT
     applied_to = None
     if body.lotto_id:
         res = await db.lotti.update_one(
-            {"id": body.lotto_id},
+            merge_scope(user, {"id": body.lotto_id}),
             {"$set": {"peso_kg": body.peso_kg, "peso_letto_at": now_utc()}},
         )
         if res.matched_count == 0:
@@ -110,7 +111,7 @@ async def scale_reading(body: ScaleIn, user: Dict = Depends(require_roles(*_WRIT
         applied_to = {"type": "lotto", "id": body.lotto_id}
     elif body.ritiro_id:
         res = await db.ritiri.update_one(
-            {"id": body.ritiro_id},
+            merge_scope(user, {"id": body.ritiro_id}),
             {"$set": {"peso_totale_kg": body.peso_kg, "peso_letto_at": now_utc()}},
         )
         if res.matched_count == 0:
@@ -128,7 +129,7 @@ async def rfid_read(body: RfidIn, user: Dict = Depends(require_roles(*_WRITE))):
     """Tag RFID letto (singolo/batch). Persiste e aggiorna contatore rfid_reads su articolo."""
     if body.articolo_id:
         await db.articoli.update_one(
-            {"id": body.articolo_id},
+            merge_scope(user, {"id": body.articolo_id}),
             {"$inc": {"rfid_reads": 1}, "$set": {"last_rfid_tag": body.tag, "last_rfid_at": now_utc()}},
         )
     event = await _log_event("rfid", body.model_dump(), user)
@@ -151,7 +152,7 @@ async def rfid_batch(body: RfidBatchIn, user: Dict = Depends(require_roles(*_WRI
     event = await _log_event("rfid_batch", {"tags": seen, "station": body.station, "lotto_id": body.lotto_id}, user, {"count": len(seen)})
     if body.lotto_id:
         await db.lotti.update_one(
-            {"id": body.lotto_id},
+            merge_scope(user, {"id": body.lotto_id}),
             {"$set": {"rfid_tags": seen, "rfid_count": len(seen), "rfid_read_at": now_utc()}},
         )
     await log_audit(user, "RFID_BATCH", "lotto" if body.lotto_id else "gate", body.lotto_id or body.station or "-", {"count": len(seen)})

@@ -25,6 +25,9 @@ import Mobile from "./pages/Mobile";
 import Portale from "./pages/Portale";
 import Notifiche from "./pages/Notifiche";
 import Hardware from "./pages/Hardware";
+import Pricing from "./pages/Pricing";
+import Register from "./pages/Register";
+import Billing from "./pages/Billing";
 
 function WithLayout({ children, roles }) {
   return (
@@ -50,6 +53,9 @@ export default function App() {
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
             <Route path="/dashboard" element={<WithLayout><Dashboard /></WithLayout>} />
             <Route path="/clienti" element={<WithLayout><Clienti /></WithLayout>} />
             <Route path="/articoli" element={<WithLayout><Articoli /></WithLayout>} />

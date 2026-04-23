@@ -1,76 +1,69 @@
 # CleanTec - PRD
 
 ## Original Problem
-Build "CleanTec" - integrated ERP+MES+WMS+TMS for industrial laundry (clienti, ritiri/consegne, lotti, lavorazioni, tracciabilità, magazzino, fatturazione, KPI, RBAC).
+Build "CleanTec" - integrated ERP+MES+WMS+TMS SaaS for industrial laundry.
+Full multi-tenant self-service SaaS with Stripe subscriptions.
 
 ## Stack
-- Backend: FastAPI + Motor + MongoDB (connection pool maxPoolSize=200 for scale)
+- Backend: FastAPI + Motor + MongoDB (maxPoolSize=200)
 - Frontend: React 19 + Tailwind + Shadcn/UI + Phosphor Icons + Recharts
-- Auth: JWT (Bearer + optional cookie)
-- i18n scaffolding for multilingua (IT default)
-- Object Storage: Emergent Object Storage (via EMERGENT_LLM_KEY)
-- Notifications: Twilio (optional) with stub fallback for dev
+- Auth: JWT (Bearer + cookie) with tenant_id in claims
+- i18n (IT default)
+- Object Storage: Emergent Object Storage (EMERGENT_LLM_KEY)
+- Notifications: Twilio (optional) + stub fallback
+- Payments: Stripe via emergentintegrations
 
-## Implemented (updated 23 Apr 2026)
-### Auth & RBAC
-- JWT auth with bcrypt; 6 roles (admin, produzione, logistica, qualita, contabilita, cliente)
-- ErrorBoundary + filtro estensioni browser
+## Multi-tenant SaaS (23 Apr 2026)
+- Collection `tenants`: slug, piano, stato (trial|active|past_due|canceled|suspended), trial_ends_at, limits, usage, stripe_*
+- Every data collection carries `tenant_id` enforced via `tenant_scope(user)` / `merge_scope` / `inject_tenant` helpers in core.py
+- JWT token includes tenant_id for O(1) auth+scoping
+- Self-service registration at `/register` creates tenant + admin user + 14-day trial (no card)
+- Public pricing page at `/pricing` with monthly/annual toggle (annual = -17%)
+- Admin billing page at `/billing` with plan switcher, Stripe checkout, payment history
+- Trial banner on every page showing days remaining
+- Backfill migration: all legacy data assigned to DEMO_TENANT_ID
 
-### Anagrafiche
-- Clienti / Articoli / Macchine / Utenti (CRUD + RBAC)
+## Plans (server-side authoritative)
+| Piano | Mensile | Annuale (/mese) | Utenti | Lotti/mese | SMS |
+|-------|---------|-----------------|--------|-----------|------|
+| Starter | €59 | €49 | 5 | 1.000 | 0 |
+| Pro (raccomandato) | €179 | €149 | 20 | 10.000 | 100 |
+| Enterprise | €449 | €379 | ∞ | ∞ | 500 |
 
-### Operations (ciclo completo)
-- Accettazione merce con ritiri + lotti multipli
-- Tracciabilità 9 stati (ritirato→…→consegnato) con storico
-- MES Kanban produzione (drag & drop)
-- Controllo Qualità (non conformità)
-- Logistica: consegne, autisti, auto-update lotti
+Trial: **14 giorni**, no card required.
 
-### Amministrazione
-- Fatturazione con righe/IVA/stati/scadenziario
+## Core Features (cumulative)
+### Ops
+- Clienti/Articoli/Macchine/Utenti CRUD
+- Accettazione → Ritiri → Lotti (9 stati)
+- MES Kanban + Controllo Qualità + Logistica + Fatturazione
 
-### Dashboard & KPI
-- KG oggi, lotti attivi, macchine, puntualità reale, fatturato, trend 7gg
+### Add-ons (P1 complete)
+- Magazzino detergenti/DPI con scorte minime
+- Manutenzione macchine con ticket + interventi
+- Object Storage (foto + firme digitali)
+- Notifiche SMS/WhatsApp (Twilio + stub)
+- Hardware ingestion REST (barcode, bilancia, RFID)
 
-### Interfacce dedicate
-- Touch (tablet), Mobile (autisti), Portale Cliente (role=="cliente")
+### Interfaces
+- Dashboard, Touch (tablet), Mobile (autisti), Portale Cliente
 
-### Magazzino (P1 ✓)
-- Detergenti/DPI, scorte minime, allarmi, movimenti
+## Stripe Integration
+- `POST /api/subscriptions/checkout` — crea sessione Stripe (monthly|annual)
+- `GET /api/subscriptions/status/{session_id}` — polling post-return
+- `POST /api/webhook/stripe` — webhook handler
+- `GET /api/subscriptions/transactions` — storico
+- Collezione `payment_transactions` con tenant_id + session_id + plan_id + billing_cycle + status
+- Env: `STRIPE_API_KEY=sk_test_emergent` (già in .env)
 
-### Manutenzione (P1 ✓)
-- Ticket guasti + interventi + fermo-macchina tracking
+## Security
+- Every write endpoint enforces `tenant_id` filter via `merge_scope(user, {...})`
+- JWT carries tenant_id; mismatch = 404 on queries (data invisible)
+- Rate limit naive su `/tenants/register` (5/min/IP)
+- Password policy: min 8 chars
+- Plan enforcement ready via `require_active_tenant()` (to be wired progressively)
 
-### Object Storage (P1 ✓)
-- Upload foto + firme canvas digitali
-- `/api/files/upload`, `/api/files/signature`, `/api/files/{path}?auth={token}`
-- Wirati in Accettazione, Qualità, Consegne, Ticket Manutenzione
-- **Tested end-to-end 23 Apr (iteration 8 - 100% backend)**
-
-### Notifications SMS/WhatsApp (P1 ✓ - 23 Apr)
-- Provider Twilio con fallback STUB (log-only) se mancano env
-- Templates pre-built: consegna_in_transito, consegna_completata, ritiro_programmato, ticket_critico, lotto_pronto, scorta_bassa
-- Auto-trigger su PATCH `/api/consegne` (stato=in_transito|consegnata) → SMS al cliente
-- Auto-trigger su POST `/api/tickets` con priorità=critica → SMS a MAINTENANCE_ALERT_PHONE
-- Pagina UI `/notifiche` per invio manuale + storico + KPI
-- **Env opzionali per attivare Twilio:** TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, TWILIO_WHATSAPP_FROM, MAINTENANCE_ALERT_PHONE
-
-### Hardware ingestion (P1 ✓ - 23 Apr)
-- REST endpoints per bridge on-premise / daemon USB / gateway IoT
-- `/api/hardware/scan` — barcode/QR → lookup lotti/articoli/consegne/ritiri
-- `/api/hardware/scale` — peso lotto da bilancia USB (aggiorna peso_kg su lotto)
-- `/api/hardware/rfid` e `/rfid/batch` — lettura tag singoli o gate batch
-- `/api/hardware/events` — storico con filtro kind
-- Pagina UI `/hardware` con 3 card operative + lista eventi
-
-### Architettura
-- Backend modulare (11 router domain-specific: auth, users, catalog, operations, billing, dashboard, magazzino, manutenzione, files, notifications, hardware)
-- Pydantic schemas dedicati per PATCH
-- Counter atomici per numerazioni
-- MongoDB BSON datetime nativo
-- Audit log completo
-
-## Roles / Demo credentials
+## Demo credentials (DEMO tenant, shared across agent testing)
 | Email | Password | Role |
 |-------|----------|------|
 | admin@cleantec.it | admin123 | admin |
@@ -78,16 +71,23 @@ Build "CleanTec" - integrated ERP+MES+WMS+TMS for industrial laundry (clienti, r
 | logistica@cleantec.it | logistica123 | logistica |
 | qualita@cleantec.it | qualita123 | qualita |
 | contabilita@cleantec.it | contabilita123 | contabilita |
-| cliente@cleantec.it | cliente123 | cliente (→ Hotel Excelsior Roma) |
+| cliente@cleantec.it | cliente123 | cliente → Hotel Excelsior Roma |
+| owner@lavtest.it | segretaPWD1! | NEW tenant (Pro trial) |
 
 ## Backlog (P2)
-- Business Intelligence: previsione carichi, analisi consumi, forecast fatturato
-- Inventario biancheria a noleggio per cliente (rotazione capi)
-- Multi-tenant isolation + hardening per scale (Redis cache, rate limiter)
-- Firme Twilio webhook per delivery receipts (status callback)
-- Short-lived signed URLs per /api/files (sostituire ?auth= con HMAC)
-- TTL index su db.hardware_events (retention)
+- Plan limit enforcement in CREATE endpoints (block if over quota)
+- Email verification flow
+- Stripe Customer Portal (update card, download invoices) — richiede Stripe full SDK
+- Superadmin dashboard (MRR, churn, tenants list)
+- BI reporting avanzato
+- Inventario biancheria noleggio per cliente
+- Short-lived signed URLs per /api/files (HMAC invece di `?auth=`)
+- TTL index `db.hardware_events` (retention)
+- SDI fatturazione elettronica italiana XML
+- 2FA OTP
+- Test regression multi-tenant isolation con testing agent
 
 ## Next Action Items
-- Configurare credenziali Twilio reali (quando l'utente le fornisce)
-- P2 BI reporting
+- Run testing_agent_v3 to validate multi-tenant isolation + Stripe flow
+- Wire plan limit enforcement on create endpoints (users, lotti)
+- Admin side: superadmin dashboard

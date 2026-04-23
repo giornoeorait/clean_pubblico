@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Sparkle, SignIn, Factory, Truck, ShieldCheck, ChartBar } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -129,6 +129,11 @@ export default function Login() {
           </form>
 
           <div className="mt-10 pt-6 border-t border-slate-200">
+            <div className="text-center mb-4">
+              <Link to="/pricing" className="text-sm text-indaco hover:underline font-semibold" data-testid="login-to-pricing">
+                Non hai ancora un account? Inizia 14 giorni gratis →
+              </Link>
+            </div>
             <div className="overline text-slate-400 mb-3">Account demo</div>
             <div className="grid grid-cols-1 gap-2">
               {[

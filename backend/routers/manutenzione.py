@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core import (
     db, new_id, now_utc, to_dt,
     get_current_user, require_roles, log_audit, next_seq,
+    tenant_scope, merge_scope, inject_tenant,
 )
 from schemas import TicketIn, PatchTicketIn, InterventoIn
 from notifications import send_notification
@@ -42,7 +43,7 @@ async def list_tickets(
     priorita: Optional[str] = None,
     limit: int = 500,
 ):
-    q: Dict[str, Any] = {}
+    q: Dict[str, Any] = dict(tenant_scope(user))
     if macchina_id: q["macchina_id"] = macchina_id
     if stato: q["stato"] = stato
     if priorita: q["priorita"] = priorita
@@ -51,7 +52,7 @@ async def list_tickets(
 
 @router.post("/tickets")
 async def create_ticket(body: TicketIn, user: Dict = Depends(require_roles(*_WRITE_ROLES))):
-    macchina = await db.macchine.find_one({"id": body.macchina_id}, {"_id": 0})
+    macchina = await db.macchine.find_one(merge_scope(user, {"id": body.macchina_id}), {"_id": 0})
     if not macchina:
         raise HTTPException(404, "Macchina non trovata")
 
@@ -67,6 +68,7 @@ async def create_ticket(body: TicketIn, user: Dict = Depends(require_roles(*_WRI
     doc["costo_totale"] = 0.0
     doc["created_at"] = now_utc()
     doc["updated_at"] = doc["created_at"]
+    inject_tenant(doc, user)
 
     await db.tickets.insert_one(doc)
     doc.pop("_id", None)
@@ -97,16 +99,16 @@ async def create_ticket(body: TicketIn, user: Dict = Depends(require_roles(*_WRI
 
 @router.get("/tickets/{tid}")
 async def get_ticket(tid: str, user: Dict = Depends(get_current_user)):
-    doc = await db.tickets.find_one({"id": tid}, {"_id": 0})
+    doc = await db.tickets.find_one(merge_scope(user, {"id": tid}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Ticket non trovato")
-    doc["interventi"] = await db.interventi.find({"ticket_id": tid}, {"_id": 0}).sort("data_intervento", -1).to_list(200)
+    doc["interventi"] = await db.interventi.find(merge_scope(user, {"ticket_id": tid}), {"_id": 0}).sort("data_intervento", -1).to_list(200)
     return doc
 
 
 @router.patch("/tickets/{tid}")
 async def update_ticket(tid: str, body: PatchTicketIn, user: Dict = Depends(require_roles(*_WRITE_ROLES))):
-    ticket = await db.tickets.find_one({"id": tid}, {"_id": 0})
+    ticket = await db.tickets.find_one(merge_scope(user, {"id": tid}), {"_id": 0})
     if not ticket:
         raise HTTPException(404, "Ticket non trovato")
 
@@ -118,21 +120,20 @@ async def update_ticket(tid: str, body: PatchTicketIn, user: Dict = Depends(requ
     new_stato = data.get("stato")
     if new_stato in ("risolto", "chiuso") and ticket.get("stato") not in ("risolto", "chiuso"):
         data.setdefault("chiuso_at", now_utc())
-        # If machine was marked guasto by this ticket, restore availability
         if ticket.get("fermo_macchina"):
             await _update_macchina_stato(ticket["macchina_id"], "disponibile")
     elif new_stato == "in_lavorazione" and data.get("fermo_macchina") is True:
         await _update_macchina_stato(ticket["macchina_id"], "guasto")
 
-    await db.tickets.update_one({"id": tid}, {"$set": data})
+    await db.tickets.update_one(merge_scope(user, {"id": tid}), {"$set": data})
     await log_audit(user, "UPDATE", "ticket", tid, {"stato": new_stato})
     return {"ok": True}
 
 
 @router.delete("/tickets/{tid}")
 async def delete_ticket(tid: str, user: Dict = Depends(require_roles("admin"))):
-    await db.interventi.delete_many({"ticket_id": tid})
-    await db.tickets.delete_one({"id": tid})
+    await db.interventi.delete_many(merge_scope(user, {"ticket_id": tid}))
+    await db.tickets.delete_one(merge_scope(user, {"id": tid}))
     await log_audit(user, "DELETE", "ticket", tid)
     return {"ok": True}
 
@@ -140,12 +141,12 @@ async def delete_ticket(tid: str, user: Dict = Depends(require_roles("admin"))):
 # ---- Interventi sul ticket ----------------------------------------------
 @router.get("/tickets/{tid}/interventi")
 async def list_interventi(tid: str, user: Dict = Depends(get_current_user)):
-    return await db.interventi.find({"ticket_id": tid}, {"_id": 0}).sort("data_intervento", -1).to_list(500)
+    return await db.interventi.find(merge_scope(user, {"ticket_id": tid}), {"_id": 0}).sort("data_intervento", -1).to_list(500)
 
 
 @router.post("/tickets/{tid}/interventi")
 async def add_intervento(tid: str, body: InterventoIn, user: Dict = Depends(require_roles(*_WRITE_ROLES))):
-    ticket = await db.tickets.find_one({"id": tid})
+    ticket = await db.tickets.find_one(merge_scope(user, {"id": tid}))
     if not ticket:
         raise HTTPException(404, "Ticket non trovato")
 
@@ -155,6 +156,7 @@ async def add_intervento(tid: str, body: InterventoIn, user: Dict = Depends(requ
     doc["macchina_id"] = ticket.get("macchina_id")
     doc["data_intervento"] = to_dt(doc.get("data_intervento")) or now_utc()
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.interventi.insert_one(doc)
     doc.pop("_id", None)
 
@@ -162,7 +164,7 @@ async def add_intervento(tid: str, body: InterventoIn, user: Dict = Depends(requ
 
     # Auto-transition: first intervento → in_lavorazione
     if ticket.get("stato") == "aperto":
-        await db.tickets.update_one({"id": tid}, {"$set": {"stato": "in_lavorazione", "updated_at": now_utc()}})
+        await db.tickets.update_one(merge_scope(user, {"id": tid}), {"$set": {"stato": "in_lavorazione", "updated_at": now_utc()}})
 
     await log_audit(user, "CREATE", "intervento", doc["id"], {"ticket": tid})
     return doc
@@ -171,7 +173,7 @@ async def add_intervento(tid: str, body: InterventoIn, user: Dict = Depends(requ
 # ---- Storico manutenzione per macchina ----------------------------------
 @router.get("/macchine/{mid}/storico-manutenzione")
 async def storico_macchina(mid: str, user: Dict = Depends(get_current_user), limit: int = 200):
-    tickets = await db.tickets.find({"macchina_id": mid}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    tickets = await db.tickets.find(merge_scope(user, {"macchina_id": mid}), {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {
         "totale": len(tickets),
         "aperti": sum(1 for t in tickets if t["stato"] in ("aperto", "in_lavorazione")),

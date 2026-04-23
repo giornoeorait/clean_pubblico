@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core import db, get_current_user, require_roles, log_audit
+from core import db, get_current_user, require_roles, log_audit, tenant_scope, inject_tenant
 from notifications import send_notification, is_twilio_enabled
 
 router = APIRouter(tags=["notifications"])
@@ -39,7 +39,7 @@ async def status():
 
 @router.get("/notifications")
 async def list_notifications(user: Dict = Depends(get_current_user), limit: int = 200):
-    q: Dict[str, Any] = {}
+    q: Dict[str, Any] = dict(tenant_scope(user))
     if user["role"] == "cliente" and user.get("cliente_id"):
         q["context.cliente_id"] = user["cliente_id"]
     return await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)

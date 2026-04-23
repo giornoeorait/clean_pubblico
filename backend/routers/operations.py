@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core import (
     db, new_id, now_utc, to_dt, STATI_LOTTO,
     get_current_user, require_roles, log_audit, next_seq,
+    tenant_scope, merge_scope, inject_tenant,
 )
 from schemas import (
     RitiroIn, LottoIn, CambiaStatoIn, LavorazioneIn, ConsegnaIn, NonConformitaIn,
@@ -18,7 +19,7 @@ router = APIRouter(tags=["operations"])
 # ---- Ritiri --------------------------------------------------------------
 @router.get("/ritiri")
 async def list_ritiri(user: Dict = Depends(get_current_user), limit: int = 200):
-    return await db.ritiri.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return await db.ritiri.find(tenant_scope(user), {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
 @router.post("/ritiri")
@@ -30,6 +31,7 @@ async def create_ritiro(body: RitiroIn, user: Dict = Depends(require_roles("admi
     doc["stato"] = "creato"
     doc["data_ritiro"] = to_dt(doc.get("data_ritiro")) or now_utc()
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.ritiri.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "ritiro", doc["id"])
@@ -38,10 +40,10 @@ async def create_ritiro(body: RitiroIn, user: Dict = Depends(require_roles("admi
 
 @router.get("/ritiri/{rid}")
 async def get_ritiro(rid: str, user: Dict = Depends(get_current_user)):
-    doc = await db.ritiri.find_one({"id": rid}, {"_id": 0})
+    doc = await db.ritiri.find_one(merge_scope(user, {"id": rid}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Ritiro non trovato")
-    doc["lotti"] = await db.lotti.find({"ritiro_id": rid}, {"_id": 0}).to_list(1000)
+    doc["lotti"] = await db.lotti.find(merge_scope(user, {"ritiro_id": rid}), {"_id": 0}).to_list(1000)
     return doc
 
 
@@ -53,7 +55,7 @@ async def list_lotti(
     cliente_id: Optional[str] = None,
     limit: int = 500,
 ):
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = dict(tenant_scope(user))
     if stato:
         query["stato_corrente"] = stato
     if cliente_id:
@@ -79,6 +81,7 @@ async def create_lotto(body: LottoIn, user: Dict = Depends(require_roles("admin"
         "esito": "ok",
     }]
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.lotti.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "lotto", doc["id"])
@@ -93,7 +96,7 @@ async def cambia_stato_lotto(
 ):
     if body.nuovo_stato not in STATI_LOTTO:
         raise HTTPException(400, f"Stato non valido. Ammessi: {STATI_LOTTO}")
-    lotto = await db.lotti.find_one({"id": lid})
+    lotto = await db.lotti.find_one(merge_scope(user, {"id": lid}))
     if not lotto:
         raise HTTPException(404, "Lotto non trovato")
     entry = {
@@ -105,7 +108,7 @@ async def cambia_stato_lotto(
         "esito": body.esito,
     }
     await db.lotti.update_one(
-        {"id": lid},
+        merge_scope(user, {"id": lid}),
         {"$set": {"stato_corrente": body.nuovo_stato}, "$push": {"storico_stati": entry}},
     )
     await log_audit(user, "STATE_CHANGE", "lotto", lid, {"nuovo_stato": body.nuovo_stato, "operatore": user["name"]})
@@ -114,7 +117,7 @@ async def cambia_stato_lotto(
 
 @router.get("/lotti/{lid}")
 async def get_lotto(lid: str, user: Dict = Depends(get_current_user)):
-    doc = await db.lotti.find_one({"id": lid}, {"_id": 0})
+    doc = await db.lotti.find_one(merge_scope(user, {"id": lid}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Lotto non trovato")
     return doc
@@ -123,7 +126,7 @@ async def get_lotto(lid: str, user: Dict = Depends(get_current_user)):
 # ---- Lavorazioni (MES) ---------------------------------------------------
 @router.get("/lavorazioni")
 async def list_lavorazioni(user: Dict = Depends(get_current_user), stato: Optional[str] = None, limit: int = 500):
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = dict(tenant_scope(user))
     if stato:
         query["stato"] = stato
     return await db.lavorazioni.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
@@ -137,6 +140,7 @@ async def create_lavorazione(body: LavorazioneIn, user: Dict = Depends(require_r
     doc["operatore_id"] = user["id"]
     doc["operatore_nome"] = user["name"]
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.lavorazioni.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "lavorazione", doc["id"])
@@ -159,7 +163,7 @@ async def update_lavorazione(lid: str, body: PatchLavorazioneIn, user: Dict = De
         data["inizio"] = now_utc()
     if data.get("stato") == "completato" and "fine" not in data:
         data["fine"] = now_utc()
-    await db.lavorazioni.update_one({"id": lid}, {"$set": data})
+    await db.lavorazioni.update_one(merge_scope(user, {"id": lid}), {"$set": data})
     await log_audit(user, "UPDATE", "lavorazione", lid, {"stato": data.get("stato")})
     return {"ok": True}
 
@@ -167,7 +171,7 @@ async def update_lavorazione(lid: str, body: PatchLavorazioneIn, user: Dict = De
 # ---- Consegne (logistica) ------------------------------------------------
 @router.get("/consegne")
 async def list_consegne(user: Dict = Depends(get_current_user), limit: int = 200):
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = dict(tenant_scope(user))
     # Portale Cliente: restrict to own cliente_id
     if user["role"] == "cliente" and user.get("cliente_id"):
         query["cliente_id"] = user["cliente_id"]
@@ -183,6 +187,7 @@ async def create_consegna(body: ConsegnaIn, user: Dict = Depends(require_roles("
     doc["stato"] = "pianificata"
     doc["data_prevista"] = to_dt(doc.get("data_prevista")) or now_utc()
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.consegne.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "consegna", doc["id"])
@@ -204,16 +209,16 @@ async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(
     # Track real delivery date when transitioning to "consegnata" for real punctuality KPI
     if data.get("stato") == "consegnata" and "data_consegna_effettiva" not in data:
         data["data_consegna_effettiva"] = now_utc()
-    await db.consegne.update_one({"id": cid}, {"$set": data})
+    await db.consegne.update_one(merge_scope(user, {"id": cid}), {"$set": data})
     await log_audit(user, "UPDATE", "consegna", cid, {"stato": data.get("stato")})
 
     # Auto-notify cliente on key status changes (best-effort, non-blocking)
     new_stato = data.get("stato")
     if new_stato in ("in_transito", "consegnata"):
         try:
-            consegna = await db.consegne.find_one({"id": cid}, {"_id": 0})
+            consegna = await db.consegne.find_one(merge_scope(user, {"id": cid}), {"_id": 0})
             if consegna and consegna.get("cliente_id"):
-                cliente = await db.clienti.find_one({"id": consegna["cliente_id"]}, {"_id": 0})
+                cliente = await db.clienti.find_one(merge_scope(user, {"id": consegna["cliente_id"]}), {"_id": 0})
                 phone = (cliente or {}).get("telefono", "").strip()
                 if phone and phone.startswith("+"):
                     tpl = "consegna_in_transito" if new_stato == "in_transito" else "consegna_completata"
@@ -224,7 +229,7 @@ async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(
                     }[tpl]
                     await send_notification(
                         kind="sms", to=phone, body=body,
-                        context={"cliente_id": consegna["cliente_id"], "consegna_id": cid, "trigger": tpl},
+                        context={"cliente_id": consegna["cliente_id"], "consegna_id": cid, "trigger": tpl, "tenant_id": user["tenant_id"]},
                         user=user,
                     )
         except Exception:
@@ -236,7 +241,7 @@ async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(
 # ---- Non-conformità ------------------------------------------------------
 @router.get("/non-conformita")
 async def list_nc(user: Dict = Depends(get_current_user), limit: int = 200):
-    return await db.non_conformita.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return await db.non_conformita.find(tenant_scope(user), {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
 @router.post("/non-conformita")
@@ -246,6 +251,7 @@ async def create_nc(body: NonConformitaIn, user: Dict = Depends(require_roles("a
     doc["stato"] = "aperta"
     doc["segnalato_da"] = user["name"]
     doc["created_at"] = now_utc()
+    inject_tenant(doc, user)
     await db.non_conformita.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "non_conformita", doc["id"])
@@ -258,6 +264,6 @@ async def update_nc(nid: str, body: PatchNonConformitaIn, user: Dict = Depends(r
     if not data:
         return {"ok": True}
     data["updated_at"] = now_utc()
-    await db.non_conformita.update_one({"id": nid}, {"$set": data})
+    await db.non_conformita.update_one(merge_scope(user, {"id": nid}), {"$set": data})
     await log_audit(user, "UPDATE", "non_conformita", nid, {"stato": data.get("stato")})
     return {"ok": True}

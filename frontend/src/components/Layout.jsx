@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, HardDrives, ClipboardText, Path, Kanban,
   ShieldCheck, Truck, Receipt, UserList, Hand, DeviceMobile, Storefront,
-  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan,
+  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard,
 } from "@phosphor-icons/react";
 
 const ALL_ITEMS = [
@@ -23,6 +24,7 @@ const ALL_ITEMS = [
   { to: "/notifiche", label: "Notifiche", icon: ChatCircleText, roles: ["admin", "logistica", "produzione", "qualita"] },
   { to: "/hardware", label: "Console Hardware", icon: Scan, roles: ["admin", "produzione", "logistica"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
+  { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
 ];
 
 const SPECIAL_ITEMS = [
@@ -112,6 +114,7 @@ export default function Layout({ children }) {
 
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
+        <TrialBanner />
         <header className="h-16 lg:hidden bg-white border-b border-slate-200 flex items-center px-4 sticky top-0 z-30">
           <button onClick={() => setMobileOpen(true)} className="text-slate-600" data-testid="open-menu-btn">
             <List size={24} />

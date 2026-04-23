@@ -4,10 +4,66 @@ import logging
 from datetime import datetime, timedelta
 from core import (
     db, new_id, now_utc, hash_password, verify_password, to_dt,
-    STATI_LOTTO, ADMIN_EMAIL, ADMIN_PASSWORD,
+    STATI_LOTTO, ADMIN_EMAIL, ADMIN_PASSWORD, DEMO_TENANT_ID,
 )
 
 logger = logging.getLogger("cleantec.seed")
+
+
+# =====================================================================
+# Multi-tenant migration: create DEMO tenant and backfill tenant_id
+# =====================================================================
+# Collections that MUST carry tenant_id for data isolation
+TENANT_SCOPED_COLLECTIONS = [
+    "users", "clienti", "articoli", "macchine",
+    "ritiri", "lotti", "lavorazioni", "consegne",
+    "non_conformita", "fatture", "magazzino", "magazzino_movimenti",
+    "tickets", "interventi", "audit_log", "files",
+    "notifications", "hardware_events",
+]
+
+
+async def ensure_demo_tenant():
+    """Create the DEMO tenant if missing. Idempotent."""
+    existing = await db.tenants.find_one({"id": DEMO_TENANT_ID})
+    if existing:
+        return
+    now = now_utc()
+    await db.tenants.insert_one({
+        "id": DEMO_TENANT_ID,
+        "slug": "demo",
+        "nome": "CleanTec Demo",
+        "partita_iva": "",
+        "email_admin": ADMIN_EMAIL.lower(),
+        "piano": "enterprise",  # demo has full features unlocked
+        "stato": "active",
+        "trial_ends_at": None,
+        "current_period_end": now + timedelta(days=3650),  # 10 years
+        "stripe_customer_id": None,
+        "stripe_subscription_id": None,
+        "limits": {"users": -1, "lotti_monthly": -1, "sms_monthly": 500},
+        "usage": {"users": 0, "lotti_this_month": 0, "sms_this_month": 0, "last_reset": now},
+        "is_demo": True,
+        "created_at": now,
+        "updated_at": now,
+    })
+    logger.info(f"[SEED] DEMO tenant creato: {DEMO_TENANT_ID}")
+
+
+async def backfill_tenant_id():
+    """Assign tenant_id=DEMO to every legacy document missing it. Idempotent."""
+    total = 0
+    for coll_name in TENANT_SCOPED_COLLECTIONS:
+        coll = db[coll_name]
+        res = await coll.update_many(
+            {"tenant_id": {"$exists": False}},
+            {"$set": {"tenant_id": DEMO_TENANT_ID}},
+        )
+        if res.modified_count:
+            total += res.modified_count
+            logger.info(f"[SEED] backfilled tenant_id → {coll_name}: {res.modified_count}")
+    if total:
+        logger.info(f"[SEED] backfill totale tenant_id: {total} documenti")
 
 
 # =====================================================================
@@ -51,6 +107,19 @@ async def ensure_indexes():
     await db.tickets.create_index("created_at")
     await db.interventi.create_index("ticket_id")
     await db.interventi.create_index("data_intervento")
+    # Multi-tenant indexes
+    await db.tenants.create_index("id", unique=True)
+    await db.tenants.create_index("slug", unique=True)
+    await db.tenants.create_index("email_admin")
+    await db.payment_transactions.create_index("session_id", unique=True)
+    await db.payment_transactions.create_index("tenant_id")
+    await db.payment_transactions.create_index("created_at")
+    # Compound indexes for hot query paths (tenant + existing key)
+    for coll_name in ["lotti", "ritiri", "consegne", "fatture", "tickets", "clienti", "articoli", "macchine", "magazzino", "non_conformita", "lavorazioni", "notifications", "hardware_events", "audit_log", "users"]:
+        try:
+            await db[coll_name].create_index([("tenant_id", 1), ("created_at", -1)])
+        except Exception:
+            pass
 
 
 # =====================================================================
@@ -373,11 +442,13 @@ async def seed_tickets():
 
 async def run_all():
     await migrate_dates()
+    await ensure_demo_tenant()
     await seed_admin_and_users()
     await seed_catalog_and_lotti()
     await seed_portale_cliente_user()
     await seed_magazzino()
     await seed_tickets()
+    await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()
     logger.info("[SEED] Completato.")

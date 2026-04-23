@@ -75,6 +75,7 @@ async def send_notification(
         "error": None,
         "sent_by": (user or {}).get("id"),
         "sent_by_name": (user or {}).get("name"),
+        "tenant_id": (user or {}).get("tenant_id") or (context or {}).get("tenant_id"),
         "created_at": now_utc(),
     }
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Respons
 from pydantic import BaseModel
 import jwt
 
-from core import db, new_id, now_utc, get_current_user, log_audit, JWT_SECRET, JWT_ALGORITHM
+from core import db, new_id, now_utc, get_current_user, log_audit, JWT_SECRET, JWT_ALGORITHM, tenant_scope, inject_tenant, merge_scope
 from storage import upload_bytes, get_object, decode_data_url
 
 logger = logging.getLogger("cleantec.files")
@@ -109,7 +109,7 @@ async def download_file(
     except jwt.PyJWTError:
         raise HTTPException(401, "Token non valido")
 
-    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False, "tenant_id": user["tenant_id"]}, {"_id": 0})
     if not record:
         raise HTTPException(404, "File non trovato")
 
@@ -123,7 +123,7 @@ async def download_file(
 
 @router.delete("/files/{file_id}")
 async def soft_delete_file(file_id: str, user: Dict = Depends(get_current_user)):
-    res = await db.files.update_one({"id": file_id}, {"$set": {"is_deleted": True, "deleted_at": now_utc(), "deleted_by": user["id"]}})
+    res = await db.files.update_one(merge_scope(user, {"id": file_id}), {"$set": {"is_deleted": True, "deleted_at": now_utc(), "deleted_by": user["id"]}})
     if res.matched_count == 0:
         raise HTTPException(404, "File non trovato")
     await log_audit(user, "DELETE", "file", file_id)

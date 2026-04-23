@@ -5,7 +5,7 @@ Uses native BSON datetime fields for efficient range queries.
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, require_roles, STATI_LOTTO
+from core import db, get_current_user, require_roles, STATI_LOTTO, tenant_scope, merge_scope
 
 router = APIRouter(tags=["dashboard"])
 
@@ -20,24 +20,25 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     today_start = _today_utc_start()
     tomorrow_start = today_start + timedelta(days=1)
     first_day_month = today_start.replace(day=1)
+    scope = tenant_scope(user)
 
-    lotti_totali = await db.lotti.count_documents({})
-    lotti_attivi = await db.lotti.count_documents({"stato_corrente": {"$nin": ["consegnato"]}})
+    lotti_totali = await db.lotti.count_documents(scope)
+    lotti_attivi = await db.lotti.count_documents({**scope, "stato_corrente": {"$nin": ["consegnato"]}})
     lotti_oggi = await db.lotti.find(
-        {"created_at": {"$gte": today_start, "$lt": tomorrow_start}},
+        {**scope, "created_at": {"$gte": today_start, "$lt": tomorrow_start}},
         {"peso": 1, "_id": 0},
     ).to_list(5000)
     kg_oggi = sum(l.get("peso", 0) for l in lotti_oggi)
 
-    macchine = await db.macchine.find({}, {"_id": 0}).to_list(500)
+    macchine = await db.macchine.find(scope, {"_id": 0}).to_list(500)
     macchine_in_uso = sum(1 for m in macchine if m.get("stato") == "in_uso")
     macchine_disp = sum(1 for m in macchine if m.get("stato") == "disponibile")
 
-    nc_aperte = await db.non_conformita.count_documents({"stato": "aperta"})
-    tickets_aperti = await db.tickets.count_documents({"stato": {"$in": ["aperto", "in_lavorazione"]}})
+    nc_aperte = await db.non_conformita.count_documents({**scope, "stato": "aperta"})
+    tickets_aperti = await db.tickets.count_documents({**scope, "stato": {"$in": ["aperto", "in_lavorazione"]}})
 
     # Magazzino: conta gli articoli in allarme (scorta <= minima oppure scadenza imminente/scaduta)
-    magazzino_items = await db.magazzino.find({}, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}).to_list(2000)
+    magazzino_items = await db.magazzino.find(scope, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}).to_list(2000)
     magazzino_allarmi = 0
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     for it in magazzino_items:
@@ -52,12 +53,12 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         if alarm:
             magazzino_allarmi += 1
     consegne_oggi = await db.consegne.count_documents(
-        {"data_prevista": {"$gte": today_start, "$lt": tomorrow_start}}
+        {**scope, "data_prevista": {"$gte": today_start, "$lt": tomorrow_start}}
     )
 
-    # Real punctuality KPI: % of delivered consegne where data_consegna_effettiva <= data_prevista
+    # Real punctuality KPI
     consegne_consegnate = await db.consegne.find(
-        {"stato": "consegnata"},
+        {**scope, "stato": "consegnata"},
         {"data_prevista": 1, "data_consegna_effettiva": 1, "_id": 0},
     ).to_list(5000)
     total_delivered = len(consegne_consegnate)
@@ -69,17 +70,17 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     puntualita_pct = round((puntuali / total_delivered * 100) if total_delivered else 100.0, 1)
 
     fatture_mese = await db.fatture.find(
-        {"data": {"$gte": first_day_month}}, {"totale": 1, "_id": 0}
+        {**scope, "data": {"$gte": first_day_month}}, {"totale": 1, "_id": 0}
     ).to_list(2000)
     fatturato_mese = sum(f.get("totale", 0) for f in fatture_mese)
 
-    # Trend last 7 days (range query per day, Mongo-indexed)
+    # Trend last 7 days
     trend = []
     for i in range(6, -1, -1):
         day_start = today_start - timedelta(days=i)
         day_end = day_start + timedelta(days=1)
         lotti_d = await db.lotti.find(
-            {"created_at": {"$gte": day_start, "$lt": day_end}},
+            {**scope, "created_at": {"$gte": day_start, "$lt": day_end}},
             {"peso": 1, "_id": 0},
         ).to_list(5000)
         trend.append({
@@ -89,7 +90,7 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
 
     stati_dist = []
     for s in STATI_LOTTO:
-        c = await db.lotti.count_documents({"stato_corrente": s})
+        c = await db.lotti.count_documents({**scope, "stato_corrente": s})
         stati_dist.append({"stato": s, "count": c})
 
     return {
@@ -114,7 +115,7 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
 
 @router.get("/audit-log")
 async def get_audit(user: Dict = Depends(require_roles("admin")), limit: int = 500):
-    return await db.audit_log.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    return await db.audit_log.find(tenant_scope(user), {"_id": 0}).sort("timestamp", -1).to_list(limit)
 
 
 @router.get("/")

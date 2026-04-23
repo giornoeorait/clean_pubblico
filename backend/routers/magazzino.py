@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit
+from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, tenant_scope, merge_scope, inject_tenant
 from schemas import MagazzinoIn, PatchMagazzinoIn, MovimentoIn
 
 router = APIRouter(prefix="/magazzino", tags=["magazzino"])
@@ -52,7 +52,7 @@ async def list_magazzino(
     solo_allarmi: bool = False,
     limit: int = 500,
 ):
-    q: Dict[str, Any] = {}
+    q: Dict[str, Any] = dict(tenant_scope(user))
     if categoria:
         q["categoria"] = categoria
     items = await db.magazzino.find(q, {"_id": 0}).sort("codice", 1).to_list(limit)
@@ -64,7 +64,7 @@ async def list_magazzino(
 
 @router.get("/allarmi")
 async def allarmi(user: Dict = Depends(get_current_user)):
-    items = await db.magazzino.find({}, {"_id": 0}).to_list(500)
+    items = await db.magazzino.find(tenant_scope(user), {"_id": 0}).to_list(500)
     items = [_compute_flags(it) for it in items]
     allarmi = [it for it in items if it["in_allarme"]]
     return {
@@ -86,6 +86,7 @@ async def create_magazzino(body: MagazzinoIn, user: Dict = Depends(require_roles
     doc["id"] = new_id()
     doc["created_at"] = now_utc()
     doc["updated_at"] = doc["created_at"]
+    inject_tenant(doc, user)
     await db.magazzino.insert_one(doc)
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "magazzino", doc["id"])
@@ -94,7 +95,7 @@ async def create_magazzino(body: MagazzinoIn, user: Dict = Depends(require_roles
 
 @router.get("/{item_id}")
 async def get_magazzino(item_id: str, user: Dict = Depends(get_current_user)):
-    doc = await db.magazzino.find_one({"id": item_id}, {"_id": 0})
+    doc = await db.magazzino.find_one(merge_scope(user, {"id": item_id}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Articolo magazzino non trovato")
     return _compute_flags(doc)
@@ -109,7 +110,7 @@ async def update_magazzino(item_id: str, body: PatchMagazzinoIn, user: Dict = De
         dt = to_dt(data["scadenza"])
         data["scadenza"] = dt
     data["updated_at"] = now_utc()
-    res = await db.magazzino.update_one({"id": item_id}, {"$set": data})
+    res = await db.magazzino.update_one(merge_scope(user, {"id": item_id}), {"$set": data})
     if res.matched_count == 0:
         raise HTTPException(404, "Articolo non trovato")
     await log_audit(user, "UPDATE", "magazzino", item_id, {"keys": list(data.keys())})
@@ -118,7 +119,7 @@ async def update_magazzino(item_id: str, body: PatchMagazzinoIn, user: Dict = De
 
 @router.delete("/{item_id}")
 async def delete_magazzino(item_id: str, user: Dict = Depends(require_roles(*_WRITE_ROLES))):
-    await db.magazzino.delete_one({"id": item_id})
+    await db.magazzino.delete_one(merge_scope(user, {"id": item_id}))
     await log_audit(user, "DELETE", "magazzino", item_id)
     return {"ok": True}
 
@@ -131,19 +132,19 @@ async def add_movimento(item_id: str, body: MovimentoIn, user: Dict = Depends(re
     if body.quantita < 0:
         raise HTTPException(400, "quantita deve essere >= 0")
 
-    articolo = await db.magazzino.find_one({"id": item_id})
+    articolo = await db.magazzino.find_one(merge_scope(user, {"id": item_id}))
     if not articolo:
         raise HTTPException(404, "Articolo non trovato")
 
     if body.tipo == "carico":
         new_scorta = float(articolo.get("scorta_attuale", 0)) + body.quantita
-        await db.magazzino.update_one({"id": item_id}, {"$inc": {"scorta_attuale": body.quantita}, "$set": {"updated_at": now_utc()}})
+        await db.magazzino.update_one(merge_scope(user, {"id": item_id}), {"$inc": {"scorta_attuale": body.quantita}, "$set": {"updated_at": now_utc()}})
     elif body.tipo == "scarico":
         new_scorta = float(articolo.get("scorta_attuale", 0)) - body.quantita
-        await db.magazzino.update_one({"id": item_id}, {"$inc": {"scorta_attuale": -body.quantita}, "$set": {"updated_at": now_utc()}})
+        await db.magazzino.update_one(merge_scope(user, {"id": item_id}), {"$inc": {"scorta_attuale": -body.quantita}, "$set": {"updated_at": now_utc()}})
     else:  # rettifica
         new_scorta = body.quantita
-        await db.magazzino.update_one({"id": item_id}, {"$set": {"scorta_attuale": body.quantita, "updated_at": now_utc()}})
+        await db.magazzino.update_one(merge_scope(user, {"id": item_id}), {"$set": {"scorta_attuale": body.quantita, "updated_at": now_utc()}})
 
     mov_doc = {
         "id": new_id(),
@@ -160,6 +161,7 @@ async def add_movimento(item_id: str, body: MovimentoIn, user: Dict = Depends(re
         "scorta_dopo": new_scorta,
         "timestamp": now_utc(),
     }
+    inject_tenant(mov_doc, user)
     await db.magazzino_movimenti.insert_one(mov_doc)
     mov_doc.pop("_id", None)
     await log_audit(user, body.tipo.upper(), "magazzino", item_id, {"qta": body.quantita, "new_stock": new_scorta})
@@ -169,5 +171,5 @@ async def add_movimento(item_id: str, body: MovimentoIn, user: Dict = Depends(re
 @router.get("/{item_id}/movimenti")
 async def list_movimenti(item_id: str, user: Dict = Depends(get_current_user), limit: int = 200):
     return await db.magazzino_movimenti.find(
-        {"articolo_id": item_id}, {"_id": 0}
+        merge_scope(user, {"articolo_id": item_id}), {"_id": 0}
     ).sort("timestamp", -1).to_list(limit)

@@ -30,12 +30,51 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "cleantec-default-secret-change-me")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cleantec.it")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
+# Demo tenant id — used to migrate legacy data
+DEMO_TENANT_ID = "demo-tenant-0000-0000-0000-000000000001"
+
 
 # --- Constants ------------------------------------------------------------
 STATI_LOTTO = [
     "ritirato", "ricevuto", "smistato", "lavato",
     "asciugato", "stirato", "confezionato", "pronto", "consegnato",
 ]
+
+# Plan definitions (authoritative, server-side) — prices are MONTHLY EUR, cents-aware
+PLANS = {
+    "starter": {
+        "id": "starter",
+        "nome": "Starter",
+        "price_monthly": 59.00,
+        "price_annual": 49.00,  # per month billed annually (2 mesi gratis)
+        "currency": "eur",
+        "limits": {"users": 5, "lotti_monthly": 1000, "sms_monthly": 0},
+        "features": ["crud_base", "mes", "kanban", "tracciabilita", "fatture", "dashboard", "portale_cliente"],
+        "cta": "Parti subito",
+    },
+    "pro": {
+        "id": "pro",
+        "nome": "Pro",
+        "price_monthly": 179.00,
+        "price_annual": 149.00,
+        "currency": "eur",
+        "limits": {"users": 20, "lotti_monthly": 10000, "sms_monthly": 100},
+        "features": ["starter", "magazzino", "manutenzione", "notifiche_sms", "audit_log"],
+        "cta": "Il più popolare",
+        "highlight": True,
+    },
+    "enterprise": {
+        "id": "enterprise",
+        "nome": "Enterprise",
+        "price_monthly": 449.00,
+        "price_annual": 379.00,
+        "currency": "eur",
+        "limits": {"users": -1, "lotti_monthly": -1, "sms_monthly": 500},  # -1 = unlimited
+        "features": ["pro", "hardware_ingestion", "multi_sede", "sla_24_7", "priority_support"],
+        "cta": "Contattaci",
+    },
+}
+TRIAL_DAYS = 14
 
 
 # --- Helpers --------------------------------------------------------------
@@ -89,11 +128,12 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, role: str) -> str:
+def create_access_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
+        "tenant_id": tenant_id,
         "exp": now_utc() + timedelta(hours=12),
         "type": "access",
     }
@@ -123,6 +163,7 @@ async def log_audit(user: Dict[str, Any], azione: str, entita: str,
                     entita_id: str, dettagli: Optional[Dict[str, Any]] = None):
     await db.audit_log.insert_one({
         "id": new_id(),
+        "tenant_id": user.get("tenant_id"),
         "user_id": user.get("id"),
         "user_email": user.get("email"),
         "azione": azione,
@@ -160,5 +201,69 @@ def require_roles(*allowed: str):
     async def checker(user: Dict[str, Any] = Depends(get_current_user)):
         if user["role"] not in allowed and user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Permessi insufficienti")
+        return user
+    return checker
+
+
+# --- Multi-tenant helpers -------------------------------------------------
+def tenant_id_of(user: Dict[str, Any]) -> str:
+    tid = user.get("tenant_id")
+    if not tid:
+        # Defense in depth — should never happen after migration
+        raise HTTPException(status_code=403, detail="Utente non associato a un tenant")
+    return tid
+
+
+def tenant_scope(user: Dict[str, Any]) -> Dict[str, str]:
+    """Return the base filter to enforce tenant isolation on every query."""
+    return {"tenant_id": tenant_id_of(user)}
+
+
+def merge_scope(user: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Merge tenant_id filter with an additional query."""
+    q = tenant_scope(user)
+    if extra:
+        q = {**extra, **q}
+    return q
+
+
+def inject_tenant(doc: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+    """Stamp tenant_id on a document being inserted."""
+    doc["tenant_id"] = tenant_id_of(user)
+    return doc
+
+
+async def get_tenant(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Load the tenant document of the current user (raises if missing)."""
+    tenant = await db.tenants.find_one({"id": tenant_id_of(user)}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant non trovato")
+    return tenant
+
+
+async def is_tenant_active(user: Dict[str, Any]) -> bool:
+    """Trial attivo o subscription active → True; past_due/canceled/suspended → False."""
+    t = await db.tenants.find_one({"id": tenant_id_of(user)}, {"_id": 0})
+    if not t:
+        return False
+    stato = t.get("stato", "trial")
+    if stato == "active":
+        return True
+    if stato == "trial":
+        ends = t.get("trial_ends_at")
+        if isinstance(ends, datetime) and ends > now_utc():
+            return True
+        return False
+    return False
+
+
+def require_active_tenant():
+    """Dependency that enforces the tenant has an active subscription or trial."""
+    async def checker(user: Dict[str, Any] = Depends(get_current_user)):
+        if user["role"] == "superadmin":
+            return user
+        ok = await is_tenant_active(user)
+        if not ok:
+            raise HTTPException(status_code=402, detail="Abbonamento non attivo. Aggiorna il piano.")
         return user
     return checker
