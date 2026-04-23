@@ -1,0 +1,128 @@
+{
+  "project_name": "CleanTec",
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast) modified with B2B Enterprise Colors",
+  "design_philosophy": "Industrial, reliable, and clinically clean. A 'Control Room' interface for office users combined with an ultra-accessible, high-contrast 'Bento' interface for touch production screens. Rejects the generic AI-slop SaaS look by utilizing rigid, Swiss-style grids paired with the specific Azzurro/Celeste/Indaco requested palette.",
+  "colors": {
+    "background": {
+      "default": "#F8FAFC",
+      "card": "#FFFFFF",
+      "touch_panel": "#F1F5F9",
+      "client_portal": "#FFFFFF"
+    },
+    "primary": {
+      "indaco": "#4F46E5",
+      "azzurro": "#0EA5E9",
+      "celeste": "#38BDF8"
+    },
+    "neutral": {
+      "slate_900": "#0F172A",
+      "slate_800": "#1E293B",
+      "slate_700": "#334155",
+      "slate_400": "#94A3B8",
+      "slate_200": "#E2E8F0",
+      "slate_50": "#F8FAFC"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "info": "#0EA5E9"
+    }
+  },
+  "typography": {
+    "strategy": "The 'Old Money Tech' variant adapted for Enterprise. Expressive/structured Sans for Headings, sterile/functional Mono-like Sans for Body data.",
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "fallback": "sans-serif"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none font-bold",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "base": "text-base leading-relaxed text-slate-700",
+      "small": "text-sm text-slate-500",
+      "data": "font-mono text-sm tracking-tight text-slate-900",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-slate-500"
+    }
+  },
+  "spacing_and_layout": {
+    "office_dashboard": {
+      "grid": "grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-4",
+      "card_padding": "p-6",
+      "strategy": "Dense 'Control Room' grid. Utilize 1px solid borders (border-slate-200) instead of heavy shadows for a cleaner, data-focused look. No rounded corners beyond 8px (rounded-lg)."
+    },
+    "production_touch": {
+      "grid": "grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6",
+      "button_padding": "p-8",
+      "strategy": "Massive touch targets. High contrast. Bento layout. Typography scaled up by 1 step. Minimized inputs, rely on large icon buttons (Scan, Start, Pause, QA Fail)."
+    },
+    "mobile_logistics": {
+      "grid": "flex flex-col gap-4",
+      "card_padding": "p-4",
+      "strategy": "Mobile-first vertical stack. Bottom navigation bar. Large swipeable cards for pickup/delivery tasks. High-contrast mapping overlays."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-indaco text-white hover:bg-indaco/90 hover:text-white rounded-md font-medium px-4 py-2 transition-all shadow-sm",
+      "secondary": "bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 hover:text-indaco rounded-md font-medium px-4 py-2 transition-all",
+      "touch_primary": "bg-azzurro text-white rounded-xl shadow-lg active:translate-y-1 h-32 md:h-48 text-2xl font-bold flex flex-col items-center justify-center gap-4 transition-transform",
+      "touch_danger": "bg-danger text-white rounded-xl shadow-lg active:translate-y-1 h-32 text-2xl font-bold flex flex-col items-center justify-center gap-4"
+    },
+    "cards": {
+      "office": "bg-white border border-slate-200 rounded-lg p-6 shadow-sm",
+      "kanban_ticket": "bg-white border-l-4 border-l-indaco border-y border-r border-slate-200 rounded p-4 shadow-sm cursor-grab active:cursor-grabbing hover:border-r-indaco"
+    },
+    "navigation": {
+      "sidebar": "w-64 bg-slate-900 text-white flex flex-col border-r border-slate-800",
+      "sidebar_item": "flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-md hover:bg-slate-800 hover:text-celeste transition-colors",
+      "touch_header": "h-20 bg-indaco text-white flex items-center justify-between px-8 text-xl font-bold shadow-md"
+    },
+    "tracking_timeline": {
+      "style": "Vertical steps. Active step uses bg-azzurro pulse. Completed uses bg-emerald-500. Pending uses bg-slate-200. Text must maintain APCA contrast."
+    },
+    "data_tables": {
+      "style": "w-full text-sm text-left. Header bg-slate-50 text-slate-500 font-bold uppercase tracking-wider. Rows border-b border-slate-100 hover:bg-slate-50/50."
+    }
+  },
+  "motion_and_interactions": {
+    "hover": "transition-all duration-200 ease-out hover:-translate-y-0.5",
+    "touch_active": "active:scale-95 transition-transform duration-75",
+    "page_transition": "animate-in fade-in slide-in-from-bottom-4 duration-300"
+  },
+  "media": {
+    "icons_library": "@phosphor-icons/react",
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1765021690100-db6d6a28c1d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwbGF1bmRyeSUyMG1hY2hpbmUlMjBmYWNpbGl0eXxlbnwwfHx8fDE3NzY5NTUxMDR8MA&ixlib=rb-4.1.0&q=85",
+        "category": "industrial_background",
+        "description": "Used for the Client Portal hero section or main login page background. CRITICAL: Add a bg-slate-900/60 overlay so login/hero text is readable."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1760722974657-f64bce2f9cc5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMGZvbGRlZCUyMHdoaXRlJTIwdG93ZWxzfGVufDB8fHx8MTc3Njk1NTEwNHww&ixlib=rb-4.1.0&q=85",
+        "category": "clean_towels",
+        "description": "Used in the quality control module, client portal feature highlights, or success states."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1762135995921-fedb142e7b96?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxsb2dpc3RpY3MlMjBkZWxpdmVyeSUyMHZhbiUyMHdoaXRlfGVufDB8fHx8MTc3Njk1NTEwNHww&ixlib=rb-4.1.0&q=85",
+        "category": "logistics_van",
+        "description": "Used in the logistics dashboard header or driver mobile app welcome screen."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette requested by the user: Azzurro (#0EA5E9), Celeste (#38BDF8), Indaco (#4F46E5). Never use generic blue, purple or teal.",
+    "The app MUST have 3 distinct interface modes: Office Dashboard (dense data, sidebars), Production Touch (large buttons, high contrast, kanban boards), Mobile Logistics (vertical cards, map overlays). Build distinct routing for these (e.g., /office, /production, /mobile).",
+    "For the Office Dashboard, use a dense 'Control Room' grid style. Charts and tables should fill their containers with minimal padding.",
+    "For the Production Touch interface, ensure touch targets are at least 64px tall (p-6/p-8). Use Phosphor Icons at 32px or 48px sizes for clear visual cues. Do not use complex tables on Touch mode, use large Kanban-style cards.",
+    "Install and use `@phosphor-icons/react` for icons as it best fits the dense dashboard and industrial aesthetic.",
+    "Use 'Cabinet Grotesk' for all headings. Use 'IBM Plex Sans' for body text, numbers, and data tables to ensure tabular numeral alignment. Load these via Google Fonts.",
+    "Use Shadcn UI extensively, but strip rounded corners to max 8px (rounded-lg) for an industrial look. Replace Shadcn's default borders with border-slate-200.",
+    "Add 'data-testid' to all interactive elements for automated testing (e.g., data-testid='login-submit-button').",
+    "Never use generic lorem ipsum where real domain language works (e.g., use 'Lotto #4892 - Lenzuola Matrimoniali', 'Cliente: Hotel Excelsior').",
+    "For the Timeline Traceability component (ritirato -> ricevuto -> ... -> consegnato), build a custom horizontal or vertical stepper using semantic colors."
+  ]
+}
