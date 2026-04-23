@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import TrialBanner from "./TrialBanner";
@@ -37,6 +37,50 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const touchStart = useRef(null);
+
+  // Swipe-from-left gesture to open sidebar (iPad/mobile only, xl viewports use sticky sidebar)
+  useEffect(() => {
+    const XL_BP = 1280;
+    const EDGE = 24; // px from left edge to start swipe
+    const THRESHOLD_OPEN = 60; // min horizontal distance to trigger open
+    const THRESHOLD_CLOSE = 60; // min horizontal distance to trigger close
+    const MAX_VERTICAL = 80; // abort if user scrolls vertically instead
+
+    const onStart = (e) => {
+      if (window.innerWidth >= XL_BP) return;
+      const t = e.touches[0];
+      // Open gesture: only when closed + started from left edge
+      if (!mobileOpen && t.clientX <= EDGE) {
+        touchStart.current = { x: t.clientX, y: t.clientY, mode: "open" };
+        return;
+      }
+      // Close gesture: only when open + started inside sidebar area
+      if (mobileOpen && t.clientX <= 256) {
+        touchStart.current = { x: t.clientX, y: t.clientY, mode: "close" };
+      }
+    };
+
+    const onEnd = (e) => {
+      const s = touchStart.current;
+      if (!s) return;
+      touchStart.current = null;
+      const t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (!t) return;
+      const dx = t.clientX - s.x;
+      const dy = Math.abs(t.clientY - s.y);
+      if (dy > MAX_VERTICAL) return;
+      if (s.mode === "open" && dx > THRESHOLD_OPEN) setMobileOpen(true);
+      if (s.mode === "close" && dx < -THRESHOLD_CLOSE) setMobileOpen(false);
+    };
+
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchend", onEnd);
+    };
+  }, [mobileOpen]);
 
   const items = ALL_ITEMS.filter(i => !i.roles || i.roles.includes(user.role) || user.role === "admin");
 
@@ -128,6 +172,15 @@ export default function Layout({ children }) {
       </div>
 
       {mobileOpen && <div className="fixed inset-0 bg-black/40 z-30 xl:hidden" onClick={() => setMobileOpen(false)}></div>}
+
+      {/* Swipe hint: subtle edge indicator on iPad/mobile when sidebar is closed */}
+      {!mobileOpen && (
+        <div
+          className="fixed left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-indaco/30 rounded-r-full xl:hidden pointer-events-none animate-pulse"
+          aria-hidden="true"
+          data-testid="swipe-hint"
+        />
+      )}
     </div>
   );
 }
