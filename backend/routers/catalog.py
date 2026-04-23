@@ -1,13 +1,18 @@
 """Anagrafiche: Clienti, Articoli, Macchine."""
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Type
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from core import db, new_id, now_utc, get_current_user, require_roles, log_audit
-from schemas import ClienteIn, ArticoloIn, MacchinaIn
+from schemas import (
+    ClienteIn, ArticoloIn, MacchinaIn,
+    PatchClienteIn, PatchArticoloIn, PatchMacchinaIn,
+)
 
 router = APIRouter(tags=["catalog"])
 
 
-def _register(path: str, coll_name: str, Model, entity: str, write_roles):
+def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Type[BaseModel],
+              entity: str, write_roles):
     coll = db[coll_name]
 
     @router.get(f"/{path}")
@@ -41,14 +46,15 @@ def _register(path: str, coll_name: str, Model, entity: str, write_roles):
         return doc
 
     @router.patch(f"/{path}/{{item_id}}")
-    async def update_one(item_id: str, body: Dict[str, Any], user: Dict = Depends(require_roles(*write_roles))):
-        body.pop("_id", None)
-        body.pop("id", None)
-        body["updated_at"] = now_utc().isoformat()
-        res = await coll.update_one({"id": item_id}, {"$set": body})
+    async def update_one(item_id: str, body: PatchModel, user: Dict = Depends(require_roles(*write_roles))):
+        data = body.model_dump(exclude_unset=True)
+        if not data:
+            return {"ok": True}
+        data["updated_at"] = now_utc().isoformat()
+        res = await coll.update_one({"id": item_id}, {"$set": data})
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail=f"{entity} non trovato")
-        await log_audit(user, "UPDATE", entity, item_id, body)
+        await log_audit(user, "UPDATE", entity, item_id, data)
         return {"ok": True}
 
     @router.delete(f"/{path}/{{item_id}}")
@@ -58,6 +64,6 @@ def _register(path: str, coll_name: str, Model, entity: str, write_roles):
         return {"ok": True}
 
 
-_register("clienti", "clienti", ClienteIn, "cliente", ("admin", "contabilita"))
-_register("articoli", "articoli", ArticoloIn, "articolo", ("admin", "contabilita"))
-_register("macchine", "macchine", MacchinaIn, "macchina", ("admin", "produzione"))
+_register("clienti", "clienti", ClienteIn, PatchClienteIn, "cliente", ("admin", "contabilita"))
+_register("articoli", "articoli", ArticoloIn, PatchArticoloIn, "articolo", ("admin", "contabilita"))
+_register("macchine", "macchine", MacchinaIn, PatchMacchinaIn, "macchina", ("admin", "produzione"))

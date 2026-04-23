@@ -495,6 +495,233 @@ def test_dashboard_kpi_has_punctuality_fields(tokens):
         assert j["puntualita_pct"] == 100.0
 
 
+# =========== PATCH typing refactor (iteration 3) ===========
+def _new_cliente(tokens):
+    payload = {"ragione_sociale": "TEST_PatchCliente", "tipologia": "hotel"}
+    r = requests.post(f"{API}/clienti", headers=H(tokens["contabilita"]), json=payload)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_patch_cliente_empty_body_is_ok(tokens):
+    """Empty body must return 200 (no-op PATCH) and not 422."""
+    c = _new_cliente(tokens)
+    r = requests.patch(f"{API}/clienti/{c['id']}", headers=H(tokens["contabilita"]), json={})
+    assert r.status_code == 200, r.text
+    # Unchanged
+    g = requests.get(f"{API}/clienti/{c['id']}", headers=H(tokens["admin"])).json()
+    assert g["ragione_sociale"] == "TEST_PatchCliente"
+
+
+def test_patch_cliente_unknown_fields_ignored(tokens):
+    """extra='ignore' -> unknown fields must not cause 4xx and must not be persisted."""
+    c = _new_cliente(tokens)
+    body = {"ragione_sociale": "TEST_PatchCliente_Renamed", "zzz_unknown": "x", "another": 123}
+    r = requests.patch(f"{API}/clienti/{c['id']}", headers=H(tokens["contabilita"]), json=body)
+    assert r.status_code == 200, r.text
+    g = requests.get(f"{API}/clienti/{c['id']}", headers=H(tokens["admin"])).json()
+    assert g["ragione_sociale"] == "TEST_PatchCliente_Renamed"
+    assert "zzz_unknown" not in g
+    assert "another" not in g
+
+
+def test_patch_cliente_invalid_type_returns_422(tokens):
+    c = _new_cliente(tokens)
+    # sla_ore expects int
+    r = requests.patch(f"{API}/clienti/{c['id']}", headers=H(tokens["contabilita"]),
+                       json={"sla_ore": "not-an-int"})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_articolo_invalid_prezzo_returns_422(tokens):
+    articoli = requests.get(f"{API}/articoli", headers=H(tokens["admin"])).json()
+    aid = articoli[0]["id"]
+    r = requests.patch(f"{API}/articoli/{aid}", headers=H(tokens["contabilita"]),
+                       json={"prezzo": "abc"})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_articolo_valid_partial(tokens):
+    articoli = requests.get(f"{API}/articoli", headers=H(tokens["admin"])).json()
+    aid = articoli[0]["id"]
+    r = requests.patch(f"{API}/articoli/{aid}", headers=H(tokens["contabilita"]),
+                       json={"prezzo": 9.99, "ignored_field": True})
+    assert r.status_code == 200, r.text
+    g = requests.get(f"{API}/articoli/{aid}", headers=H(tokens["admin"])).json()
+    assert g["prezzo"] == 9.99
+    assert "ignored_field" not in g
+
+
+def test_patch_macchina_invalid_capacita_returns_422(tokens):
+    m = requests.get(f"{API}/macchine", headers=H(tokens["admin"])).json()
+    mid = m[0]["id"]
+    r = requests.patch(f"{API}/macchine/{mid}", headers=H(tokens["admin"]),
+                       json={"capacita_kg": "heavy"})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_macchina_valid(tokens):
+    m = requests.get(f"{API}/macchine", headers=H(tokens["admin"])).json()
+    mid = m[0]["id"]
+    r = requests.patch(f"{API}/macchine/{mid}", headers=H(tokens["admin"]),
+                       json={"stato": "manutenzione", "extra_garbage": "x"})
+    assert r.status_code == 200, r.text
+    g = [x for x in requests.get(f"{API}/macchine", headers=H(tokens["admin"])).json() if x["id"] == mid][0]
+    assert g["stato"] == "manutenzione"
+
+
+def test_patch_consegna_empty_body_ok_and_unknown_ignored(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    c = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]),
+                      json={"cliente_id": clienti[0]["id"], "lotti_ids": [],
+                            "data_prevista": "2026-04-01", "autista": "X"}).json()
+    cid = c["id"]
+    # Empty body
+    r = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]), json={})
+    assert r.status_code == 200
+    # Unknown field ignored, autista updated
+    r2 = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]),
+                        json={"autista": "Y", "foo": "bar"})
+    assert r2.status_code == 200
+    lst = requests.get(f"{API}/consegne", headers=H(tokens["admin"])).json()
+    target = [x for x in lst if x["id"] == cid][0]
+    assert target["autista"] == "Y"
+    assert "foo" not in target
+
+
+def test_patch_lavorazione_autosets_inizio_and_fine(tokens):
+    """stato=in_corso auto-sets inizio; stato=completato auto-sets fine."""
+    lotti = requests.get(f"{API}/lotti", headers=H(tokens["admin"])).json()
+    lav = requests.post(f"{API}/lavorazioni", headers=H(tokens["produzione"]),
+                        json={"lotto_id": lotti[0]["id"], "tipo": "lavaggio"}).json()
+    lid = lav["id"]
+
+    # in_corso -> inizio set
+    r = requests.patch(f"{API}/lavorazioni/{lid}", headers=H(tokens["produzione"]),
+                       json={"stato": "in_corso"})
+    assert r.status_code == 200
+    all_lav = requests.get(f"{API}/lavorazioni", headers=H(tokens["admin"])).json()
+    target = [x for x in all_lav if x["id"] == lid][0]
+    assert target["stato"] == "in_corso"
+    assert target.get("inizio"), f"inizio not set: {target}"
+
+    # completato -> fine set
+    r2 = requests.patch(f"{API}/lavorazioni/{lid}", headers=H(tokens["produzione"]),
+                        json={"stato": "completato", "unknown_x": 1})
+    assert r2.status_code == 200
+    all_lav2 = requests.get(f"{API}/lavorazioni", headers=H(tokens["admin"])).json()
+    t2 = [x for x in all_lav2 if x["id"] == lid][0]
+    assert t2["stato"] == "completato"
+    assert t2.get("fine"), f"fine not set: {t2}"
+    assert "unknown_x" not in t2
+
+
+def test_patch_lavorazione_invalid_type_422(tokens):
+    lotti = requests.get(f"{API}/lotti", headers=H(tokens["admin"])).json()
+    lav = requests.post(f"{API}/lavorazioni", headers=H(tokens["produzione"]),
+                        json={"lotto_id": lotti[0]["id"], "tipo": "lavaggio"}).json()
+    r = requests.patch(f"{API}/lavorazioni/{lav['id']}", headers=H(tokens["produzione"]),
+                       json={"tempo_min": "sixty"})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_nonconformita_valid_and_unknown_ignored(tokens):
+    nc = requests.post(f"{API}/non-conformita", headers=H(tokens["qualita"]),
+                       json={"tipo_difetto": "Macchia", "gravita": "bassa"}).json()
+    nid = nc["id"]
+    r = requests.patch(f"{API}/non-conformita/{nid}", headers=H(tokens["qualita"]),
+                       json={"stato": "risolta", "garbage": 1})
+    assert r.status_code == 200
+    lst = requests.get(f"{API}/non-conformita", headers=H(tokens["admin"])).json()
+    target = [x for x in lst if x["id"] == nid][0]
+    assert target["stato"] == "risolta"
+    assert "garbage" not in target
+
+
+def test_patch_fattura_valid_and_unknown_ignored(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    f = requests.post(f"{API}/fatture", headers=H(tokens["contabilita"]),
+                      json={"cliente_id": clienti[0]["id"], "data": "2026-02-01",
+                            "righe": [{"descrizione": "X", "quantita": 1, "prezzo": 10}],
+                            "iva_pct": 22}).json()
+    fid = f["id"]
+    r = requests.patch(f"{API}/fatture/{fid}", headers=H(tokens["contabilita"]),
+                       json={"stato": "pagata", "ghost_field": "x"})
+    assert r.status_code == 200
+    lst = requests.get(f"{API}/fatture", headers=H(tokens["admin"])).json()
+    target = [x for x in lst if x["id"] == fid][0]
+    assert target["stato"] == "pagata"
+    assert "ghost_field" not in target
+
+
+def test_patch_fattura_invalid_iva_pct_422(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    f = requests.post(f"{API}/fatture", headers=H(tokens["contabilita"]),
+                      json={"cliente_id": clienti[0]["id"], "data": "2026-02-02",
+                            "righe": [], "iva_pct": 22}).json()
+    r = requests.patch(f"{API}/fatture/{f['id']}", headers=H(tokens["contabilita"]),
+                       json={"iva_pct": "twenty"})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_user_password_hashed_and_reloginable(tokens):
+    """Admin PATCH user password -> old pwd rejected, new pwd works, hash not leaked."""
+    # Create TEST_ user
+    create_payload = {
+        "email": "test_patchuser@cleantec.it",
+        "password": "initial123",
+        "name": "TEST_Patch_User",
+        "role": "produzione",
+    }
+    # Delete if lingering from previous run
+    users_all = requests.get(f"{API}/users", headers=H(tokens["admin"])).json()
+    existing = [u for u in users_all if u["email"] == create_payload["email"]]
+    for u in existing:
+        requests.delete(f"{API}/users/{u['id']}", headers=H(tokens["admin"]))
+
+    r = requests.post(f"{API}/users", headers=H(tokens["admin"]), json=create_payload)
+    assert r.status_code == 200, r.text
+    new_user = r.json()
+    assert "password_hash" not in new_user
+    uid = new_user["id"]
+
+    # Verify initial login
+    lg1 = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "initial123"})
+    assert lg1.status_code == 200, lg1.text
+
+    # PATCH password with unknown extras
+    pat = requests.patch(f"{API}/users/{uid}", headers=H(tokens["admin"]),
+                         json={"password": "newpass456", "phantom_field": True})
+    assert pat.status_code == 200, pat.text
+    patched = pat.json()
+    assert "password_hash" not in patched
+    assert "phantom_field" not in patched
+
+    # Old pwd rejected, new works
+    lg_old = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "initial123"})
+    assert lg_old.status_code == 401
+    lg_new = requests.post(f"{API}/auth/login", json={"email": create_payload["email"], "password": "newpass456"})
+    assert lg_new.status_code == 200, lg_new.text
+
+    # Cleanup
+    requests.delete(f"{API}/users/{uid}", headers=H(tokens["admin"]))
+
+
+def test_patch_user_invalid_type_422(tokens):
+    users_all = requests.get(f"{API}/users", headers=H(tokens["admin"])).json()
+    uid = [u for u in users_all if u["email"] == "produzione@cleantec.it"][0]["id"]
+    r = requests.patch(f"{API}/users/{uid}", headers=H(tokens["admin"]),
+                       json={"attivo": "yes-please"})  # bool expected
+    assert r.status_code == 422, r.text
+
+
+def test_patch_user_empty_body_ok(tokens):
+    users_all = requests.get(f"{API}/users", headers=H(tokens["admin"])).json()
+    uid = [u for u in users_all if u["email"] == "admin@cleantec.it"][0]["id"]
+    r = requests.patch(f"{API}/users/{uid}", headers=H(tokens["admin"]), json={})
+    assert r.status_code == 200, r.text
+
+
 def test_modular_file_structure_importable():
     """Verify the refactored modular layout is loadable (core, schemas, seed, routers)."""
     import sys

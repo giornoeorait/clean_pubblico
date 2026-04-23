@@ -6,7 +6,10 @@ from core import (
     db, new_id, now_utc, STATI_LOTTO,
     get_current_user, require_roles, log_audit, next_seq,
 )
-from schemas import RitiroIn, LottoIn, CambiaStatoIn, LavorazioneIn, ConsegnaIn, NonConformitaIn
+from schemas import (
+    RitiroIn, LottoIn, CambiaStatoIn, LavorazioneIn, ConsegnaIn, NonConformitaIn,
+    PatchConsegnaIn, PatchLavorazioneIn, PatchNonConformitaIn,
+)
 
 router = APIRouter(tags=["operations"])
 
@@ -136,15 +139,17 @@ async def create_lavorazione(body: LavorazioneIn, user: Dict = Depends(require_r
 
 
 @router.patch("/lavorazioni/{lid}")
-async def update_lavorazione(lid: str, body: Dict[str, Any], user: Dict = Depends(require_roles("admin", "produzione"))):
-    body.pop("_id", None)
-    body["updated_at"] = now_utc().isoformat()
-    if body.get("stato") == "in_corso" and "inizio" not in body:
-        body["inizio"] = now_utc().isoformat()
-    if body.get("stato") == "completato" and "fine" not in body:
-        body["fine"] = now_utc().isoformat()
-    await db.lavorazioni.update_one({"id": lid}, {"$set": body})
-    await log_audit(user, "UPDATE", "lavorazione", lid, body)
+async def update_lavorazione(lid: str, body: PatchLavorazioneIn, user: Dict = Depends(require_roles("admin", "produzione"))):
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return {"ok": True}
+    data["updated_at"] = now_utc().isoformat()
+    if data.get("stato") == "in_corso" and "inizio" not in data:
+        data["inizio"] = now_utc().isoformat()
+    if data.get("stato") == "completato" and "fine" not in data:
+        data["fine"] = now_utc().isoformat()
+    await db.lavorazioni.update_one({"id": lid}, {"$set": data})
+    await log_audit(user, "UPDATE", "lavorazione", lid, data)
     return {"ok": True}
 
 
@@ -169,14 +174,16 @@ async def create_consegna(body: ConsegnaIn, user: Dict = Depends(require_roles("
 
 
 @router.patch("/consegne/{cid}")
-async def update_consegna(cid: str, body: Dict[str, Any], user: Dict = Depends(require_roles("admin", "logistica"))):
-    body.pop("_id", None)
-    body["updated_at"] = now_utc().isoformat()
+async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(require_roles("admin", "logistica"))):
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return {"ok": True}
+    data["updated_at"] = now_utc().isoformat()
     # Track real delivery date when transitioning to "consegnata" for real punctuality KPI
-    if body.get("stato") == "consegnata":
-        body.setdefault("data_consegna_effettiva", now_utc().date().isoformat())
-    await db.consegne.update_one({"id": cid}, {"$set": body})
-    await log_audit(user, "UPDATE", "consegna", cid, body)
+    if data.get("stato") == "consegnata":
+        data.setdefault("data_consegna_effettiva", now_utc().date().isoformat())
+    await db.consegne.update_one({"id": cid}, {"$set": data})
+    await log_audit(user, "UPDATE", "consegna", cid, data)
     return {"ok": True}
 
 
@@ -200,9 +207,11 @@ async def create_nc(body: NonConformitaIn, user: Dict = Depends(require_roles("a
 
 
 @router.patch("/non-conformita/{nid}")
-async def update_nc(nid: str, body: Dict[str, Any], user: Dict = Depends(require_roles("admin", "qualita"))):
-    body.pop("_id", None)
-    body["updated_at"] = now_utc().isoformat()
-    await db.non_conformita.update_one({"id": nid}, {"$set": body})
-    await log_audit(user, "UPDATE", "non_conformita", nid, body)
+async def update_nc(nid: str, body: PatchNonConformitaIn, user: Dict = Depends(require_roles("admin", "qualita"))):
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return {"ok": True}
+    data["updated_at"] = now_utc().isoformat()
+    await db.non_conformita.update_one({"id": nid}, {"$set": data})
+    await log_audit(user, "UPDATE", "non_conformita", nid, data)
     return {"ok": True}

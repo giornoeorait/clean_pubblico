@@ -117,3 +117,104 @@ class FatturaIn(BaseModel):
     righe: List[Dict[str, Any]] = Field(default_factory=list)
     iva_pct: float = 22
     scadenza: Optional[str] = None
+
+
+# ----------------------------------------------------------------------
+# PATCH schemas — all fields optional, extras ignored.
+# Use `.model_dump(exclude_unset=True)` in handlers to update only set fields.
+# ----------------------------------------------------------------------
+from pydantic import ConfigDict  # noqa: E402
+
+
+class _PatchBase(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class PatchUserIn(_PatchBase):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    attivo: Optional[bool] = None
+    cliente_id: Optional[str] = None
+    password: Optional[str] = None
+
+
+class PatchClienteIn(_PatchBase):
+    ragione_sociale: Optional[str] = None
+    partita_iva: Optional[str] = None
+    codice_fiscale: Optional[str] = None
+    indirizzo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    tipologia: Optional[str] = None
+    listino: Optional[str] = None
+    condizioni_pagamento: Optional[str] = None
+    giorni_ritiro: Optional[List[int]] = None
+    sla_ore: Optional[int] = None
+    note: Optional[str] = None
+    attivo: Optional[bool] = None
+
+
+class PatchArticoloIn(_PatchBase):
+    codice: Optional[str] = None
+    descrizione: Optional[str] = None
+    categoria: Optional[str] = None
+    tipo: Optional[str] = None
+    materiale: Optional[str] = None
+    lavaggio: Optional[str] = None
+    temperatura: Optional[int] = None
+    barcode: Optional[str] = None
+    peso_medio: Optional[float] = None
+    prezzo: Optional[float] = None
+    prezzo_tipo: Optional[str] = None
+
+
+class PatchMacchinaIn(_PatchBase):
+    codice: Optional[str] = None
+    tipo: Optional[str] = None
+    capacita_kg: Optional[float] = None
+    stato: Optional[str] = None
+    reparto: Optional[str] = None
+    ore_lavoro: Optional[float] = None
+    manutenzione_prossima: Optional[str] = None
+
+
+class PatchConsegnaIn(_PatchBase):
+    stato: Optional[str] = None            # pianificata | in_consegna | consegnata | contestata
+    autista: Optional[str] = None
+    data_prevista: Optional[str] = None
+    data_consegna_effettiva: Optional[str] = None
+    lotti_ids: Optional[List[str]] = None
+    firma_cliente_url: Optional[str] = None
+    contestazioni: Optional[str] = None
+    geolocation: Optional[Dict[str, Any]] = None
+    note: Optional[str] = None
+
+
+class PatchLavorazioneIn(_PatchBase):
+    stato: Optional[str] = None            # pending | in_corso | completato
+    macchina_id: Optional[str] = None
+    programma: Optional[str] = None
+    temperatura: Optional[int] = None
+    detergenti: Optional[str] = None
+    tempo_min: Optional[int] = None
+    scarti: Optional[int] = None
+    note: Optional[str] = None
+    inizio: Optional[str] = None
+    fine: Optional[str] = None
+
+
+class PatchNonConformitaIn(_PatchBase):
+    tipo_difetto: Optional[str] = None
+    gravita: Optional[str] = None
+    foto_urls: Optional[List[str]] = None
+    responsabile: Optional[str] = None
+    azione_correttiva: Optional[str] = None
+    stato: Optional[str] = None            # aperta | in_lavorazione | risolta
+
+
+class PatchFatturaIn(_PatchBase):
+    stato: Optional[str] = None            # bozza | emessa | pagata | scaduta
+    scadenza: Optional[str] = None
+    data: Optional[str] = None
+    righe: Optional[List[Dict[str, Any]]] = None
+    iva_pct: Optional[float] = None

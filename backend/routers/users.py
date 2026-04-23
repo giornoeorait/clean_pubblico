@@ -1,8 +1,8 @@
 """Users management (admin only)."""
-from typing import Dict, Any
+from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
 from core import db, new_id, now_utc, hash_password, require_roles, log_audit
-from schemas import UserCreate
+from schemas import UserCreate, PatchUserIn
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -35,14 +35,16 @@ async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admi
 
 
 @router.patch("/{uid}")
-async def update_user(uid: str, body: Dict[str, Any], user: Dict = Depends(require_roles("admin"))):
-    body.pop("_id", None)
-    if "password" in body and body["password"]:
-        body["password_hash"] = hash_password(body.pop("password"))
+async def update_user(uid: str, body: PatchUserIn, user: Dict = Depends(require_roles("admin"))):
+    data = body.model_dump(exclude_unset=True)
+    if "password" in data and data["password"]:
+        data["password_hash"] = hash_password(data.pop("password"))
     else:
-        body.pop("password", None)
-    await db.users.update_one({"id": uid}, {"$set": body})
-    await log_audit(user, "UPDATE", "user", uid, body)
+        data.pop("password", None)
+    if not data:
+        return {"ok": True}
+    await db.users.update_one({"id": uid}, {"$set": data})
+    await log_audit(user, "UPDATE", "user", uid, data)
     return {"ok": True}
 
 

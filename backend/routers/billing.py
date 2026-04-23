@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends
 from core import db, new_id, now_utc, get_current_user, require_roles, log_audit, next_seq
-from schemas import FatturaIn
+from schemas import FatturaIn, PatchFatturaIn
 
 router = APIRouter(prefix="/fatture", tags=["billing"])
 
@@ -39,9 +39,11 @@ async def create_fattura(body: FatturaIn, user: Dict = Depends(require_roles("ad
 
 
 @router.patch("/{fid}")
-async def update_fattura(fid: str, body: Dict[str, Any], user: Dict = Depends(require_roles("admin", "contabilita"))):
-    body.pop("_id", None)
-    body["updated_at"] = now_utc().isoformat()
-    await db.fatture.update_one({"id": fid}, {"$set": body})
-    await log_audit(user, "UPDATE", "fattura", fid, body)
+async def update_fattura(fid: str, body: PatchFatturaIn, user: Dict = Depends(require_roles("admin", "contabilita"))):
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return {"ok": True}
+    data["updated_at"] = now_utc().isoformat()
+    await db.fatture.update_one({"id": fid}, {"$set": data})
+    await log_audit(user, "UPDATE", "fattura", fid, data)
     return {"ok": True}
