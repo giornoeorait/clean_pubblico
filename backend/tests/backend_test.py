@@ -318,3 +318,201 @@ def test_rbac_logistica_cannot_delete_articoli(tokens):
     articoli = requests.get(f"{API}/articoli", headers=H(tokens["admin"])).json()
     r = requests.delete(f"{API}/articoli/{articoli[0]['id']}", headers=H(tokens["logistica"]))
     assert r.status_code == 403
+
+
+
+# =========== P2 HARDENING: atomic counter, real punctuality, modular structure ===========
+from concurrent.futures import ThreadPoolExecutor
+import importlib
+
+
+def test_atomic_counter_ritiri_concurrent_unique_numero(tokens):
+    """Create N ritiri in parallel and verify all numero values are distinct
+    (atomic next_seq via findOneAndUpdate + $inc)."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    cli_id = clienti[0]["id"]
+    headers = H(tokens["logistica"])
+    payload = {
+        "cliente_id": cli_id,
+        "data_ritiro": "2026-01-22",
+        "operatore": "ParallelOp",
+        "peso_totale": 1.0,
+        "quantita_totale": 1,
+    }
+
+    def _post(_i):
+        return requests.post(f"{API}/ritiri", headers=headers, json=payload, timeout=30)
+
+    N = 8
+    with ThreadPoolExecutor(max_workers=N) as ex:
+        responses = list(ex.map(_post, range(N)))
+
+    numeri = []
+    for r in responses:
+        assert r.status_code == 200, r.text
+        numeri.append(r.json()["numero"])
+
+    # All must be distinct
+    assert len(set(numeri)) == N, f"Duplicate numero detected: {numeri}"
+    # All must share the RIT- prefix
+    for n in numeri:
+        assert n.startswith("RIT-")
+
+
+def test_atomic_counter_consegne_concurrent_unique_numero(tokens):
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    headers = H(tokens["logistica"])
+    payload = {
+        "cliente_id": clienti[0]["id"],
+        "lotti_ids": [],
+        "data_prevista": "2026-02-10",
+        "autista": "ParDrv",
+    }
+
+    def _post(_i):
+        return requests.post(f"{API}/consegne", headers=headers, json=payload, timeout=30)
+
+    N = 6
+    with ThreadPoolExecutor(max_workers=N) as ex:
+        responses = list(ex.map(_post, range(N)))
+
+    numeri = [r.json()["numero"] for r in responses if r.status_code == 200]
+    assert len(numeri) == N
+    assert len(set(numeri)) == N, f"Duplicate consegna numero: {numeri}"
+    for n in numeri:
+        assert n.startswith("CON-")
+
+
+def test_patch_consegna_consegnata_sets_data_effettiva(tokens):
+    """PATCH stato='consegnata' auto-sets data_consegna_effettiva=today ISO date."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    payload = {
+        "cliente_id": clienti[0]["id"],
+        "lotti_ids": [],
+        "data_prevista": "2026-03-01",
+        "autista": "Test",
+    }
+    c = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]), json=payload).json()
+    cid = c["id"]
+
+    # Before PATCH - no data_consegna_effettiva
+    lst_before = requests.get(f"{API}/consegne", headers=H(tokens["admin"])).json()
+    target = [x for x in lst_before if x["id"] == cid][0]
+    assert target.get("data_consegna_effettiva") in (None, "")
+
+    # PATCH -> consegnata
+    p = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]), json={"stato": "consegnata"})
+    assert p.status_code == 200
+
+    # Verify persisted
+    lst_after = requests.get(f"{API}/consegne", headers=H(tokens["admin"])).json()
+    target2 = [x for x in lst_after if x["id"] == cid][0]
+    from datetime import datetime as _dt, timezone as _tz
+    today_iso = _dt.now(_tz.utc).date().isoformat()
+    assert target2["stato"] == "consegnata"
+    assert target2.get("data_consegna_effettiva") == today_iso, (
+        f"Expected data_consegna_effettiva={today_iso}, got {target2.get('data_consegna_effettiva')}"
+    )
+
+
+def test_consegna_past_prevista_is_NOT_puntuale(tokens):
+    """Delivery with past data_prevista then stato=consegnata today -> NOT puntuale
+    (today > data_prevista)."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    past_date = "2020-01-01"
+    payload = {
+        "cliente_id": clienti[0]["id"],
+        "lotti_ids": [],
+        "data_prevista": past_date,
+        "autista": "Late",
+    }
+    c = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]), json=payload).json()
+    cid = c["id"]
+
+    # Snapshot KPI before
+    kpi_before = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    consegnate_before = kpi_before["consegne_consegnate"]
+    puntuali_before = kpi_before["consegne_puntuali"]
+
+    p = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]), json={"stato": "consegnata"})
+    assert p.status_code == 200
+
+    kpi_after = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    assert kpi_after["consegne_consegnate"] == consegnate_before + 1
+    # Not puntuale -> puntuali counter unchanged
+    assert kpi_after["consegne_puntuali"] == puntuali_before
+
+
+def test_consegna_future_prevista_IS_puntuale(tokens):
+    """Delivery with future data_prevista then stato=consegnata today -> puntuale."""
+    clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    future_date = "2099-12-31"
+    payload = {
+        "cliente_id": clienti[0]["id"],
+        "lotti_ids": [],
+        "data_prevista": future_date,
+        "autista": "OnTime",
+    }
+    c = requests.post(f"{API}/consegne", headers=H(tokens["logistica"]), json=payload).json()
+    cid = c["id"]
+
+    kpi_before = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    consegnate_before = kpi_before["consegne_consegnate"]
+    puntuali_before = kpi_before["consegne_puntuali"]
+
+    p = requests.patch(f"{API}/consegne/{cid}", headers=H(tokens["logistica"]), json={"stato": "consegnata"})
+    assert p.status_code == 200
+
+    kpi_after = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"])).json()
+    assert kpi_after["consegne_consegnate"] == consegnate_before + 1
+    assert kpi_after["consegne_puntuali"] == puntuali_before + 1
+
+    # puntualita_pct recomputed correctly
+    if kpi_after["consegne_consegnate"] > 0:
+        expected_pct = round(
+            kpi_after["consegne_puntuali"] / kpi_after["consegne_consegnate"] * 100, 1
+        )
+        assert kpi_after["puntualita_pct"] == expected_pct
+
+
+def test_dashboard_kpi_has_punctuality_fields(tokens):
+    r = requests.get(f"{API}/dashboard/kpi", headers=H(tokens["admin"]))
+    assert r.status_code == 200
+    j = r.json()
+    for key in ["consegne_consegnate", "consegne_puntuali", "puntualita_pct"]:
+        assert key in j, f"missing dashboard KPI field: {key}"
+    assert isinstance(j["consegne_consegnate"], int)
+    assert isinstance(j["consegne_puntuali"], int)
+    assert isinstance(j["puntualita_pct"], (int, float))
+    # Relationship
+    assert j["consegne_puntuali"] <= j["consegne_consegnate"]
+    # Default: 100.0 when zero delivered (cannot easily force zero in shared env,
+    # but the math must hold whenever consegnate > 0)
+    if j["consegne_consegnate"] > 0:
+        expected = round(j["consegne_puntuali"] / j["consegne_consegnate"] * 100, 1)
+        assert j["puntualita_pct"] == expected
+    else:
+        assert j["puntualita_pct"] == 100.0
+
+
+def test_modular_file_structure_importable():
+    """Verify the refactored modular layout is loadable (core, schemas, seed, routers)."""
+    import sys
+    sys.path.insert(0, "/app/backend")
+    for mod in [
+        "core",
+        "schemas",
+        "seed",
+        "routers.auth",
+        "routers.users",
+        "routers.catalog",
+        "routers.operations",
+        "routers.billing",
+        "routers.dashboard",
+    ]:
+        m = importlib.import_module(mod)
+        assert m is not None, f"Cannot import {mod}"
+    # server.py must stay thin (<= ~80 lines)
+    with open("/app/backend/server.py") as f:
+        line_count = sum(1 for _ in f)
+    assert line_count <= 80, f"server.py is {line_count} lines, expected <= 80"

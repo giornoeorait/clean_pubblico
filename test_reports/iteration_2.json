@@ -1,0 +1,43 @@
+{
+  "summary": "Backend regression + P2 hardening validation after monolith split. Ran 34 pytest cases against public REACT_APP_BACKEND_URL. All 34 passed (27 prior regression + 7 new): atomic counter (parallel ritiri & consegne yield fully distinct numero), PATCH consegne stato=consegnata auto-sets data_consegna_effettiva=today, dashboard KPI exposes consegne_consegnate/consegne_puntuali/puntualita_pct with correct math, past-prevista consegna is NOT puntuale, future-prevista IS puntuale, modular router structure loadable and server.py is thin (<=80 LOC).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/consegne PATCH", "issue": "data_consegna_effettiva is derived from server UTC date (now_utc().date().isoformat()); for late-evening CET/UTC boundary deliveries the on-time comparison could mis-classify by 1 day. Minor; acceptable trade-off."},
+      {"endpoint": "/api/dashboard/kpi", "issue": "puntualita compares ISO date strings lexicographically - correct as long as both are stored 'YYYY-MM-DD'. Add Pydantic date validation on PATCH body.stato/data_prevista to harden."},
+      {"endpoint": "/api/consegne PATCH", "issue": "Body is typed Dict[str, Any] (no Pydantic). Allows arbitrary field writes; consider a PatchConsegnaIn schema."},
+      {"endpoint": "/api/fatture", "issue": "Unused 'cliente' role branch in GET /api/fatture still present (carried over from iter 1)."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add Pydantic PatchConsegnaIn/PatchLavorazioneIn/PatchNonConformitaIn schemas instead of raw Dict[str, Any].",
+    "(Optional) Remove dead 'cliente' role branch in GET /api/fatture or formally document the role.",
+    "(Optional) Store created_at / data_prevista as datetime objects in Mongo to avoid lex-string comparisons and enable range queries."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now a clean 42-line entry point wiring 6 routers under /api - excellent refactor.",
+    "core.next_seq uses findOneAndUpdate + $inc + upsert + ReturnDocument.AFTER: textbook-correct atomic counter, verified under 8-way concurrent POST with zero duplicates.",
+    "seed.ensure_counters() seeds counters to count_documents() only when the doc is absent - correctly idempotent; will not reset after restart.",
+    "operations.update_consegna uses body.setdefault('data_consegna_effettiva', ...) so explicit dates from client are preserved while default falls back to today - good.",
+    "dashboard.dashboard_kpi correctly guards division-by-zero with 100.0 default and uses string-date <= comparison (works for ISO 'YYYY-MM-DD').",
+    "require_roles still implicitly allows admin even if not listed - documented behavior, verified.",
+    "All routers consistently exclude _id and password_hash.",
+    "MINOR: PATCH endpoints (consegne, lavorazioni, non-conformita) accept raw Dict[str, Any] - should be typed Pydantic models for consistency with POST endpoints.",
+    "MINOR: core.JWT_SECRET still has a fallback default value - acceptable for dev but should fail-fast if env missing in prod."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin@cleantec.it/admin123, produzione@cleantec.it/produzione123, logistica@cleantec.it/logistica123, qualita@cleantec.it/qualita123, contabilita@cleantec.it/contabilita123 - all verified working",
+  "seed_data_creation": "Tests create transient data: ~14 ritiri (8 parallel + others), ~8 consegne (6 parallel + 3 for KPI scenarios), 1 lotto with full 9-state chain, 1 lavorazione, 1 NC, 1 fattura. No cleanup performed; counters increment monotonically as expected. TEST_Cliente_X/Y created and deleted in-test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "backend_test.py now has 34 tests including concurrency (ThreadPoolExecutor, 8 parallel POST /ritiri, 6 parallel POST /consegne), puntualita KPI math verification (past/future data_prevista), and a module-import smoke test for the refactored router layout. Run: pytest /app/backend/tests/backend_test.py -v. Public URL https://wash-ops-central.preview.emergentagent.com works. Backend is solid; next iteration can safely pivot to frontend.",
+  "rca of the issue": "N/A - no bugs found this iteration. Prior iter1 concern about non-atomic numero generation is now fully resolved by the counters collection + findOneAndUpdate($inc, upsert=True) pattern, empirically verified under concurrency."
+}
