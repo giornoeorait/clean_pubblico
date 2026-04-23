@@ -5,8 +5,9 @@ from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
 from core import client
-from routers import auth, users, catalog, operations, billing, dashboard, magazzino, manutenzione
+from routers import auth, users, catalog, operations, billing, dashboard, magazzino, manutenzione, files, notifications as notif_router, hardware
 from seed import run_all as run_seed
+from storage import init_storage
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("cleantec")
@@ -22,6 +23,9 @@ api.include_router(billing.router)
 api.include_router(dashboard.router)
 api.include_router(magazzino.router)
 api.include_router(manutenzione.router)
+api.include_router(files.router)
+api.include_router(notif_router.router)
+api.include_router(hardware.router)
 app.include_router(api)
 
 app.add_middleware(
@@ -35,6 +39,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
+    init_storage()
     await run_seed()
 
 

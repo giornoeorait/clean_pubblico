@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import StatoBadge from "../components/StatoBadge";
@@ -43,15 +43,15 @@ export default function Manutenzione() {
   const [ivForm, setIvForm] = useState(IVT_EMPTY);
   const [pezziInput, setPezziInput] = useState("");
 
-  const fetch = async () => {
+  const fetch = useCallback(async () => {
     const params = [];
     if (filterStato) params.push(`stato=${filterStato}`);
     if (filterPrio) params.push(`priorita=${filterPrio}`);
     const q = params.length ? `?${params.join("&")}` : "";
     const [t, m] = await Promise.all([api.get(`/tickets${q}`), api.get("/macchine")]);
     setList(t.data); setMacchine(m.data);
-  };
-  useEffect(() => { fetch(); }, [filterStato, filterPrio]);
+  }, [filterStato, filterPrio]);
+  useEffect(() => { fetch(); }, [fetch]);
 
   const openDetail = async (t) => {
     const { data } = await api.get(`/tickets/${t.id}`);

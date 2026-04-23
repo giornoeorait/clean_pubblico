@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   ChartBar, Users, Package, HardDrives, ClipboardText, Path, Kanban,
   ShieldCheck, Truck, Receipt, UserList, Hand, DeviceMobile, Storefront,
-  SignOut, List, X, Sparkle, Drop, Wrench,
+  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan,
 } from "@phosphor-icons/react";
 
 const ALL_ITEMS = [
@@ -20,6 +20,8 @@ const ALL_ITEMS = [
   { to: "/fatture", label: "Fatturazione", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/magazzino", label: "Magazzino", icon: Drop, roles: ["admin", "produzione", "contabilita", "logistica"] },
   { to: "/manutenzione", label: "Manutenzione", icon: Wrench, roles: ["admin", "produzione"] },
+  { to: "/notifiche", label: "Notifiche", icon: ChatCircleText, roles: ["admin", "logistica", "produzione", "qualita"] },
+  { to: "/hardware", label: "Console Hardware", icon: Scan, roles: ["admin", "produzione", "logistica"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
 ];
 

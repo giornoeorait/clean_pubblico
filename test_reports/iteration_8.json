@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 8: end-to-end testing of Object Storage, Twilio Notifications (stub), and Hardware ingestion (barcode/scale/RFID). Backend: 32/32 tests passing (100%). Frontend: both new pages render the PageHeader, sidebar nav works, but opening the 'Invia notifica' dialog on /notifiche and rendering the Select dropdowns on /hardware CRASH the app through the ErrorBoundary due to `<SelectItem value=\"\">` — Radix UI forbids empty-string values in SelectItem.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Notifiche.jsx",
+        "issue": "Opening the 'Invia notifica' dialog triggers React ErrorBoundary → full page replaced by 'Si è verificato un problema'. Root cause at line 96: `<SelectItem value=\"\">— Nessuno —</SelectItem>`. Radix Select.Item throws: 'A <Select.Item /> must have a value prop that is not an empty string.' Dialog is therefore unusable in this preview — notifications cannot be sent from UI.",
+        "selector": "[data-testid=\"new-notif-btn\"] → dialog → [data-testid=\"notif-template\"]",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Hardware.jsx",
+        "issue": "Same empty-string SelectItem bug at lines 141 (scale lotto select) and 160 (rfid lotto select): `<SelectItem value=\"\">— libero —</SelectItem>`. Will crash the page as soon as those Select dropdowns render their content. Must use a sentinel value (e.g. `value=\"__free__\"`) and map it to undefined before POST.",
+        "selector": "[data-testid=\"hw-scale-lotto\"], [data-testid=\"hw-rfid-lotto\"]",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Send notification from UI",
+        "issue": "Cannot reach POST /api/notifications/send from UI because dialog crashes before form is usable. Backend endpoint itself works fine (verified in pytest).",
+        "affected_selectors": ["[data-testid=\"notif-send-btn\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notif_hw_files.py",
+    "/app/test_reports/pytest/iter8_results.xml"
+  ],
+  "action_items": [
+    "Replace empty-string SelectItem values in Notifiche.jsx (line 96) and Hardware.jsx (lines 141, 160). Suggested: use value=\"__none__\" / value=\"__free__\" and translate to undefined when building the payload; or remove the 'nessuno/libero' option entirely and rely on the SelectValue placeholder (initial state form.template === '' already shows placeholder).",
+    "After fix: re-test /notifiche dialog send SMS body-libero + template send + verify stub record. Re-test /hardware scan/scale/rfid flows.",
+    "(Optional) Add a shared utility `<NoneSelectItem value='__none__' />` to avoid repeating this bug."
+  ],
+  "critical_code_review_comments": [
+    "Radix Select anti-pattern: SelectItem empty string value is documented to throw. Both new pages share the bug — indicates missing shared component / lint rule for Shadcn Select usage.",
+    "Files router GET /api/files/{path:path} accepts token via ?auth= query string — fine for <img> tags but logs may leak tokens. Consider short-lived signed URLs (HMAC of path+exp).",
+    "notifications.send_notification catches all Twilio errors and records 'failed' without surfacing 5xx — good for non-blocking consegna auto-trigger, but the explicit /notifications/send endpoint should probably propagate a 502 when provider=twilio and status=failed so the UI can show a clear error instead of a misleading 'registrata'.",
+    "operations.py PATCH /consegne auto-trigger only triggers if telefono starts with '+' — silently skipped otherwise. Consider logging a warning so ops knows why an SMS wasn't sent.",
+    "hardware.py _log_event stores full payload including potentially sensitive device identifiers. No PII but consider retention policy / TTL index on db.hardware_events (table can grow fast with RFID gates)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_notif_hw_files.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (32/32)",
+    "frontend": "~40% — sidebar nav + page headers + stub banner render correctly; all interactive dropdowns on both new pages crash the ErrorBoundary"
+  },
+  "test_credentials": "Used /app/memory/test_credentials.md: admin@cleantec.it/admin123, cliente@cleantec.it/cliente123, logistica@cleantec.it/logistica123",
+  "seed_data_creation": "Tests create ephemeral: several stub notifications, 1 consegna (for auto-SMS), hardware_events (barcode/scale/rfid), 1 signature file + 1 multipart upload, 1 ticket (priorità critica). 1 cliente telefono may have been patched to '+393339998877' if none had a phone. No cleanup performed (TEST_ prefix not enforced by API).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully validated in /app/backend/tests/test_notif_hw_files.py (runs in ~8s). Frontend blocker = SelectItem empty-value crash on /notifiche dialog and /hardware dropdowns. After main agent fixes both files, re-run the Playwright flow: (1) login admin, (2) /notifiche → click [data-testid=new-notif-btn] → fill notif-to + notif-body → click notif-send-btn → expect toast + new card with status='logged', (3) /hardware → scan existing lotto numero → expect green match card, scale kg with a selected lotto → verify lotto.peso_kg updated via /api/lotti/{id}, rfid batch with 3 tags → verify count=3. Twilio must remain in stub mode (no TWILIO_* env).",
+  "rca of the issue": "React ErrorBoundary 'ERRORE INATTESO / Si è verificato un problema' is triggered by Radix UI raising `Error: A <Select.Item /> must have a value prop that is not an empty string.` Reproduction: login as admin → navigate to /notifiche → click 'Invia notifica'. Console log captured the exact stack originating from SelectItem at bundle.js:11349. Files: /app/frontend/src/pages/Notifiche.jsx:96 and /app/frontend/src/pages/Hardware.jsx:141,160. Mitigation: replace value=\"\" with a non-empty sentinel (e.g. '__none__'/'__free__') and convert back to undefined/empty when submitting; OR delete the 'nessuno/libero' option (the Select placeholder already handles the empty/default state because form.template defaults to '')."
+}

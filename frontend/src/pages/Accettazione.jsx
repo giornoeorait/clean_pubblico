@@ -8,6 +8,8 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { ClipboardText, Scan, Camera, CheckCircle, Plus } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import FileUpload from "../components/FileUpload";
+import SignaturePad from "../components/SignaturePad";
 
 export default function Accettazione() {
   const [clienti, setClienti] = useState([]);
@@ -23,6 +25,8 @@ export default function Accettazione() {
     note: "",
   });
   const [lotti, setLotti] = useState([{ articolo_id: "", quantita: 10, peso: 5, priorita: "normale" }]);
+  const [fotos, setFotos] = useState([]);
+  const [firma, setFirma] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -43,7 +47,13 @@ export default function Accettazione() {
     try {
       const quantita_totale = lotti.reduce((s, l) => s + Number(l.quantita || 0), 0);
       const peso_totale = lotti.reduce((s, l) => s + Number(l.peso || 0), 0);
-      const ritiro = await api.post("/ritiri", { ...form, quantita_totale, peso_totale });
+      const ritiro = await api.post("/ritiri", {
+        ...form,
+        quantita_totale,
+        peso_totale,
+        foto_urls: fotos.map(f => f.url),
+        firma_url: firma?.url || "",
+      });
       // Crea lotti
       for (const l of lotti) {
         if (l.articolo_id) {
@@ -60,6 +70,7 @@ export default function Accettazione() {
       toast.success(`Ritiro ${ritiro.data.numero} registrato con ${lotti.length} lotti`);
       setForm({ ...form, cliente_id: "", operatore: "", anomalie: "", note: "" });
       setLotti([{ articolo_id: "", quantita: 10, peso: 5, priorita: "normale" }]);
+      setFotos([]); setFirma(null);
     } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
     setSaving(false);
   };
@@ -142,13 +153,20 @@ export default function Accettazione() {
         {/* Sidebar tools */}
         <div className="space-y-4">
           <div className="kpi-card">
+            <div className="overline mb-3">Foto capi</div>
+            <FileUpload value={fotos} onChange={setFotos} context="accettazione" label="Scatta/Carica foto" testId="accettazione-foto" />
+          </div>
+
+          <div className="kpi-card">
+            <div className="overline mb-3">Firma operatore</div>
+            <SignaturePad value={firma} onSaved={setFirma} context="accettazione-firma" testId="accettazione-firma" />
+          </div>
+
+          <div className="kpi-card">
             <div className="overline mb-3">Integrazioni</div>
             <div className="space-y-2">
               <button type="button" className="w-full flex items-center gap-3 p-3 border border-slate-200 rounded-md hover:bg-slate-50 text-sm" data-testid="barcode-btn">
                 <Scan size={20} className="text-indaco" weight="duotone" /><span>Scanner Barcode/RFID</span>
-              </button>
-              <button type="button" className="w-full flex items-center gap-3 p-3 border border-slate-200 rounded-md hover:bg-slate-50 text-sm">
-                <Camera size={20} className="text-indaco" weight="duotone" /><span>Foto capi (opzionale)</span>
               </button>
             </div>
           </div>

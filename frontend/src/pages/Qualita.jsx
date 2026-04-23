@@ -10,12 +10,14 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Plus, ShieldWarning, Warning, CheckCircle } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import FileUpload from "../components/FileUpload";
 
 const EMPTY = { lotto_id: "", tipo_difetto: "", gravita: "media", foto_urls: [], responsabile: "", azione_correttiva: "" };
 
 export default function Qualita() {
   const [list, setList] = useState([]);
   const [form, setForm] = useState(EMPTY);
+  const [fotos, setFotos] = useState([]);
   const [open, setOpen] = useState(false);
 
   const fetch = async () => { const { data } = await api.get("/non-conformita"); setList(data); };
@@ -23,8 +25,11 @@ export default function Qualita() {
 
   const save = async (e) => {
     e.preventDefault();
-    try { await api.post("/non-conformita", form); toast.success("Non conformità registrata"); setOpen(false); setForm(EMPTY); fetch(); }
-    catch (e) { toast.error(e.response?.data?.detail); }
+    try {
+      await api.post("/non-conformita", { ...form, foto_urls: fotos.map(f => f.url) });
+      toast.success("Non conformità registrata");
+      setOpen(false); setForm(EMPTY); setFotos([]); fetch();
+    } catch (e) { toast.error(e.response?.data?.detail); }
   };
 
   const risolvi = async (id) => { await api.patch(`/non-conformita/${id}`, { stato: "risolta" }); toast.success("NC risolta"); fetch(); };
@@ -59,6 +64,7 @@ export default function Qualita() {
                 </div>
                 <div><Label>Responsabile</Label><Input value={form.responsabile} onChange={e => setForm({...form, responsabile: e.target.value})} /></div>
                 <div><Label>Azione correttiva</Label><Textarea rows={3} value={form.azione_correttiva} onChange={e => setForm({...form, azione_correttiva: e.target.value})} /></div>
+                <div><Label>Foto del difetto</Label><FileUpload value={fotos} onChange={setFotos} context="non-conformita" label="Aggiungi foto" testId="nc-foto" /></div>
                 <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark">Registra</Button></div>
               </form>
             </DialogContent>

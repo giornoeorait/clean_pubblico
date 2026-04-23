@@ -10,6 +10,7 @@ from schemas import (
     RitiroIn, LottoIn, CambiaStatoIn, LavorazioneIn, ConsegnaIn, NonConformitaIn,
     PatchConsegnaIn, PatchLavorazioneIn, PatchNonConformitaIn,
 )
+from notifications import send_notification
 
 router = APIRouter(tags=["operations"])
 
@@ -205,6 +206,30 @@ async def update_consegna(cid: str, body: PatchConsegnaIn, user: Dict = Depends(
         data["data_consegna_effettiva"] = now_utc()
     await db.consegne.update_one({"id": cid}, {"$set": data})
     await log_audit(user, "UPDATE", "consegna", cid, {"stato": data.get("stato")})
+
+    # Auto-notify cliente on key status changes (best-effort, non-blocking)
+    new_stato = data.get("stato")
+    if new_stato in ("in_transito", "consegnata"):
+        try:
+            consegna = await db.consegne.find_one({"id": cid}, {"_id": 0})
+            if consegna and consegna.get("cliente_id"):
+                cliente = await db.clienti.find_one({"id": consegna["cliente_id"]}, {"_id": 0})
+                phone = (cliente or {}).get("telefono", "").strip()
+                if phone and phone.startswith("+"):
+                    tpl = "consegna_in_transito" if new_stato == "in_transito" else "consegna_completata"
+                    nome = (cliente or {}).get("ragione_sociale", "")
+                    body = {
+                        "consegna_in_transito": f"Ciao {nome}! La tua consegna {consegna.get('numero')} è in transito. - CleanTec",
+                        "consegna_completata": f"Consegna {consegna.get('numero')} effettuata con successo. Grazie! - CleanTec",
+                    }[tpl]
+                    await send_notification(
+                        kind="sms", to=phone, body=body,
+                        context={"cliente_id": consegna["cliente_id"], "consegna_id": cid, "trigger": tpl},
+                        user=user,
+                    )
+        except Exception:
+            pass  # never break API flow on notification failure
+
     return {"ok": True}
 
 

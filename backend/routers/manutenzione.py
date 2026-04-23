@@ -7,6 +7,7 @@ from core import (
     get_current_user, require_roles, log_audit, next_seq,
 )
 from schemas import TicketIn, PatchTicketIn, InterventoIn
+from notifications import send_notification
 
 router = APIRouter(tags=["manutenzione"])
 
@@ -75,6 +76,22 @@ async def create_ticket(body: TicketIn, user: Dict = Depends(require_roles(*_WRI
         await _update_macchina_stato(body.macchina_id, "guasto")
 
     await log_audit(user, "CREATE", "ticket", doc["id"], {"macchina": macchina.get("codice")})
+
+    # Auto-notify responsabile manutenzione on critical tickets (best-effort)
+    if body.priorita == "critica":
+        import os
+        alert_to = os.environ.get("MAINTENANCE_ALERT_PHONE")
+        if alert_to and alert_to.startswith("+"):
+            try:
+                msg = f"CleanTec URGENTE: ticket {doc['numero']} CRITICO su macchina {macchina.get('codice')}. Tipo: {body.tipo}. {body.titolo}"
+                await send_notification(
+                    kind="sms", to=alert_to, body=msg,
+                    context={"ticket_id": doc["id"], "macchina_id": body.macchina_id, "trigger": "ticket_critico"},
+                    user=user,
+                )
+            except Exception:
+                pass
+
     return doc
 
 

@@ -9,6 +9,8 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Plus, Truck, MapPin, Package, Calendar } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import SignaturePad from "../components/SignaturePad";
+import { Dialog as SigDialog, DialogContent as SigDialogContent, DialogHeader as SigDialogHeader, DialogTitle as SigDialogTitle } from "../components/ui/dialog";
 
 export default function Logistica() {
   const [list, setList] = useState([]);
@@ -16,6 +18,7 @@ export default function Logistica() {
   const [lottiPronti, setLottiPronti] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ cliente_id: "", lotti_ids: [], data_prevista: new Date().toISOString().split("T")[0], autista: "", note: "" });
+  const [sigConsegna, setSigConsegna] = useState(null);
 
   const fetch = async () => {
     const [c, l, lp] = await Promise.all([
@@ -43,6 +46,13 @@ export default function Logistica() {
       }
     }
     toast.success("Stato aggiornato"); fetch();
+  };
+
+  const completaConFirma = async (c, firma) => {
+    await api.patch(`/consegne/${c.id}`, { stato: "consegnata", firma_cliente_url: firma.url });
+    if (c.lotti_ids) for (const lid of c.lotti_ids) await api.post(`/lotti/${lid}/cambia-stato`, { nuovo_stato: "consegnato" });
+    toast.success("Consegna confermata con firma cliente");
+    setSigConsegna(null); fetch();
   };
 
   const cm = {}; clienti.forEach(c => cm[c.id] = c.ragione_sociale);
@@ -124,12 +134,31 @@ export default function Logistica() {
             </div>
             <div className="flex gap-2 flex-wrap">
               {c.stato === "pianificata" && <Button size="sm" variant="outline" onClick={() => changeStato(c.id, "in_consegna")} data-testid={`start-${c.numero}`}>Avvia</Button>}
-              {c.stato === "in_consegna" && <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => changeStato(c.id, "consegnata")} data-testid={`complete-${c.numero}`}>Consegnata</Button>}
+              {c.stato === "in_consegna" && <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setSigConsegna(c)} data-testid={`complete-${c.numero}`}>Firma cliente</Button>}
+              {c.firma_cliente_url && <span className="text-xs font-mono text-emerald-600">✓ firmata</span>}
             </div>
           </div>
         ))}
         {list.length === 0 && <div className="kpi-card text-center py-12 text-slate-400">Nessuna consegna</div>}
       </div>
+
+      <SigDialog open={!!sigConsegna} onOpenChange={(o) => !o && setSigConsegna(null)}>
+        <SigDialogContent className="max-w-xl">
+          {sigConsegna && (
+            <>
+              <SigDialogHeader>
+                <SigDialogTitle>Firma cliente — {sigConsegna.numero}</SigDialogTitle>
+              </SigDialogHeader>
+              <div className="text-sm text-slate-500 mb-4">Il cliente firma per accettare la consegna. La firma viene salvata su storage e la consegna marcata "consegnata".</div>
+              <SignaturePad
+                onSaved={(firma) => completaConFirma(sigConsegna, firma)}
+                context="consegna-firma"
+                testId="consegna-firma-pad"
+              />
+            </>
+          )}
+        </SigDialogContent>
+      </SigDialog>
     </div>
   );
 }
