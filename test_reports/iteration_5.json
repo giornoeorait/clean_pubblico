@@ -1,0 +1,33 @@
+{
+  "summary": "Validated Portale Cliente (role='cliente') scoping + RBAC for CleanTec backend. Extended /app/backend/tests/backend_test.py with 16 new tests (cliente login shape, cliente_id→real cliente link, /auth/me scope, /lotti server-side filter, query-override block, admin regression, /consegne scope with auto-create, /fatture scope with two-cliente isolation, 5 write-endpoint RBAC blocks, /users & /audit-log GET blocks, seed idempotency). Full suite: 81/81 PASSED (65 regression + 16 new). No backend issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/operations.list_lotti: server-side filter `if user.role=='cliente' and user.cliente_id: query['cliente_id']=user.cliente_id` correctly OVERRIDES any ?cliente_id query param because the assignment comes after the param-based assignment. Verified via test_cliente_lotti_query_override_blocked.",
+    "routers/operations.list_consegne: same pattern applied, query-param-free endpoint — scoping added without regression to admin/logistica visibility.",
+    "routers/billing.list_fatture: pre-existing branch `if user.role=='cliente'` is now reachable thanks to seed_portale_cliente_user. Same override semantics verified.",
+    "core.require_roles: `if user['role'] not in allowed and user['role'] != 'admin'` — admin implicit bypass is intentional and safe here; cliente is never in any allowed tuple of write endpoints, so it is correctly blocked with 403.",
+    "seed.seed_portale_cliente_user: idempotent (find_one by email, only insert if missing; backfill cliente_id if existing row lacks it). Tied to 'Hotel Excelsior Roma' via ragione_sociale lookup with fallback to first cliente — robust against seed order.",
+    "Edge case worth noting (non-blocking): a cliente user whose cliente_id is empty string would fall through the scoping check (condition uses `user.get('cliente_id')`). Current seed guarantees a valid id, so not exploitable — but any future admin PATCH /users that accidentally nulls cliente_id on a cliente-role user would silently grant unrestricted read access. Consider asserting cliente_id required for role=='cliente' at the PATCH layer.",
+    "Fatture GET response for cliente correctly hides foreign cliente invoices even when ?cliente_id=OTHER is sent — no information leak.",
+    "Users soft-delete & seed idempotency: test_seed_portale_cliente_is_idempotent confirmed exactly 1 row with attivo=True for cliente@cleantec.it after multiple backend restarts / test runs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (81/81)", "frontend": "not tested (backend-only review)"},
+  "test_credentials": "Used all 6 credentials from /app/memory/test_credentials.md incl. the new cliente@cleantec.it / cliente123.",
+  "seed_data_creation": "Tests may create 1 consegna + 2 fatture for testing scoping (one for the cliente's own cliente_id, one for a foreign cliente). All TEST_-prefixed in description fields; non-destructive for regression baseline.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression baseline is now 81 tests (65 previous + 16 Portale Cliente). Key invariants to preserve: (a) list_lotti/list_consegne/list_fatture force cliente_id filter for role=='cliente' AFTER param assignment so override is blocked; (b) seed_portale_cliente_user is idempotent and linked to 'Hotel Excelsior Roma' (or first cliente fallback); (c) require_roles grants implicit admin bypass; (d) cliente role is blocked (403) on POST to /clienti /articoli /macchine /fatture /non-conformita and on GET /users /audit-log.",
+  "rca of the issue": "No issues found. Portale Cliente seeding and scoping implementation is correct and well-isolated. All 81 tests passed on first run without any test-side or backend-side fixes required."
+}

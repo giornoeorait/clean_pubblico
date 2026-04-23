@@ -53,6 +53,7 @@ export default function Utenti() {
                       <SelectItem value="logistica">Logistica</SelectItem>
                       <SelectItem value="qualita">Qualità</SelectItem>
                       <SelectItem value="contabilita">Contabilità</SelectItem>
+                      <SelectItem value="cliente">Cliente (Portale)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

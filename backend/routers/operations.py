@@ -57,6 +57,9 @@ async def list_lotti(
         query["stato_corrente"] = stato
     if cliente_id:
         query["cliente_id"] = cliente_id
+    # Portale Cliente: restrict to own cliente_id
+    if user["role"] == "cliente" and user.get("cliente_id"):
+        query["cliente_id"] = user["cliente_id"]
     return await db.lotti.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
@@ -163,7 +166,11 @@ async def update_lavorazione(lid: str, body: PatchLavorazioneIn, user: Dict = De
 # ---- Consegne (logistica) ------------------------------------------------
 @router.get("/consegne")
 async def list_consegne(user: Dict = Depends(get_current_user), limit: int = 200):
-    return await db.consegne.find({}, {"_id": 0}).sort("data_prevista", -1).to_list(limit)
+    query: Dict[str, Any] = {}
+    # Portale Cliente: restrict to own cliente_id
+    if user["role"] == "cliente" and user.get("cliente_id"):
+        query["cliente_id"] = user["cliente_id"]
+    return await db.consegne.find(query, {"_id": 0}).sort("data_prevista", -1).to_list(limit)
 
 
 @router.post("/consegne")

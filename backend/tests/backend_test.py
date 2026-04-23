@@ -16,6 +16,7 @@ CREDS = {
     "logistica": ("logistica@cleantec.it", "logistica123"),
     "qualita": ("qualita@cleantec.it", "qualita123"),
     "contabilita": ("contabilita@cleantec.it", "contabilita123"),
+    "cliente": ("cliente@cleantec.it", "cliente123"),
 }
 
 STATI_LOTTO = ["ritirato", "ricevuto", "smistato", "lavato", "asciugato", "stirato", "confezionato", "pronto", "consegnato"]
@@ -1005,3 +1006,194 @@ def test_users_created_at_is_bson_datetime(tokens):
     db = _mongo_db()
     for u in db.users.find({}, {"_id": 0, "password_hash": 0}):
         assert isinstance(u["created_at"], _dt), f"users.created_at not datetime: {u.get('email')}"
+
+# =====================================================================
+# Portale Cliente (role=="cliente") — scoping & RBAC
+# =====================================================================
+@pytest.fixture(scope="session")
+def cliente_login_payload():
+    """Full login response for cliente — used to assert shape & cliente_id."""
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": "cliente@cleantec.it", "password": "cliente123"},
+                      timeout=20)
+    assert r.status_code == 200, f"cliente login failed: {r.status_code} {r.text}"
+    return r.json()
+
+
+def test_cliente_login_returns_role_and_cliente_id(cliente_login_payload):
+    j = cliente_login_payload
+    assert "token" in j and isinstance(j["token"], str) and len(j["token"]) > 20
+    u = j["user"]
+    assert u["email"] == "cliente@cleantec.it"
+    assert u["role"] == "cliente"
+    assert u.get("cliente_id"), "cliente user must have cliente_id linked"
+    assert "password_hash" not in u
+    assert "_id" not in u
+
+
+def test_cliente_cliente_id_links_to_real_cliente(tokens, cliente_login_payload):
+    """cliente_id on the user must match a real cliente in the DB (Hotel Excelsior Roma)."""
+    user_cliente_id = cliente_login_payload["user"]["cliente_id"]
+    # Admin fetches all clienti and must find the match
+    r = requests.get(f"{API}/clienti", headers=H(tokens["admin"]))
+    assert r.status_code == 200
+    clienti = r.json()
+    match = [c for c in clienti if c["id"] == user_cliente_id]
+    assert len(match) == 1, f"cliente_id {user_cliente_id} not found in /api/clienti"
+    assert match[0]["ragione_sociale"] == "Hotel Excelsior Roma"
+
+
+def test_cliente_auth_me_returns_scope(tokens, cliente_login_payload):
+    r = requests.get(f"{API}/auth/me", headers=H(tokens["cliente"]))
+    assert r.status_code == 200
+    u = r.json()
+    assert u["role"] == "cliente"
+    assert u["email"] == "cliente@cleantec.it"
+    assert u["cliente_id"] == cliente_login_payload["user"]["cliente_id"]
+    assert "password_hash" not in u
+
+
+def test_cliente_lotti_scoped_to_own_cliente_id(tokens, cliente_login_payload):
+    own_id = cliente_login_payload["user"]["cliente_id"]
+    r = requests.get(f"{API}/lotti", headers=H(tokens["cliente"]))
+    assert r.status_code == 200
+    lotti = r.json()
+    assert isinstance(lotti, list)
+    assert len(lotti) > 0, "seed should have created >=1 lotto for Hotel Excelsior Roma"
+    for lot in lotti:
+        assert lot["cliente_id"] == own_id, \
+            f"cliente sees foreign lotto: {lot['id']} cliente_id={lot['cliente_id']}"
+
+
+def test_cliente_lotti_query_override_blocked(tokens, cliente_login_payload):
+    """Attempting to override scope with ?cliente_id=OTHER must still return only own lotti."""
+    own_id = cliente_login_payload["user"]["cliente_id"]
+    # pick a different cliente
+    all_clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    other = next((c for c in all_clienti if c["id"] != own_id), None)
+    assert other is not None, "need at least 2 clienti to test override"
+    r = requests.get(f"{API}/lotti?cliente_id={other['id']}", headers=H(tokens["cliente"]))
+    assert r.status_code == 200
+    for lot in r.json():
+        assert lot["cliente_id"] == own_id
+
+
+def test_admin_sees_all_lotti_regression(tokens, cliente_login_payload):
+    """Regression: admin still sees lotti of all clienti (no silent scoping leak)."""
+    own_id = cliente_login_payload["user"]["cliente_id"]
+    admin_lotti = requests.get(f"{API}/lotti", headers=H(tokens["admin"])).json()
+    cliente_lotti = requests.get(f"{API}/lotti", headers=H(tokens["cliente"])).json()
+    assert len(admin_lotti) >= len(cliente_lotti)
+    foreign = [l for l in admin_lotti if l["cliente_id"] != own_id]
+    assert len(foreign) > 0, "admin should see lotti of other clienti"
+
+
+def test_cliente_consegne_scoped(tokens, cliente_login_payload):
+    own_id = cliente_login_payload["user"]["cliente_id"]
+    # Ensure at least 1 consegna exists for this cliente (create via admin)
+    existing = requests.get(f"{API}/consegne", headers=H(tokens["admin"])).json()
+    own_existing = [c for c in existing if c.get("cliente_id") == own_id]
+    if not own_existing:
+        create = requests.post(f"{API}/consegne", headers=H(tokens["admin"]), json={
+            "cliente_id": own_id,
+            "data_prevista": _dt.now(_tz.utc).isoformat(),
+            "indirizzo": "Via Test 1, Roma",
+            "articoli": [],
+        })
+        assert create.status_code == 200, create.text
+    # Now query as cliente
+    r = requests.get(f"{API}/consegne", headers=H(tokens["cliente"]))
+    assert r.status_code == 200
+    consegne = r.json()
+    assert len(consegne) > 0
+    for c in consegne:
+        assert c.get("cliente_id") == own_id
+
+
+def test_cliente_fatture_scoped_and_visible(tokens, cliente_login_payload):
+    """Create a fattura as admin for the cliente, then verify cliente sees only their own."""
+    own_id = cliente_login_payload["user"]["cliente_id"]
+    # Create one fattura for this cliente
+    fc = requests.post(f"{API}/fatture", headers=H(tokens["admin"]), json={
+        "cliente_id": own_id,
+        "data": _dt.now(_tz.utc).strftime("%Y-%m-%d"),
+        "righe": [{"descrizione": "TEST_riga", "quantita": 10, "prezzo": 2.5, "totale": 25.0}],
+        "iva_pct": 22,
+    })
+    assert fc.status_code == 200, fc.text
+    own_fattura_id = fc.json()["id"]
+
+    # Also create one for a different cliente to ensure scoping isolates
+    all_clienti = requests.get(f"{API}/clienti", headers=H(tokens["admin"])).json()
+    other = next((c for c in all_clienti if c["id"] != own_id), None)
+    if other:
+        fo = requests.post(f"{API}/fatture", headers=H(tokens["admin"]), json={
+            "cliente_id": other["id"],
+            "data": _dt.now(_tz.utc).strftime("%Y-%m-%d"),
+            "righe": [{"descrizione": "TEST_foreign", "quantita": 1, "prezzo": 1, "totale": 1}],
+            "iva_pct": 22,
+        })
+        assert fo.status_code == 200, fo.text
+
+    # cliente sees only own
+    r = requests.get(f"{API}/fatture", headers=H(tokens["cliente"]))
+    assert r.status_code == 200
+    fatture = r.json()
+    assert len(fatture) >= 1
+    ids = {f["id"] for f in fatture}
+    assert own_fattura_id in ids
+    for f in fatture:
+        assert f["cliente_id"] == own_id, f"cliente sees foreign fattura {f['id']}"
+
+    # Override attempt blocked
+    if other:
+        r2 = requests.get(f"{API}/fatture?cliente_id={other['id']}", headers=H(tokens["cliente"]))
+        assert r2.status_code == 200
+        for f in r2.json():
+            assert f["cliente_id"] == own_id
+
+
+# =====================================================================
+# RBAC: cliente role must be blocked from write/admin endpoints
+# =====================================================================
+@pytest.mark.parametrize("endpoint,body", [
+    ("/clienti", {"ragione_sociale": "TEST_blocked", "partita_iva": "IT00000000001",
+                  "indirizzo": "x", "email": "x@x.it", "telefono": "0",
+                  "tipologia": "hotel", "giorni_ritiro": [1], "sla_ore": 48}),
+    ("/articoli", {"codice": "TEST_BLK", "descrizione": "x", "categoria": "biancheria",
+                   "tipo": "capo", "materiale": "cotone", "lavaggio": "standard",
+                   "temperatura": 60, "barcode": "", "peso_medio": 0.5,
+                   "prezzo": 1, "prezzo_tipo": "capo"}),
+    ("/macchine", {"codice": "TEST_BLK", "tipo": "lavatrice", "capacita_kg": 10,
+                   "stato": "disponibile", "reparto": "lavaggio", "ore_lavoro": 0}),
+    ("/fatture", {"cliente_id": "x", "data": "2026-01-01", "righe": [], "iva_pct": 22}),
+    ("/non-conformita", {"tipo": "x", "descrizione": "x", "gravita": "media"}),
+])
+def test_cliente_role_blocked_on_write_endpoints(tokens, endpoint, body):
+    r = requests.post(f"{API}{endpoint}", headers=H(tokens["cliente"]), json=body)
+    assert r.status_code == 403, f"Expected 403 on POST {endpoint} for cliente, got {r.status_code}: {r.text}"
+
+
+def test_cliente_role_blocked_on_users_list(tokens):
+    r = requests.get(f"{API}/users", headers=H(tokens["cliente"]))
+    assert r.status_code == 403
+
+
+def test_cliente_role_blocked_on_audit_log(tokens):
+    r = requests.get(f"{API}/audit-log", headers=H(tokens["cliente"]))
+    assert r.status_code == 403
+
+
+# =====================================================================
+# Seed idempotency: re-login works, only 1 user row for cliente
+# =====================================================================
+def test_seed_portale_cliente_is_idempotent():
+    db = _mongo_db()
+    count = db.users.count_documents({"email": "cliente@cleantec.it"})
+    assert count == 1, f"seed created duplicate cliente users: {count}"
+    # Row must have cliente_id + role=cliente + attivo
+    u = db.users.find_one({"email": "cliente@cleantec.it"}, {"_id": 0, "password_hash": 0})
+    assert u["role"] == "cliente"
+    assert u.get("cliente_id")
+    assert u.get("attivo", True) is True
+

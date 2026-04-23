@@ -153,6 +153,36 @@ async def seed_admin_and_users():
             })
 
 
+async def seed_portale_cliente_user():
+    """Seed a demo portale-cliente account linked to the first seeded cliente."""
+    email = "cliente@cleantec.it"
+    existing = await db.users.find_one({"email": email})
+    primary = await db.clienti.find_one({"ragione_sociale": "Hotel Excelsior Roma"}, {"_id": 0})
+    if not primary:
+        # Fallback to first cliente
+        primary = await db.clienti.find_one({}, {"_id": 0})
+    if not primary:
+        return
+    if existing is None:
+        await db.users.insert_one({
+            "id": new_id(),
+            "email": email,
+            "password_hash": hash_password("cliente123"),
+            "name": f"Portale {primary['ragione_sociale']}",
+            "role": "cliente",
+            "cliente_id": primary["id"],
+            "attivo": True,
+            "created_at": now_utc(),
+        })
+        logger.info(f"[SEED] Portale cliente creato: {email} → {primary['ragione_sociale']}")
+    elif not existing.get("cliente_id"):
+        # Backfill: ensure link
+        await db.users.update_one(
+            {"email": email},
+            {"$set": {"cliente_id": primary["id"], "role": "cliente"}},
+        )
+
+
 async def seed_catalog_and_lotti():
     if await db.clienti.count_documents({}) == 0:
         clienti_demo = [
@@ -238,6 +268,7 @@ async def run_all():
     await migrate_dates()
     await seed_admin_and_users()
     await seed_catalog_and_lotti()
+    await seed_portale_cliente_user()
     await ensure_indexes()
     await ensure_counters()
     logger.info("[SEED] Completato.")
