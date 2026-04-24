@@ -60,6 +60,16 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (pm) — FEATURE "Branding & estetica" (superadmin-only)**
+  - Nuovo router `/api/branding` (public read) + `/api/admin/branding/*` (superadmin write/upload/delete)
+  - Singleton doc `db.branding` con config globale: app_name, tagline, login_eyebrow/title/subtitle/footer, login_features[], primary/accent/dark color, paths logo/hero/favicon
+  - Upload immagini via Pillow: resize + conversione WebP (hero 1920×1200, logo 512×512) / PNG (favicon 96×96), max 8MB, auto-riduzione 80%+
+  - Frontend: `BrandingContext` fetcha `/api/branding`, applica `<title>` + favicon + CSS vars `--indaco/--celeste/--azzurro/--indaco-dark` (hotswap senza reload, grazie a Tailwind config che ora usa `var(--...)`)
+  - Pagina `/admin/branding` (superadmin-only): form con identità / upload immagini / editor testi+features / color pickers + live preview
+  - Login.jsx e Layout.jsx ora leggono il branding (logo, hero, testi, colori)
+  - **Bug fix RBAC critico**: `core.require_roles('superadmin')` ora rigetta esplicitamente `admin` (prima veniva implicitly whitelisted per tutti gli endpoint `require_roles`); stessa logica applicata a `ProtectedRoute` + `Layout` sidebar filter. Questo fix chiude anche un RBAC leak preesistente su `/api/admin/stats|tenants|transactions` dove admin normale prima poteva accedere.
+  - Iter 12: 18/18 backend + 6/6 frontend ✅
+
 - **24 Apr 2026 — MAJOR REFACTOR "Pure commercial SaaS"**
   - RIMOSSE pagine: Accettazione, Logistica, Macchine, Magazzino, Manutenzione, Mobile, Notifiche, Portale, Touch, Hardware, Insights
   - RIMOSSI router backend: operations, hardware, manutenzione, magazzino, notifications, insights
