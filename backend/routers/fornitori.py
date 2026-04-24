@@ -340,6 +340,12 @@ async def patch_ft_forn(fid: str, body: PatchFatturaFornitoreIn,
     for k in ("numero_fornitore", "data", "data_scadenza", "note", "iva_perc"):
         if k in data and k not in patch:
             patch[k] = data[k]
+    # Se iva_perc cambia e non abbiamo ricalcolato sopra (caso DDT-linked), ricalcola iva/totale
+    if "iva_perc" in data and "iva" not in patch:
+        imponibile = cur.get("imponibile", 0)
+        new_iva = round(imponibile * (float(data["iva_perc"]) / 100.0), 2)
+        patch["iva"] = new_iva
+        patch["totale"] = round(imponibile + new_iva, 2)
     if "stato_pagamento" in data:
         patch["stato_pagamento"] = data["stato_pagamento"]
         if data["stato_pagamento"] == "pagata":

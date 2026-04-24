@@ -1,7 +1,7 @@
-# CleanTec - PRD (updated 24 Apr 2026)
+# CleanTec - PRD (updated 24 Apr 2026 · notte FASE 2b)
 
 ## Problem
-Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → D.D.T. → Fatture → Sospesi. Multi-tenant con abbonamenti Stripe e self-service onboarding.
+Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → Offerte → D.D.T. → Fatture → Sospesi. Ciclo acquisti: Fornitori → DDT ricevuti → Fatture passive. Portale cliente pubblico per ordinativi self-service.
 
 ## Stack
 - Backend: FastAPI + Motor + MongoDB
@@ -60,6 +60,27 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (notte+) — FASE 2b "Fornitori + ciclo passivo"**
+  - Backend: nuovo router `/api/fornitori` con CRUD + filtri `q`/`categoria` + `GET /{fid}/profilo` (ddts, fatture, stats: spesa_totale, pagato, da_pagare). Delete 409 se ha documenti collegati
+  - Backend: `/api/ddt-fornitore` CRUD con numero interno `FORN-DDT-YYYY-NNNNN`, `fornitore_snapshot` immutabile, `stato_fatturazione` = non_fatturato|fatturato, PATCH/DELETE 409 se fatturato
+  - Backend: `/api/fatture-fornitore` CRUD con numero `FORN-FT-YYYY-NNNNN`, 2 modalità (da `ddt_fornitore_ids` oppure `righe` inline per utenze/servizi), IVA% configurabile default 22%, `PATCH /paga` imposta stato_pagamento=pagata, DELETE riapre i DDT collegati; `GET /ddt-fatturabili/{fornitore_id}`; PATCH iva_perc ricalcola anche fatture legate a DDT
+  - Backend: counters separati `ddt_fornitore`/`fattura_fornitore` (non confondibili col ciclo vendite)
+  - Backend: RBAC — admin=tutto; contabilita=CRUD fornitore e fatture (no delete fornitore); logistica=solo DDT (create/edit)
+  - Backend schemas: `FornitoreIn`, `PatchFornitoreIn`, `DdtFornitoreIn`, `FatturaFornitoreIn`, `RigaDocFornIn` aggiunti in `schemas.py`
+  - Frontend: 3 pagine nuove — `/fornitori` (anagrafica con profilo 4 KPI cards + tabelle), `/fornitori/ddt` (lista+dialog righe editable, stato→fattura linkata), `/fornitori/fatture` (toggle "Da DDT" / "Righe manuali", preview live Imponibile+IVA+Totale, azione Paga)
+  - Frontend: sidebar aggiunte 3 voci (Fornitori, DDT ricevuti, Fatture fornitore) con icone Factory/Truck/Receipt
+  - Frontend fix cosmetico: `AuthContext` skippa `/auth/me` ping su route `/ordina/*` → console pulita su portale pubblico (era 401 pre-esistente da iter16)
+  - **Iter 17: 21/21 backend + 100% frontend ✅**
+
+- **24 Apr 2026 (notte) — FASE 3b "Ordinativi + Portale cliente pubblico"**
+  - Backend: nuovo router `/api/ordinativi` CRUD + `POST /{id}/converti-ddt` (crea DDT-YYYY-NNNNN, marca ordinativo convertito_ddt); numerazione `ORD-YYYY-NNNNN` dedicata
+  - Backend: endpoint admin `POST/DELETE /api/clienti/{cid}/portale-token` (token URL-safe 32 char via `secrets.token_urlsafe`)
+  - Backend: public router (NO AUTH) `GET /api/public/portale/{token}` (ritorna cliente + articoli prezzati dal listino + fornitore) e `POST /api/public/portale/{token}/ordinativo`
+  - Frontend: pagina `/ordinativi` admin con badge origine (interno/portale), converti-DDT button
+  - Frontend: pagina pubblica `/ordina/{token}` — catalogo self-service con cart editable, submit ordinativo senza login
+  - Frontend: pannello "Portale cliente" nel profilo Clienti (bottone occhio) con Genera/Rigenera/Revoca/Copia link
+  - **Iter 16: 21/21 backend + 100% frontend ✅**
+
 - **24 Apr 2026 (night) — FASE 3a "Offerte & Preventivi"**
   - Backend: nuovo router `/api/offerte` con CRUD completo + `POST /{id}/converti-contratto` (assegna progressivo `CT-YYYY-NNNNN` separato) + `GET /{id}/pdf?tipo=offerta|contratto`
   - Backend: schema con `righe[]` con `sconto_perc + sconto_eur` per riga; calcolo `prezzo_finale = max(0, prezzo * (1-perc/100) - eur)`; ricalcolo automatico da listino del cliente (usa `prezzo_noleggio`/`prezzo_lavaggio` in base al tipo listino)
@@ -143,6 +164,8 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Report BI: fatturato per cliente, top articoli, aging sospesi
 
 ## Next Action Items
-- (TEST) Eseguire `testing_agent_v3_fork` per validare E2E il flusso commerciale post-refactor (in attesa di conferma utente)
+- (P1) **FASE 4 — Costi**: modulo per inserimento costi mensili con categorie: Personale, Automezzi, Utenze (gas/luce/acqua), Prodotti consumabili
+- (P2) **FASE 5 — Report & Statistiche BI**: fatturato globale/per cliente, kg/quintali prodotti (pezzi × peso), costi personale, costo produzione/kg, consegne mensili, km automezzi
+- (P2) Ricalcolo iva/totale UX: oggi corretto solo via PATCH iva_perc — a livello frontend esporre editor dedicato per fatture DDT-linked
+- (P3) Clausole: `Pydantic validator` su FatturaFornitoreIn "at least one of righe/ddt_fornitore_ids"; `aria-describedby` su tutti i DialogContent Radix
 - Configurare Stripe LIVE key in produzione
-- (Opzionale) Aggiornare copy landing/marketing per messaggio "ERP commerciale"
