@@ -1,0 +1,27 @@
+{
+  "summary": "FASE 5 Report & BI — secondo retest post-fix race condition → PASS TOTALE. Fix applicati da E1 su Report.jsx (setData(null) sincrono nell'onClick di ogni tab, setData(null) sincrono nell'onValueChange del selettore anno, e defensive guards (arr || []).map su tutte le shape eterogenee) hanno completamente risolto il crash ErrorBoundary diagnosticato in iter20. Test eseguito: login admin@cleantec.it → /report → set anno=2026 → click sequenziale sui 6 tab (fatturato → produzione → costo_kg → marginalita → aging → km) → stress re-sequence completa → cambio anno 2026→2025(vuoto)→2026. Zero pageerrors JS captured, zero occorrenze 'Si è verificato un problema'. Dati verificati contro attesa: Marginalità totale €2846.77 ✓, Fatturato €5647.27, Costi allocati €2800.50, €/kg medio €3.9227; Aging 3 fatture tutte nel bucket 0-30 (FT-2026-00044 €1417.42, FT-2026-00045 €1251.23, FT-2026-00048 €93.06); KM 1 targa AB123CD 450 km / €120.00 / €0.267 per km ✓; CostoKg pie con 3 fette e linechart con 1 dot su 2026-04 con €3.9227 ✓. Recharts SVG rendering confermato per produzione(3), costo_kg(3), aging(1), km(3). La race condition è stata eliminata: setData(null) sincrono nell'onClick forza il render 'Caricamento…' prima che il refetch completi, evitando il disallineamento tab/data con shape stale.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_20.json (root cause diagnosi)",
+    "/app/backend/tests/test_iter19_phase5_reports.py (regression backend)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix robusto e minimal-invasive. La combinazione setData(null) sincrono + (arr||[]).map difensivi è best practice in questo contesto con payload shape eterogenee.",
+    "Consiglio nice-to-have (non bloccante): migrare a react-query/SWR con chiave [tab,anno] per eliminare la classe intera di race condition e beneficiare di cache + revalidation automatica; oppure aggiungere resetKeys={[tab,anno]} all'ErrorBoundary per UX auto-recovery in caso di crash futuri.",
+    "Report.jsx è a 402 righe — soglia tollerata ma considerare split dei 6 sub-view in file separati se in futuro si aggiungono metriche."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@cleantec.it / admin123",
+  "seed_data_creation": "Nessuna — dataset 2026 già presente da iter19.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 5 Report & BI ora stabile. Fix race condition (setData(null) sincrono onClick/onValueChange) + defensive (arr||[]).map validati. Tutti e 6 i tab rendono con Recharts svg visibili e tabelle corrette per anno 2026. Switch anno 2026↔2025 (dati/vuoto) non causa crash. Se in futuro si aggiungono nuovi tab, mantenere lo stesso pattern onClick={() => { setData(null); setTab(t.v); }} e guardia (arr||[]).map.",
+  "rca of the issue": "RISOLTO in iter21. Root cause corretto era la race condition identificata in iter20: cliccando un tab si cambiava tab PRIMA che il fetch aggiornasse data, e il vecchio payload con shape diversa causava undefined.map. Mitigazione applicata: (1) onClick forza setData(null) sincrono, mostrando 'Caricamento…' fino ad arrivo nuovo payload; (2) onValueChange del selettore anno fa altrettanto; (3) guardia (arr||[]).map come defense-in-depth su per_cliente, per_articolo, per_mese, buckets, dettagli, per_targa. Verifica empirica: 0 pageerrors su 2 full-sweep dei 6 tab + 2 cambi anno."
+}

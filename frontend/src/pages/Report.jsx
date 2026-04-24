@@ -49,7 +49,7 @@ export default function Report() {
         title="Report & Statistiche"
         subtitle="Fatturato, produzione, costi, marginalità e aging aggregati per mese, cliente, articolo e automezzo."
         actions={
-          <Select value={String(anno)} onValueChange={v => setAnno(Number(v))}>
+          <Select value={String(anno)} onValueChange={v => { setData(null); setAnno(Number(v)); }}>
             <SelectTrigger className="w-28" data-testid="report-anno"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[anno - 2, anno - 1, anno, anno + 1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
@@ -62,7 +62,7 @@ export default function Report() {
         {TABS.map(t => {
           const Icon = t.icon;
           return (
-            <button key={t.v} onClick={() => setTab(t.v)}
+            <button key={t.v} onClick={() => { setData(null); setTab(t.v); }}
               className={`px-4 py-2 text-sm font-medium whitespace-nowrap flex items-center gap-2 border-b-2 transition ${tab === t.v ? "border-indaco text-indaco" : "border-transparent text-slate-500 hover:text-slate-700"}`}
               data-testid={`report-tab-${t.v}`}>
               <Icon size={16} />{t.l}
@@ -107,7 +107,7 @@ function FatturatoView({ d }) {
       <div className="kpi-card p-4">
         <h4 className="font-display font-bold mb-3">Andamento mensile</h4>
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={d.per_mese}>
+          <BarChart data={d.per_mese || []}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
@@ -124,7 +124,7 @@ function FatturatoView({ d }) {
         <div className="overflow-x-auto"><table className="data-table">
           <thead><tr><th>#</th><th>Cliente</th><th className="text-right">Fatturato</th><th className="text-right">N° fatture</th></tr></thead>
           <tbody>
-            {d.per_cliente.map((c, i) => (
+            {(d.per_cliente || []).map((c, i) => (
               <tr key={c.cliente_id || i}><td className="text-xs text-slate-400">{i + 1}</td><td>{c.cliente_nome}</td><td className="text-right font-mono font-bold">{fmtE(c.totale)}</td><td className="text-right text-xs">{c.n}</td></tr>
             ))}
             {d.per_cliente.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-slate-400">Nessuna fattura nel periodo</td></tr>}
@@ -148,7 +148,7 @@ function ProduzioneView({ d }) {
       <div className="kpi-card p-4">
         <h4 className="font-display font-bold mb-3">Andamento kg per mese</h4>
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={d.per_mese}>
+          <LineChart data={d.per_mese || []}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
@@ -166,7 +166,7 @@ function ProduzioneView({ d }) {
           <div className="overflow-x-auto"><table className="data-table">
             <thead><tr><th>Cliente</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
-              {d.per_cliente.map((c, i) => (
+              {(d.per_cliente || []).map((c, i) => (
                 <tr key={c.cliente_id || i}><td>{c.cliente_nome}</td><td className="text-right font-mono">{fmtK(c.kg)}</td><td className="text-right text-xs">{(c.pezzi || 0).toFixed(0)}</td></tr>
               ))}
             </tbody>
@@ -177,7 +177,7 @@ function ProduzioneView({ d }) {
           <div className="overflow-x-auto"><table className="data-table">
             <thead><tr><th>Articolo</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
-              {d.per_articolo.map((a, i) => (
+              {(d.per_articolo || []).map((a, i) => (
                 <tr key={a.articolo_id || i}><td><div className="text-xs font-mono">{a.codice}</div><div className="text-sm">{a.descrizione}</div></td><td className="text-right font-mono">{fmtK(a.kg)}</td><td className="text-right text-xs">{(a.pezzi || 0).toFixed(0)}</td></tr>
               ))}
             </tbody>
@@ -221,7 +221,7 @@ function CostoKgView({ d }) {
         <div className="kpi-card p-4">
           <h4 className="font-display font-bold mb-3">Costo per kg nel tempo</h4>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={d.per_mese}>
+            <LineChart data={d.per_mese || []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
@@ -278,7 +278,7 @@ function MarginalitaView({ d }) {
             <th className="text-right">Costo alloc.</th><th className="text-right">Margine €</th><th className="text-right">Margine %</th>
           </tr></thead>
           <tbody>
-            {d.per_cliente.map((r, i) => (
+            {(d.per_cliente || []).map((r, i) => (
               <tr key={r.cliente_id || i} data-testid={`marg-row-${i}`}>
                 <td className="text-xs text-slate-400">{i + 1}</td>
                 <td>{r.cliente_nome}</td>
@@ -304,7 +304,7 @@ function AgingView({ d }) {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Kpi label="Totale sospeso" value={fmtE(d.totale_sospeso)} color="text-red-600" />
-        {d.buckets.map(b => (
+        {(d.buckets || []).map(b => (
           <Kpi key={b.bucket} label={`${b.bucket} gg`} value={fmtE(b.totale)} sub={`${b.n} fatture`} color="" />
         ))}
       </div>
@@ -312,13 +312,13 @@ function AgingView({ d }) {
       <div className="kpi-card p-4">
         <h4 className="font-display font-bold mb-3">Distribuzione per anzianità</h4>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={d.buckets}>
+          <BarChart data={d.buckets || []}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="bucket" />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip formatter={fmtE} />
             <Bar dataKey="totale">
-              {d.buckets.map((b, i) => <Cell key={i} fill={colors[b.bucket]} />)}
+              {(d.buckets || []).map((b, i) => <Cell key={i} fill={colors[b.bucket]} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -332,7 +332,7 @@ function AgingView({ d }) {
         <div className="overflow-x-auto"><table className="data-table">
           <thead><tr><th>Numero</th><th>Cliente</th><th>Data emissione</th><th className="text-right">Giorni</th><th className="text-right">Totale</th><th>Bucket</th></tr></thead>
           <tbody>
-            {d.dettagli.map(f => (
+            {(d.dettagli || []).map(f => (
               <tr key={f.numero} data-testid={`aging-${f.numero}`}>
                 <td className="font-mono text-xs">{f.numero}</td>
                 <td>{f.cliente_nome}</td>
@@ -363,7 +363,7 @@ function KmView({ d }) {
       <div className="kpi-card p-4">
         <h4 className="font-display font-bold mb-3">Andamento mensile</h4>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={d.per_mese}>
+          <BarChart data={d.per_mese || []}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
             <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -384,7 +384,7 @@ function KmView({ d }) {
         <div className="overflow-x-auto"><table className="data-table">
           <thead><tr><th>Targa</th><th className="text-right">Km</th><th className="text-right">Spesa</th><th className="text-right">€ / km</th><th>Breakdown tipo</th></tr></thead>
           <tbody>
-            {d.per_targa.map((t, i) => (
+            {(d.per_targa || []).map((t, i) => (
               <tr key={t.targa} data-testid={`km-targa-${i}`}>
                 <td className="font-mono font-bold">{t.targa}</td>
                 <td className="text-right font-mono">{(t.km_totali || 0).toFixed(0)} km</td>
