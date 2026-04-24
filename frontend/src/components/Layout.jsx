@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useBranding } from "../context/BrandingContext";
 import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
-  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur,
+  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette,
 } from "@phosphor-icons/react";
+
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 const ALL_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: ChartBar, roles: ["admin", "contabilita", "logistica"] },
@@ -18,10 +21,12 @@ const ALL_ITEMS = [
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
   { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
+  { to: "/admin/branding", label: "Branding", icon: Palette, roles: ["superadmin"] },
 ];
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const { branding } = useBranding();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const touchStart = useRef(null);
@@ -85,12 +90,16 @@ export default function Layout({ children }) {
       {/* Sidebar */}
       <aside className={`fixed xl:sticky top-0 left-0 z-40 w-64 h-screen bg-slate-900 text-white flex flex-col border-r border-slate-800 transform transition-transform ${mobileOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"}`}>
         <div className="h-16 flex items-center gap-2 px-5 border-b border-slate-800">
-          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-azzurro to-indaco flex items-center justify-center">
-            <Sparkle size={18} weight="fill" className="text-white" />
+          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-azzurro to-indaco flex items-center justify-center overflow-hidden">
+            {branding.logo_url ? (
+              <img src={`${BACKEND}${branding.logo_url}`} alt={branding.app_name} className="w-full h-full object-contain" />
+            ) : (
+              <Sparkle size={18} weight="fill" className="text-white" />
+            )}
           </div>
           <div>
-            <div className="font-display font-bold text-lg leading-none tracking-tight">CleanTec</div>
-            <div className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">ERP • MES • WMS</div>
+            <div className="font-display font-bold text-lg leading-none tracking-tight">{branding.app_name}</div>
+            <div className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">{branding.tagline}</div>
           </div>
           <button className="ml-auto xl:hidden text-slate-400 hover:text-white" onClick={() => setMobileOpen(false)} data-testid="close-menu-btn">
             <X size={20} />
@@ -138,7 +147,7 @@ export default function Layout({ children }) {
           <button onClick={() => setMobileOpen(true)} className="text-slate-600" data-testid="open-menu-btn">
             <List size={24} />
           </button>
-          <div className="ml-4 font-display font-bold text-lg">CleanTec</div>
+          <div className="ml-4 font-display font-bold text-lg">{branding.app_name}</div>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 animate-fade-in">

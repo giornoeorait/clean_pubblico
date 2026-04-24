@@ -1,11 +1,16 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Sparkle, SignIn, Factory, Truck, ShieldCheck, ChartBar } from "@phosphor-icons/react";
+import { useBranding } from "../context/BrandingContext";
+import { Sparkle, SignIn, Factory, Truck, ShieldCheck, ChartBar, Receipt, Users, Package } from "@phosphor-icons/react";
 import { toast } from "sonner";
+
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const ICON_MAP = { truck: Truck, factory: Factory, shield: ShieldCheck, chart: ChartBar, sparkle: Sparkle, receipt: Receipt, users: Users, package: Package };
 
 export default function Login() {
   const { login, error } = useAuth();
+  const { branding } = useBranding();
   const navigate = useNavigate();
   const [email, setEmail] = useState("admin@cleantec.it");
   const [password, setPassword] = useState("admin123");
@@ -29,54 +34,56 @@ export default function Login() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-white">
       {/* Left hero */}
-      <div className="relative hidden lg:flex flex-col justify-between p-12 bg-slate-900 text-white overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between p-12 text-white overflow-hidden" style={{ backgroundColor: branding.dark_color || "#0f172a" }}>
         <div
           className="absolute inset-0 opacity-30"
           style={{
-            backgroundImage: "url(https://images.unsplash.com/photo-1765021690100-db6d6a28c1d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwbGF1bmRyeSUyMG1hY2hpbmUlMjBmYWNpbGl0eXxlbnwwfHx8fDE3NzY5NTUxMDR8MA&ixlib=rb-4.1.0&q=85)",
+            backgroundImage: `url(${branding.hero_url ? `${BACKEND}${branding.hero_url}` : "https://images.unsplash.com/photo-1765021690100-db6d6a28c1d1?crop=entropy&cs=srgb&fm=jpg&q=70&w=1920"})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-indaco/60 via-slate-900/80 to-slate-900/95" />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom right, ${branding.primary_color}99, #0f172aCC, #0f172aF2)` }} />
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
-              <Sparkle size={22} weight="fill" className="text-celeste" />
+            <div className="w-10 h-10 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden">
+              {branding.logo_url ? (
+                <img src={`${BACKEND}${branding.logo_url}`} alt={branding.app_name} className="w-full h-full object-contain" />
+              ) : (
+                <Sparkle size={22} weight="fill" style={{ color: branding.accent_color }} />
+              )}
             </div>
             <div>
-              <div className="font-display font-bold text-2xl tracking-tight">CleanTec</div>
-              <div className="text-[11px] text-celeste font-mono uppercase tracking-widest">Industrial Laundry OS</div>
+              <div className="font-display font-bold text-2xl tracking-tight">{branding.app_name}</div>
+              <div className="text-[11px] font-mono uppercase tracking-widest" style={{ color: branding.accent_color }}>{branding.tagline}</div>
             </div>
           </div>
         </div>
 
         <div className="relative z-10 max-w-lg">
-          <div className="overline text-celeste mb-4">Control Room</div>
+          <div className="overline mb-4" style={{ color: branding.accent_color }}>{branding.login_eyebrow}</div>
           <h1 className="font-display text-4xl xl:text-5xl font-bold leading-tight tracking-tight mb-6">
-            Il sistema nervoso della tua lavanderia industriale.
+            {branding.login_title}
           </h1>
           <p className="text-slate-300 text-lg leading-relaxed">
-            ERP commerciale completo: clienti, listini multipli, D.D.T. automatici e fatturazione aggregata in un unico ambiente.
+            {branding.login_subtitle}
           </p>
 
           <div className="grid grid-cols-2 gap-4 mt-10">
-            {[
-              { icon: Truck, label: "D.D.T. automatici" },
-              { icon: Factory, label: "Listini multipli" },
-              { icon: ShieldCheck, label: "Gestione sospesi" },
-              { icon: ChartBar, label: "KPI Real-time" },
-            ].map((f, i) => (
-              <div key={i} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg p-4 flex items-center gap-3">
-                <f.icon size={22} weight="duotone" className="text-celeste" />
-                <span className="text-sm font-medium">{f.label}</span>
-              </div>
-            ))}
+            {(branding.login_features || []).map((f, i) => {
+              const Icon = ICON_MAP[f.icon] || Sparkle;
+              return (
+                <div key={i} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg p-4 flex items-center gap-3">
+                  <Icon size={22} weight="duotone" style={{ color: branding.accent_color }} />
+                  <span className="text-sm font-medium">{f.label}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         <div className="relative z-10 text-xs text-slate-400 font-mono">
-          © 2026 CleanTec Systems — v1.0
+          {branding.login_footer}
         </div>
       </div>
 

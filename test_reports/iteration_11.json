@@ -1,0 +1,67 @@
+{
+  "summary": "Branding feature (iter 11): 22/26 backend pytest PASSED. 4 RBAC failures (same root cause: require_roles() implicit-admin bypass). Frontend e2e: public login branding, live color preview, upload/resize/WebP, PNG favicon, delete asset, features editor, save + tab title/favicon live update all WORKING. Regressione plans/login/clienti OK. CRITICAL: RBAC leak — regular admin can reach /admin/branding backend + frontend route + sees 'Branding' + 'Pannello SaaS' in sidebar.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/admin/branding (GET/PUT), /api/admin/branding/upload/{kind} (POST), /api/admin/branding/image/{kind} (DELETE)",
+        "issue": "Regular admin (admin@cleantec.it, role='admin') receives 200 instead of 403. Per spec these are superadmin-only. Root cause: core.require_roles() implicitly whitelists role='admin' (already flagged in iter10 code-review). For branding the endpoints must explicitly reject 'admin' — e.g. wrap require_roles('superadmin') with a strict check that `user.role == 'superadmin'` and raise 403 otherwise.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/branding/image/{kind}",
+        "issue": "Router sets 'Cache-Control: public, max-age=300' but the preview ingress rewrites it to 'no-store, no-cache, must-revalidate'. Not a code bug, infra-side. Documented for awareness."
+      },
+      {
+        "endpoint": "POST /api/admin/branding/upload/{kind}",
+        "issue": "Empty file returns 422 (FastAPI multipart validation) instead of the intended 400 'File vuoto'. Functional but inconsistent with the docstring."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Layout.jsx (sidebar filter lines 77-81)",
+        "issue": "`return i.roles.includes(user.role) || user.role === 'admin'` makes every item visible to any user with role='admin', so regular admin sees 'Pannello SaaS' (/admin) and 'Branding' (/admin/branding) in sidebar. Fix: replace with `return i.roles.includes(user.role)` (and keep the superadmin branch already present).",
+        "selector": "[data-testid='nav-admin/branding'], [data-testid='nav-admin']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ProtectedRoute (/admin/branding route in App.js roles=['superadmin'])",
+        "issue": "Regular admin navigating directly to /admin/branding lands on the Branding page (ADMIN_CAN_SEE_BRANDING_PAGE=True). ProtectedRoute likely reuses the same implicit-admin allowlist pattern. Must strictly enforce user.role === 'superadmin' for superadmin-only routes.",
+        "selector": "Route path='/admin/branding'",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_branding.py",
+    "/app/test_reports/pytest/iter11_branding.xml"
+  ],
+  "action_items": [
+    "Fix require_roles('superadmin') (or wrap in branding.py) so role='admin' returns 403 — affects GET/PUT /admin/branding, POST /admin/branding/upload/{kind}, DELETE /admin/branding/image/{kind}.",
+    "Fix Layout.jsx sidebar filter: remove `|| user.role === 'admin'` fallback so superadmin-only nav items are not shown to regular admins.",
+    "Fix frontend ProtectedRoute: ensure roles=['superadmin'] strictly checks equality (no implicit admin bypass), so admin navigating to /admin/branding gets redirected/401.",
+    "Optional: return 400 explicitly on empty-file upload (currently 422 due to multipart validation)."
+  ],
+  "critical_code_review_comments": [
+    "The implicit-admin bypass in core.require_roles() is now actively leaking superadmin-only features (branding). It was documented as a minor concern in iter10 but the introduction of superadmin-only endpoints makes it a real security defect. Refactor require_roles to be strict and add a separate dependency (e.g. require_superadmin) or fix the current one.",
+    "Layout.jsx item filter duplicates authorization logic that is already in backend / ProtectedRoute and silently shows hidden areas due to the `|| user.role === 'admin'` fallback — this is a pure bug, not desired convenience.",
+    "branding.py _public_view correctly strips *_path and _id keys and adds *_url — good. No ObjectId leakage detected.",
+    "Pydantic regex for hex colors enforced, 422 returned for invalid values — validated.",
+    "Image pipeline (Pillow resize + WEBP/PNG conversion) works as spec: JPG 3840x2400 → WEBP 1920x1200 ~1.6KB, PNG 2048 → WEBP 512, PNG 256 → PNG 96 confirmed via tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_branding.py"
+  ],
+  "success_rate": {"backend": "85% (22/26) — remaining 4 failures are the single RBAC leak bug", "frontend": "90% — all UI flows work; two RBAC leaks (sidebar + route) are the only issues"},
+  "test_credentials": "super@cleantec.it / Superadmin123!, admin@cleantec.it / admin123 (both valid per /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests upload and delete branding assets; test leaves app_name='CleanTec', primary_color='#4F46E5' (restored). Preview screenshots also restored state at end of run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent fixes require_roles + Layout sidebar filter + ProtectedRoute strict mode, rerun /app/backend/tests/test_branding.py (all 26 should pass). Then Playwright-verify: (a) admin login -> sidebar has NO 'Branding' and NO 'Pannello SaaS' items, (b) admin navigating directly to /admin/branding gets redirected to /dashboard or shows unauthorized, (c) super login -> both items visible and page accessible.",
+  "rca_of_the_issue": "Single root cause for the 3 RBAC findings: an implicit 'admin is always allowed' fallback exists in THREE independent layers — (1) backend core.require_roles(), (2) frontend Layout.jsx sidebar filter, (3) likely frontend ProtectedRoute. All three must be tightened. Reproduction: login admin@cleantec.it / admin123 → GET https://.../api/admin/branding with Bearer token returns 200 + full config. Or browse to /admin/branding directly and the page renders."
+}
