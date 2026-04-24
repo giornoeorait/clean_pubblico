@@ -12,7 +12,7 @@ logger = logging.getLogger("cleantec.seed")
 TENANT_SCOPED_COLLECTIONS = [
     "users", "clienti", "articoli",
     "listini", "listini_prezzi", "ddt", "fatture",
-    "offerte", "termini_templates",
+    "offerte", "termini_templates", "ordinativi",
     "audit_log", "files",
 ]
 
@@ -106,6 +106,11 @@ async def ensure_indexes():
     await db.offerte.create_index("stato")
     await db.offerte.create_index("numero")
     await db.termini_templates.create_index("id", unique=True)
+    await db.ordinativi.create_index("id", unique=True)
+    await db.ordinativi.create_index("cliente_id")
+    await db.ordinativi.create_index("stato")
+    await db.ordinativi.create_index("numero")
+    await db.clienti.create_index("portale_token")
     await db.audit_log.create_index("timestamp")
     await db.tenants.create_index("id", unique=True)
     await db.tenants.create_index("slug", unique=True)
@@ -126,6 +131,7 @@ async def ensure_counters():
         "ddt": db.ddt,
         "offerta": db.offerte,
         "contratto": db.offerte,
+        "ordinativo": db.ordinativi,
     }
     for name, coll in mapping.items():
         existing = await db.counters.find_one({"_id": name})
@@ -368,6 +374,11 @@ async def migrate_phase2():
             await db.articoli.update_one({"_id": a["_id"]}, {"$set": upd})
     # Rimuovi sla_ore legacy
     await db.clienti.update_many({"sla_ore": {"$exists": True}}, {"$unset": {"sla_ore": ""}})
+    # Default attivo=True su articoli esistenti senza campo
+    await db.articoli.update_many(
+        {"attivo": {"$exists": False}},
+        {"$set": {"attivo": True}},
+    )
 
 
 async def run_all():

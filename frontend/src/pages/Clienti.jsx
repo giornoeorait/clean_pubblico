@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur } from "@phosphor-icons/react";
+import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const EMPTY = {
@@ -63,10 +63,34 @@ export default function Clienti() {
   const openProfile = async (c) => {
     try {
       const { data } = await api.get(`/clienti/${c.id}/profilo`);
-      setProfile(data);
+      setProfile({ ...data, _cid: c.id });
     } catch (e) {
       toast.error("Errore caricamento profilo");
     }
+  };
+
+  const generaPortale = async () => {
+    try {
+      const { data } = await api.post(`/clienti/${profile._cid}/portale-token`);
+      const fullUrl = `${window.location.origin}${data.url_path}`;
+      await openProfile({ id: profile._cid });
+      navigator.clipboard?.writeText(fullUrl).catch(() => {});
+      toast.success("Link portale creato e copiato negli appunti");
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+  };
+  const revocaPortale = async () => {
+    if (!window.confirm("Revocare il link portale del cliente?")) return;
+    try {
+      await api.delete(`/clienti/${profile._cid}/portale-token`);
+      await openProfile({ id: profile._cid });
+      toast.success("Link revocato");
+    } catch (e) { toast.error("Errore"); }
+  };
+  const copiaLink = () => {
+    if (!profile?.cliente?.portale_token) return;
+    const fullUrl = `${window.location.origin}/ordina/${profile.cliente.portale_token}`;
+    navigator.clipboard?.writeText(fullUrl).catch(() => {});
+    toast.success("Link copiato");
   };
 
   const openPdf = async (entity, id) => {
@@ -266,6 +290,35 @@ export default function Clienti() {
                 <div className="kpi-card !p-3"><div className="overline">Fatturato</div><div className="font-display text-2xl font-bold text-indaco">€ {profile.stats.fatturato_totale.toFixed(2)}</div></div>
                 <div className="kpi-card !p-3"><div className="overline">Incassato</div><div className="font-display text-2xl font-bold text-emerald-600">€ {profile.stats.incassato_totale.toFixed(2)}</div></div>
                 <div className="kpi-card !p-3"><div className="overline">Sospeso</div><div className="font-display text-2xl font-bold text-amber-600">€ {profile.stats.sospeso_totale.toFixed(2)}</div></div>
+              </div>
+
+              {/* Portale pubblico link */}
+              <div className="mb-4 p-3 rounded-lg border border-indaco/20 bg-indaco/5" data-testid="cliente-portale-panel">
+                <div className="flex items-start gap-3">
+                  <LinkIcon size={18} className="text-indaco flex-shrink-0 mt-0.5" weight="duotone" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-display font-bold text-sm text-indaco">Portale cliente</div>
+                    {profile.cliente.portale_token ? (
+                      <>
+                        <div className="text-[11px] text-slate-600 mt-0.5">Il cliente può creare ordinativi autonomamente da questo link pubblico:</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <code className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-[11px] font-mono truncate">
+                            {window.location.origin}/ordina/{profile.cliente.portale_token}
+                          </code>
+                          <Button type="button" size="sm" variant="outline" onClick={copiaLink} data-testid="copy-portale-link"><Copy size={13} /></Button>
+                          <Button type="button" size="sm" variant="outline" onClick={revocaPortale} className="text-red-600" data-testid="revoke-portale-link"><Prohibit size={13} /></Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-[11px] text-slate-600 mt-0.5">Nessun link attivo. Genera un link pubblico univoco per far inviare ordinativi al cliente.</div>
+                        <Button type="button" size="sm" className="mt-2 bg-indaco hover:bg-indaco-dark" onClick={generaPortale} data-testid="generate-portale-link">
+                          <LinkIcon size={13} className="mr-1" />Genera link portale
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Fatture */}
