@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
+import ErrorBoundary from "../components/ErrorBoundary";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Truck, TrendUp } from "@phosphor-icons/react";
+import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Truck, TrendUp, FileArrowDown } from "@phosphor-icons/react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, CartesianGrid,
@@ -49,12 +50,30 @@ export default function Report() {
         title="Report & Statistiche"
         subtitle="Fatturato, produzione, costi, marginalità e aging aggregati per mese, cliente, articolo e automezzo."
         actions={
-          <Select value={String(anno)} onValueChange={v => { setData(null); setAnno(Number(v)); }}>
-            <SelectTrigger className="w-28" data-testid="report-anno"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {[anno - 2, anno - 1, anno, anno + 1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await api.get(`/reports/${tab}/pdf?anno=${anno}`, { responseType: "blob" });
+                  const url = URL.createObjectURL(res.data);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `report-${tab}-${anno}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch { /* ignore */ }
+              }}
+              className="px-3 py-2 text-sm rounded-md border border-slate-200 hover:border-indaco hover:text-indaco flex items-center gap-2"
+              data-testid="download-report-pdf">
+              <FileArrowDown size={16} /> Scarica PDF
+            </button>
+            <Select value={String(anno)} onValueChange={v => { setData(null); setAnno(Number(v)); }}>
+              <SelectTrigger className="w-28" data-testid="report-anno"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[anno - 2, anno - 1, anno, anno + 1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         }
       />
 
@@ -73,12 +92,14 @@ export default function Report() {
 
       {loading && <div className="kpi-card p-8 text-center text-slate-400">Caricamento…</div>}
 
-      {!loading && data && tab === "fatturato" && <FatturatoView d={data} />}
-      {!loading && data && tab === "produzione" && <ProduzioneView d={data} />}
-      {!loading && data && tab === "costo_kg" && <CostoKgView d={data} />}
-      {!loading && data && tab === "marginalita" && <MarginalitaView d={data} />}
-      {!loading && data && tab === "aging" && <AgingView d={data} />}
-      {!loading && data && tab === "km" && <KmView d={data} />}
+      <ErrorBoundary resetKeys={[tab, anno]}>
+        {!loading && data && tab === "fatturato" && <FatturatoView d={data} />}
+        {!loading && data && tab === "produzione" && <ProduzioneView d={data} />}
+        {!loading && data && tab === "costo_kg" && <CostoKgView d={data} />}
+        {!loading && data && tab === "marginalita" && <MarginalitaView d={data} />}
+        {!loading && data && tab === "aging" && <AgingView d={data} />}
+        {!loading && data && tab === "km" && <KmView d={data} />}
+      </ErrorBoundary>
     </div>
   );
 }

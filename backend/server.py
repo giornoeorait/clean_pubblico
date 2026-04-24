@@ -5,7 +5,7 @@ from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
 from core import client
-from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports
+from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts
 from seed import run_all as run_seed
 from storage import init_storage
 
@@ -35,6 +35,8 @@ api.include_router(ordinativi.public_router)
 api.include_router(fornitori.router)
 api.include_router(costi.router)
 api.include_router(reports.router)
+api.include_router(hr.router)
+api.include_router(alerts.router)
 app.include_router(api)
 
 app.add_middleware(

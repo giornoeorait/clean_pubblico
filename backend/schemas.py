@@ -391,7 +391,7 @@ class PatchFatturaFornitoreIn(_PatchBase):
 class CostoIn(BaseModel):
     categoria: str                        # personale | automezzi | utenze | prodotti
     data: str                             # yyyy-mm-dd (data registrazione/fattura)
-    mese_riferimento: str                 # yyyy-mm (competenza)
+    mese_riferimento: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")  # yyyy-mm (competenza)
     descrizione: str
     importo: float = Field(ge=0)
 
@@ -424,7 +424,7 @@ class CostoIn(BaseModel):
 class PatchCostoIn(_PatchBase):
     categoria: Optional[str] = None
     data: Optional[str] = None
-    mese_riferimento: Optional[str] = None
+    mese_riferimento: Optional[str] = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     descrizione: Optional[str] = None
     importo: Optional[float] = None
     fornitore_id: Optional[str] = None
@@ -444,5 +444,56 @@ class PatchCostoIn(_PatchBase):
 
     righe: Optional[List[RigaDocFornIn]] = None
     iva_perc: Optional[float] = None
+
+
+# ============== FASE P3 — DIPENDENTI / AUTOMEZZI ==============
+
+class DipendenteIn(BaseModel):
+    nome: str
+    codice_fiscale: Optional[str] = ""
+    ruolo: Optional[str] = ""                 # es. "Operatore lavaggio", "Autista", ecc.
+    email: Optional[str] = ""
+    telefono: Optional[str] = ""
+    data_assunzione: Optional[str] = None     # yyyy-mm-dd
+    tipo_contratto: str = "indeterminato"     # indeterminato | determinato | apprendistato | collaborazione
+    stipendio_mensile: float = Field(default=0, ge=0)   # lordo mensile
+    ore_contrattuali: Optional[float] = 160
+    note: Optional[str] = ""
+    attivo: bool = True
+
+
+class PatchDipendenteIn(_PatchBase):
+    nome: Optional[str] = None
+    codice_fiscale: Optional[str] = None
+    ruolo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    data_assunzione: Optional[str] = None
+    tipo_contratto: Optional[str] = None
+    stipendio_mensile: Optional[float] = None
+    ore_contrattuali: Optional[float] = None
+    note: Optional[str] = None
+    attivo: Optional[bool] = None
+
+
+class AutomezzoIn(BaseModel):
+    targa: str
+    marca_modello: Optional[str] = ""
+    anno: Optional[int] = None
+    alimentazione: Optional[str] = ""          # gasolio | benzina | elettrico | ibrido | altro
+    km_attuali: float = Field(default=0, ge=0)
+    note: Optional[str] = ""
+    attivo: bool = True
+
+
+class PatchAutomezzoIn(_PatchBase):
+    targa: Optional[str] = None
+    marca_modello: Optional[str] = None
+    anno: Optional[int] = None
+    alimentazione: Optional[str] = None
+    km_attuali: Optional[float] = None
+    note: Optional[str] = None
+    attivo: Optional[bool] = None
+
     note: Optional[str] = None
     stato_pagamento: Optional[str] = None  # da_pagare | pagata

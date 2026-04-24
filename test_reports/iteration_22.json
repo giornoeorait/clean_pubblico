@@ -1,0 +1,26 @@
+{
+  "summary": "Iterazione 22 — Test batch P3 completo (backend + frontend). 40/40 test backend PASS (Dipendenti CRUD+RBAC, Automezzi CRUD+targa unica 409, genera-stipendi idempotente + regex 400, Costi regex mese_riferimento 422/201, Alerts shape + fattura_scaduta attiva, 6 PDF export tutti con %PDF- header e Content-Disposition attachment, regressione 10 rotte core). Frontend verificato via Playwright: AlertsBanner presente con messaggio SCADUTA 40 giorni € 173.24, dismiss funziona (banner scompare). /dipendenti mostra Mario Rossi, Genera stipendi apre dialog con input mese e description a11y. /automezzi mostra FG456HJ, targa auto-uppercase verificata (ab123cd→AB123CD). /costi dialog ha 4 tab categoria e 6 combobox (incluso dropdown Dipendente con fallback '— Nome libero —' e Tipo stipendio). /report ha bottone [data-testid=download-report-pdf] che avvia download PDF correttamente (primi bytes %PDF- verificati in playwright download). 6 tab report ancora renderizzati. Nessun pageerror/console error JS catturato. ErrorBoundary resetKeys non testato in modo attivo (richiederebbe crash artificiale) ma i 6 tab report continuano a funzionare senza regressioni (verificato in iter21 + questa iter).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_phase_p3.py",
+    "/app/test_reports/pytest/iter22_p3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "alerts.py: l'aggregation aging_sospeso itera tutte le fatture da_incassare per tenant in memoria — OK per il volume attuale ma se n_fatture>10k valutare match stage con $expr datediff o indice su {tenant_id, stato_incasso, data}.",
+    "hr.py genera-stipendi: validazione regex duplicata tra router e schemas — accettabile ma centralizzare in schemas (creando GeneraStipendiIn con Field pattern) ridurrebbe drift.",
+    "Dipendenti dropdown in Costi mostra fallback '— Nome libero —' come prima voce: assicurarsi che Mario Rossi (dipendente attivo) sia davvero presente come opzione selezionabile sotto — verificato via count=6 combobox ma non espanso in test (nice-to-have un e2e che apra il dropdown e verifichi l'elenco)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter22_phase_p3.py"],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123",
+  "seed_data_creation": "Nessuna nuova seed; test self-clean (TEST_Luigi Verdi dipendente, TEST123XY automezzo, TEST_regex costo creati e poi eliminati nello stesso test).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P3 verificato end-to-end. hr.py, alerts.py, reports pdf export, schemas regex, AlertsBanner, Dipendenti/Automezzi/Costi pages tutte verdi. Se si aggiungono nuovi test, partire da /app/backend/tests/test_iter22_phase_p3.py come regression suite. Nota: ErrorBoundary resetKeys non testato attivamente — richiederebbe iniezione di un crash artificiale in Report per validare il recovery automatico al cambio tab/anno. I 6 tab Report restano stabili (già verificato iter21, riconfermato qui)."
+}

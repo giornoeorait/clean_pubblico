@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -50,6 +50,8 @@ export default function Costi() {
   const [list, setList] = useState([]);
   const [summary, setSummary] = useState(null);
   const [fornitori, setFornitori] = useState([]);
+  const [dipendenti, setDipendenti] = useState([]);
+  const [automezzi, setAutomezzi] = useState([]);
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [meseFiltro, setMeseFiltro] = useState("all");
   const [open, setOpen] = useState(false);
@@ -62,12 +64,15 @@ export default function Costi() {
     const params = [`categoria=${tab}`];
     if (meseFiltro !== "all") params.push(`mese_riferimento=${meseFiltro}`);
     else params.push(`anno=${anno}`);
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, d, e] = await Promise.all([
       api.get(`/costi?${params.join("&")}`),
       api.get(`/costi/summary?anno=${anno}`),
       api.get("/fornitori"),
+      api.get("/dipendenti?attivo=true").catch(() => ({ data: [] })),
+      api.get("/automezzi?attivo=true").catch(() => ({ data: [] })),
     ]);
     setList(a.data); setSummary(b.data); setFornitori(c.data);
+    setDipendenti(d.data); setAutomezzi(e.data);
   };
   useEffect(() => { fetchData(); }, [tab, anno, meseFiltro]);
 
@@ -118,7 +123,7 @@ export default function Costi() {
               <Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-costo-btn"><Plus size={16} weight="bold" className="mr-1" /> Nuovo costo</Button>
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>{editing ? "Modifica costo" : "Registra nuovo costo"}</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>{editing ? "Modifica costo" : "Registra nuovo costo"}</DialogTitle><DialogDescription>Seleziona la categoria in alto, compila i campi comuni (data/mese/importo) e i campi specifici della categoria.</DialogDescription></DialogHeader>
               <form onSubmit={save} className="space-y-4">
                 {/* Selettore categoria */}
                 <div className="grid grid-cols-4 gap-2">
@@ -155,7 +160,24 @@ export default function Costi() {
                 {form.categoria === "personale" && (
                   <div className="border rounded p-3 bg-violet-50/40">
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="col-span-2"><Label>Nome dipendente</Label><Input value={form.dipendente_nome} onChange={e => setForm({ ...form, dipendente_nome: e.target.value })} /></div>
+                      <div className="col-span-2">
+                        <Label>Dipendente</Label>
+                        {dipendenti.length > 0 ? (
+                          <Select value={form.dipendente_nome || "libero"} onValueChange={v => {
+                            if (v === "libero") { setForm({ ...form, dipendente_nome: "" }); return; }
+                            const d = dipendenti.find(x => x.nome === v);
+                            setForm({ ...form, dipendente_nome: v, ore_lavorate: form.ore_lavorate || d?.ore_contrattuali || "" });
+                          }}>
+                            <SelectTrigger><SelectValue placeholder="— seleziona —" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="libero">— Nome libero —</SelectItem>
+                              {dipendenti.map(d => <SelectItem key={d.id} value={d.nome}>{d.nome}{d.ruolo ? ` · ${d.ruolo}` : ""}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input value={form.dipendente_nome} onChange={e => setForm({ ...form, dipendente_nome: e.target.value })} placeholder="Nessun dipendente in anagrafica" />
+                        )}
+                      </div>
                       <div>
                         <Label>Tipo</Label>
                         <Select value={form.tipo_rapporto} onValueChange={v => setForm({ ...form, tipo_rapporto: v })}>
@@ -171,7 +193,20 @@ export default function Costi() {
                 {form.categoria === "automezzi" && (
                   <div className="border rounded p-3 bg-amber-50/40">
                     <div className="grid grid-cols-3 gap-3">
-                      <div><Label>Targa</Label><Input value={form.automezzo_targa} onChange={e => setForm({ ...form, automezzo_targa: e.target.value })} placeholder="AB123CD" /></div>
+                      <div>
+                        <Label>Targa</Label>
+                        {automezzi.length > 0 ? (
+                          <Select value={form.automezzo_targa || "libero"} onValueChange={v => setForm({ ...form, automezzo_targa: v === "libero" ? "" : v })}>
+                            <SelectTrigger><SelectValue placeholder="— seleziona —" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="libero">— Targa libera —</SelectItem>
+                              {automezzi.map(a => <SelectItem key={a.id} value={a.targa}>{a.targa}{a.marca_modello ? ` · ${a.marca_modello}` : ""}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input value={form.automezzo_targa} onChange={e => setForm({ ...form, automezzo_targa: e.target.value })} placeholder="AB123CD" />
+                        )}
+                      </div>
                       <div>
                         <Label>Tipo costo</Label>
                         <Select value={form.tipo_automezzo_costo} onValueChange={v => setForm({ ...form, tipo_automezzo_costo: v })}>

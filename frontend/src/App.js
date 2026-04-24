@@ -30,6 +30,8 @@ import DdtFornitore from "./pages/DdtFornitore";
 import FattureFornitore from "./pages/FattureFornitore";
 import Costi from "./pages/Costi";
 import Report from "./pages/Report";
+import Dipendenti from "./pages/Dipendenti";
+import Automezzi from "./pages/Automezzi";
 import VerifyEmail from "./pages/VerifyEmail";
 
 function WithLayout({ children, roles }) {
@@ -78,6 +80,8 @@ export default function App() {
               <Route path="/fornitori/fatture" element={<WithLayout roles={["admin","contabilita"]}><FattureFornitore /></WithLayout>} />
               <Route path="/costi" element={<WithLayout roles={["admin","contabilita"]}><Costi /></WithLayout>} />
               <Route path="/report" element={<WithLayout roles={["admin","contabilita"]}><Report /></WithLayout>} />
+              <Route path="/dipendenti" element={<WithLayout roles={["admin","contabilita"]}><Dipendenti /></WithLayout>} />
+              <Route path="/automezzi" element={<WithLayout roles={["admin","contabilita"]}><Automezzi /></WithLayout>} />
               <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
               <Route path="/azienda" element={<WithLayout roles={["admin"]}><Azienda /></WithLayout>} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

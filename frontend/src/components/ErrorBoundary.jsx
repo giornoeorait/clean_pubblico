@@ -23,6 +23,15 @@ export default class ErrorBoundary extends React.Component {
     return { hasError: true, err };
   }
 
+  componentDidUpdate(prevProps) {
+    // Auto-reset when resetKeys change (e.g. route/tab change)
+    const prev = prevProps.resetKeys || [];
+    const curr = this.props.resetKeys || [];
+    if (this.state.hasError && (prev.length !== curr.length || prev.some((k, i) => k !== curr[i]))) {
+      this.setState({ hasError: false, err: null });
+    }
+  }
+
   componentDidCatch(err, info) {
     const msg = String(err?.message || err || "");
     if (

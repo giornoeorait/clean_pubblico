@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
 import api from "../lib/api";
 import TrialBanner from "./TrialBanner";
+import AlertsBanner from "./AlertsBanner";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
   SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet,
@@ -25,6 +26,8 @@ const ALL_ITEMS = [
   { to: "/fornitori/ddt", label: "DDT ricevuti", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
   { to: "/fornitori/fatture", label: "Fatture fornitore", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/costi", label: "Costi", icon: Wallet, roles: ["admin", "contabilita"] },
+  { to: "/dipendenti", label: "Dipendenti", icon: Users, roles: ["admin", "contabilita"] },
+  { to: "/automezzi", label: "Automezzi", icon: Truck, roles: ["admin", "contabilita"] },
   { to: "/report", label: "Report & BI", icon: ChartBar, roles: ["admin", "contabilita"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
@@ -184,6 +187,7 @@ export default function Layout({ children }) {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 animate-fade-in">
+          <AlertsBanner />
           {children}
         </main>
       </div>

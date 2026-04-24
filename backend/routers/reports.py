@@ -12,8 +12,10 @@ Endpoint aggregati read-only per dashboard business:
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from core import db, get_current_user, tenant_scope, tenant_id_of
+from pdf_service import generate_report_pdf
 
 router = APIRouter(tags=["reports"])
 
@@ -446,3 +448,36 @@ async def report_marginalita(anno: Optional[int] = None, user: Dict = Depends(ge
         "margine_totale": round(sum(r["margine"] for r in rows), 2),
         "per_cliente": rows,
     }
+
+
+# ======================== PDF EXPORT ========================
+
+_REPORT_FUNCS = {
+    "fatturato": report_fatturato,
+    "produzione": report_produzione,
+    "costo_kg": report_costo_kg,
+    "marginalita": report_marginalita,
+    "aging": report_aging_sospesi,
+    "km": report_km,
+}
+
+
+@router.get("/reports/{tipo}/pdf")
+async def report_pdf(tipo: str, anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+    fn = _REPORT_FUNCS.get(tipo)
+    if not fn:
+        raise HTTPException(404, f"Report '{tipo}' non esistente. Ammessi: {list(_REPORT_FUNCS.keys())}")
+    # Chiama la funzione report (accettano anno Optional eccetto aging)
+    if tipo == "aging":
+        data = await fn(user=user)
+    else:
+        data = await fn(anno=anno, user=user)
+    tenant_id = tenant_id_of(user)
+    company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
+    pdf_bytes = generate_report_pdf(tipo, data, company, anno=anno)
+    filename = f"report-{tipo}-{anno or 'all'}.pdf"
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
