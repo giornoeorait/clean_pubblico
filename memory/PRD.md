@@ -1,4 +1,4 @@
-# CleanTec - PRD (updated 24 Apr 2026 · FASE 4 Costi)
+# CleanTec - PRD (updated 24 Apr 2026 · FASE 5 Report BI)
 
 ## Problem
 Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → Offerte → D.D.T. → Fatture → Sospesi. Ciclo acquisti: Fornitori → DDT ricevuti → Fatture passive. Portale cliente pubblico per ordinativi self-service.
@@ -60,6 +60,19 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (tarda notte+) — FASE 5 "Report & Statistiche BI"**
+  - Backend: nuovo router `/api/reports` read-only con 6 endpoint aggregati:
+    - `GET /fatturato?anno=` → totale, incassato, sospeso, per_mese (grouped BSON date → %Y-%m), top 20 per_cliente
+    - `GET /produzione?anno=` → totale_kg (qta × peso_medio), totale_pezzi, per_mese, top 20 per_cliente, top 20 per_articolo
+    - `GET /costo-kg?anno=` → totale_costi, totale_kg, costo_kg_medio €/kg, per_categoria, per_mese con costo_kg mensile
+    - `GET /aging-sospesi` → 4 bucket (0-30, 31-60, 61-90, >90 gg dalla data fattura), totale_sospeso, dettagli top 50
+    - `GET /km-automezzi?anno=` → totale_km, totale_spesa, per_targa (km/spesa/costo_km/per_tipo breakdown), per_mese
+    - `GET /marginalita?anno=` → fatturato − costo allocato per kg, per_cliente ordinato per margine DESC
+  - Backend: aggregazioni Mongo pipeline pulite, BSON datetime supportato per fatture/ddt, string yyyy-mm per costi
+  - Frontend: nuova pagina `/report` con 6 tab + Recharts (BarChart/LineChart/PieChart), selettore anno
+  - Frontend fix CRITICO post-iter20: race condition su cambio tab risolta con `setData(null)` sincrono in onClick + defensive `(arr||[]).map` su tutte le shape eterogenee
+  - **Iter 19-21: 23/23 backend + 100% frontend (6/6 tab)  ✅**
+
 - **24 Apr 2026 (tarda notte) — FASE 4 "Costi"**
   - Backend: nuovo router `/api/costi` con CRUD + `GET /api/costi/summary?anno=YYYY` (aggregazioni Mongo: per_categoria, per_mese, stack mese×categoria, totale_generale)
   - Backend: 4 categorie validate (`personale`, `automezzi`, `utenze`, `prodotti`); campi comuni (data, mese_riferimento yyyy-mm, descrizione, importo≥0) + campi OPZIONALI context-aware (dipendente/ore, targa/km/tipo costo, tipo utenza/consumo/unità, codice articolo/qtà); fornitore_id opzionale (verifica esistenza → 400)
@@ -178,8 +191,10 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Report BI: fatturato per cliente, top articoli, aging sospesi
 
 ## Next Action Items
-- (P2) **FASE 5 — Report & Statistiche BI**: fatturato globale/per cliente, kg/quintali prodotti (pezzi × peso), costi personale, costo produzione/kg, consegne mensili, km automezzi — ora che i Costi sono in DB, si può calcolare la marginalità reale
-- (P2) Ricalcolo iva/totale UX: oggi corretto solo via PATCH iva_perc — frontend esporre editor dedicato per fatture DDT-linked
-- (P3) Clausole: `Pydantic validator` su FatturaFornitoreIn "at least one of righe/ddt_fornitore_ids"; validator regex su Costo.mese_riferimento (yyyy-mm); `aria-describedby` sui DialogContent Radix
-- (P3) Costi: aggiungere anagrafica dipendenti e anagrafica automezzi dedicate (ora sono campi liberi) + stipendio ricorrente mensile auto-generato
+- 🎉 **Tutte le fasi P0/P1/P2 completate (1, 2a, 2b, 3a, 3b, 4, 5)**
+- (P3) Migrazione Report a react-query/SWR per cache automatica + resetKeys ErrorBoundary per UX auto-recovery
+- (P3) Anagrafica dipendenti + automezzi dedicate (ora sono campi liberi in Costi) + stipendio ricorrente mensile auto-generato
+- (P3) Validator regex su `Costo.mese_riferimento` (yyyy-mm) + `aria-describedby` sui DialogContent Radix
+- (P3) Pydantic validator su `FatturaFornitoreIn` "at least one of righe/ddt_fornitore_ids"
+- (P3) Alert automatici: (a) spesa categoria costi > 120% media 3 mesi; (b) promemoria pagamento fatture fornitore a 3gg dalla scadenza
 - Configurare Stripe LIVE key in produzione
