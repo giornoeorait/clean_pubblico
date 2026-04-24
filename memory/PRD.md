@@ -60,6 +60,18 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (night) — FASE 3a "Offerte & Preventivi"**
+  - Backend: nuovo router `/api/offerte` con CRUD completo + `POST /{id}/converti-contratto` (assegna progressivo `CT-YYYY-NNNNN` separato) + `GET /{id}/pdf?tipo=offerta|contratto`
+  - Backend: schema con `righe[]` con `sconto_perc + sconto_eur` per riga; calcolo `prezzo_finale = max(0, prezzo * (1-perc/100) - eur)`; ricalcolo automatico da listino del cliente (usa `prezzo_noleggio`/`prezzo_lavaggio` in base al tipo listino)
+  - Backend: stati `bozza → inviata → accettata/rifiutata → contratto`; offerta in stato `contratto` è read-only (edit/delete → 409)
+  - Backend: nuova collezione `db.termini_templates` per clausole riusabili (GET admin+contabilita, POST/DELETE solo admin) + 4 clausole default seed (pagamento, durata, responsabilità, foro)
+  - Backend: `pdf_service.generate_offerta_pdf(as_contratto=True|False)` — PDF contratto differenziato con titolo "CONTRATTO DI SERVIZIO N.", data di attivazione, signature boxes finali
+  - Backend: counters `offerta` e `contratto` distinti, tenant-scoped migrato
+  - Frontend: nuova pagina `/offerte` (admin+contabilita) con tabella stati colorati, dialog form con: select cliente + durata mesi + scadenza + righe editable con preview live sconto (line-through + totale) + termini da template o manuali
+  - Frontend: sidebar "Offerte & Preventivi" tra Listini e D.D.T., icon HandHeart
+  - Frontend: azioni contestuali per stato: Invia → Accetta/Rifiuta → Trasforma in contratto; doppio PDF (offerta + contratto) + Duplica
+  - **Iter 15: 19/19 backend + 100% frontend ✅**
+
 - **24 Apr 2026 (evening+) — FASE 2a "Anagrafiche potenziate"**
   - Backend schema: `ClienteIn` con 5 campi obbligatori (ragione_sociale, partita_iva, indirizzo, email EmailStr, telefono) + 4 opzionali (pec, codice_sdi, denominazione_struttura, indirizzo_scarico); `sla_ore` rimosso
   - Backend schema: `ArticoloIn` con nuovi driver `prezzo_noleggio`, `prezzo_lavaggio`, `giacenza`; label UI "Valore convenzionale singolo prodotto (IVA esclusa)" per il campo `prezzo`
