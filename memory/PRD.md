@@ -67,7 +67,9 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
   - Pulito `seed.py`: via macchine/lotti/magazzino/tickets; focus su Clienti, Articoli, Listini (Std+VIP), 6 DDT demo
   - Semplificato Dashboard KPI: DDT, fatturato, sospesi, incassato
   - Aggiornato Pricing, Billing, Login, Utenti coerenti col nuovo flusso
-  - Test seed E2E funzionante: admin login → 2 listini → 6 DDT → 1 fattura → 1 sospeso
+  - One-shot migration in `ensure_demo_tenant`: rinomina `limits.lotti_monthly`→`ddt_monthly`, `usage.lotti_this_month`→`ddt_this_month` sui tenant esistenti
+  - Numerazione fatture: prefisso `FT-YYYY-NNNNN` (confermato in `billing.py`)
+  - **Testing iteration 10: 21/21 backend ✅ + 100% frontend E2E ✅** (Playwright + pytest, flusso Clienti→Listini→DDT→Fatture→Sospesi + multi-tenant isolation + 14 legacy route redirects)
 
 - **23 Apr 2026** — Listini/DDT/Sospesi/Fatture aggregate implementati
 - **Multi-tenant SaaS** — Stripe, trial, quota enforcement, email verification stub

@@ -40,6 +40,20 @@ async def ensure_demo_tenant():
         })
         logger.info(f"[SEED] DEMO tenant creato: {DEMO_TENANT_ID}")
 
+    # One-shot migration: rename legacy lotti_* keys -> ddt_* on ALL existing tenants
+    migration = await db.tenants.update_many(
+        {"$or": [
+            {"limits.lotti_monthly": {"$exists": True}},
+            {"usage.lotti_this_month": {"$exists": True}},
+        ]},
+        {"$rename": {
+            "limits.lotti_monthly": "limits.ddt_monthly",
+            "usage.lotti_this_month": "usage.ddt_this_month",
+        }},
+    )
+    if migration.modified_count:
+        logger.info(f"[SEED] migrated lotti_*→ddt_* keys on {migration.modified_count} tenants")
+
     super_email = "super@cleantec.it"
     if not await db.users.find_one({"email": super_email}):
         await db.users.insert_one({
