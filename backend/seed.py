@@ -170,16 +170,36 @@ async def seed_admin_and_users():
 async def seed_clienti_articoli():
     if await db.clienti.count_documents({}) == 0:
         clienti_demo = [
-            {"ragione_sociale": "Hotel Excelsior Roma", "partita_iva": "IT01234567890", "indirizzo": "Via Veneto 125, Roma", "email": "info@excelsior-roma.it", "telefono": "+39 06 47081", "tipologia": "hotel"},
-            {"ragione_sociale": "Ospedale San Raffaele", "partita_iva": "IT09876543210", "indirizzo": "Via Olgettina 60, Milano", "email": "logistica@sanraffaele.it", "telefono": "+39 02 26431", "tipologia": "ospedale"},
-            {"ragione_sociale": "Ristorante Villa Reale", "partita_iva": "IT11223344556", "indirizzo": "Corso Buenos Aires 12, Milano", "email": "info@villarealemi.it", "telefono": "+39 02 2940111", "tipologia": "ristorante"},
-            {"ragione_sociale": "Grand Hotel Rimini", "partita_iva": "IT55667788990", "indirizzo": "P.le Indipendenza 2, Rimini", "email": "reception@grandhotelrimini.com", "telefono": "+39 0541 56000", "tipologia": "hotel"},
-            {"ragione_sociale": "Clinica Mater Dei", "partita_iva": "IT99887766554", "indirizzo": "Via Bertoloni 34, Roma", "email": "reception@materdei.it", "telefono": "+39 06 809051", "tipologia": "ospedale"},
+            {"ragione_sociale": "Hotel Excelsior Roma Srl", "partita_iva": "IT01234567890", "codice_fiscale": "01234567890",
+             "indirizzo": "Via Veneto 125, 00187 Roma (RM)", "email": "info@excelsior-roma.it", "telefono": "+39 06 47081",
+             "pec": "excelsior.roma@pec.legalmail.it", "codice_sdi": "ABCDE12",
+             "denominazione_struttura": "Hotel Excelsior Roma", "indirizzo_scarico": "Via Veneto 125, 00187 Roma (RM) — ingresso carico/scarico",
+             "tipologia": "hotel"},
+            {"ragione_sociale": "Ospedale San Raffaele Spa", "partita_iva": "IT09876543210", "codice_fiscale": "09876543210",
+             "indirizzo": "Via Olgettina 60, 20132 Milano (MI)", "email": "logistica@sanraffaele.it", "telefono": "+39 02 26431",
+             "pec": "sanraffaele.logistica@pec.it", "codice_sdi": "M5UXCR1",
+             "denominazione_struttura": "Ospedale San Raffaele - Servizi Sanitari",
+             "indirizzo_scarico": "Via Olgettina 60, 20132 Milano — reparto lavanderia",
+             "tipologia": "ospedale"},
+            {"ragione_sociale": "Ristorante Villa Reale Srl", "partita_iva": "IT11223344556", "codice_fiscale": "11223344556",
+             "indirizzo": "Corso Buenos Aires 12, 20124 Milano (MI)", "email": "info@villarealemi.it", "telefono": "+39 02 2940111",
+             "pec": "villareale@pec.it", "codice_sdi": "", "denominazione_struttura": "Ristorante Villa Reale",
+             "indirizzo_scarico": "", "tipologia": "ristorante"},
+            {"ragione_sociale": "Grand Hotel Rimini Spa", "partita_iva": "IT55667788990", "codice_fiscale": "55667788990",
+             "indirizzo": "P.le Indipendenza 2, 47921 Rimini (RN)", "email": "reception@grandhotelrimini.com", "telefono": "+39 0541 56000",
+             "pec": "grandhotelrimini@pec.legalmail.it", "codice_sdi": "T04ZHR3",
+             "denominazione_struttura": "Grand Hotel Rimini", "indirizzo_scarico": "", "tipologia": "hotel"},
+            {"ragione_sociale": "Clinica Mater Dei Srl", "partita_iva": "IT99887766554", "codice_fiscale": "99887766554",
+             "indirizzo": "Via Bertoloni 34, 00197 Roma (RM)", "email": "reception@materdei.it", "telefono": "+39 06 809051",
+             "pec": "materdei@pec.it", "codice_sdi": "",
+             "denominazione_struttura": "Clinica Mater Dei - Servizi Generali", "indirizzo_scarico": "",
+             "tipologia": "ospedale"},
         ]
         for c in clienti_demo:
             c.update({
                 "id": new_id(), "tenant_id": DEMO_TENANT_ID,
                 "condizioni_pagamento": "30gg", "attivo": True,
+                "giorni_ritiro": [],
                 "created_at": now_utc(), "note": "",
             })
         await db.clienti.insert_many(clienti_demo)
@@ -187,12 +207,20 @@ async def seed_clienti_articoli():
 
     if await db.articoli.count_documents({}) == 0:
         articoli_demo = [
-            {"codice": "LEN-MAT", "descrizione": "Lenzuolo Matrimoniale", "categoria": "biancheria", "unita_misura": "pz", "prezzo": 1.2},
-            {"codice": "LEN-SIN", "descrizione": "Lenzuolo Singolo", "categoria": "biancheria", "unita_misura": "pz", "prezzo": 0.9},
-            {"codice": "ASC-VIS", "descrizione": "Asciugamano Viso", "categoria": "biancheria", "unita_misura": "pz", "prezzo": 0.5},
-            {"codice": "TOV-RIS", "descrizione": "Tovagliato Ristorante", "categoria": "tovagliato", "unita_misura": "kg", "prezzo": 2.5},
-            {"codice": "DIV-OSP", "descrizione": "Divisa Ospedaliera", "categoria": "divise", "unita_misura": "pz", "prezzo": 1.8},
-            {"codice": "KIT-CAM", "descrizione": "Kit Camera Completo", "categoria": "kit", "unita_misura": "pz", "prezzo": 4.5},
+            # prezzo = valore convenzionale singolo IVA esclusa
+            # prezzo_noleggio / prezzo_lavaggio = driver listini
+            {"codice": "LEN-MAT", "descrizione": "Lenzuolo Matrimoniale", "categoria": "biancheria", "unita_misura": "pz",
+             "prezzo": 12.0, "prezzo_noleggio": 1.20, "prezzo_lavaggio": 0.85, "giacenza": 480},
+            {"codice": "LEN-SIN", "descrizione": "Lenzuolo Singolo", "categoria": "biancheria", "unita_misura": "pz",
+             "prezzo": 9.0, "prezzo_noleggio": 0.90, "prezzo_lavaggio": 0.65, "giacenza": 620},
+            {"codice": "ASC-VIS", "descrizione": "Asciugamano Viso", "categoria": "biancheria", "unita_misura": "pz",
+             "prezzo": 5.0, "prezzo_noleggio": 0.50, "prezzo_lavaggio": 0.35, "giacenza": 1200},
+            {"codice": "TOV-RIS", "descrizione": "Tovagliato Ristorante", "categoria": "tovagliato", "unita_misura": "kg",
+             "prezzo": 25.0, "prezzo_noleggio": 2.50, "prezzo_lavaggio": 1.80, "giacenza": 300},
+            {"codice": "DIV-OSP", "descrizione": "Divisa Ospedaliera", "categoria": "divise", "unita_misura": "pz",
+             "prezzo": 18.0, "prezzo_noleggio": 1.80, "prezzo_lavaggio": 1.20, "giacenza": 380},
+            {"codice": "KIT-CAM", "descrizione": "Kit Camera Completo", "categoria": "kit", "unita_misura": "pz",
+             "prezzo": 45.0, "prezzo_noleggio": 4.50, "prezzo_lavaggio": 3.20, "giacenza": 150},
         ]
         for a in articoli_demo:
             a.update({"id": new_id(), "tenant_id": DEMO_TENANT_ID, "attivo": True, "created_at": now_utc()})
@@ -210,26 +238,29 @@ async def seed_listini_and_ddt():
 
     listino_std = {
         "id": new_id(), "tenant_id": DEMO_TENANT_ID,
-        "nome": "Standard", "descrizione": "Listino standard", "attivo": True,
+        "nome": "Noleggio Standard", "tipo": "noleggio",
+        "descrizione": "Listino noleggio standard", "attivo": True,
         "created_at": now_utc(), "updated_at": now_utc(),
     }
     listino_vip = {
         "id": new_id(), "tenant_id": DEMO_TENANT_ID,
-        "nome": "VIP Hotel 5 stelle", "descrizione": "Listino agevolato clienti top", "attivo": True,
+        "nome": "Lavaggio VIP Hotel 5 stelle", "tipo": "lavaggio",
+        "descrizione": "Listino lavaggio clienti top", "attivo": True,
         "created_at": now_utc(), "updated_at": now_utc(),
     }
     await db.listini.insert_many([listino_std, listino_vip])
 
     prezzi = []
     for a in articoli:
-        base = float(a.get("prezzo", 1) or 1)
+        p_nol = float(a.get("prezzo_noleggio") or a.get("prezzo", 1) or 1)
+        p_lav = float(a.get("prezzo_lavaggio") or a.get("prezzo", 1) or 1)
         prezzi.append({
             "tenant_id": DEMO_TENANT_ID, "listino_id": listino_std["id"],
-            "articolo_id": a["id"], "prezzo": round(base, 2), "updated_at": now_utc(),
+            "articolo_id": a["id"], "prezzo": round(p_nol, 2), "updated_at": now_utc(),
         })
         prezzi.append({
             "tenant_id": DEMO_TENANT_ID, "listino_id": listino_vip["id"],
-            "articolo_id": a["id"], "prezzo": round(base * 0.9, 2), "updated_at": now_utc(),
+            "articolo_id": a["id"], "prezzo": round(p_lav * 0.9, 2), "updated_at": now_utc(),
         })
     await db.listini_prezzi.insert_many(prezzi)
 
@@ -277,11 +308,44 @@ async def seed_listini_and_ddt():
     logger.info("[SEED] Listini (Std + VIP) + 6 DDT demo creati")
 
 
+async def migrate_phase2():
+    """Backfill new fields introduced in FASE 2 (listini.tipo, articoli.prezzo_noleggio/lavaggio/giacenza)."""
+    # Listini: default tipo=lavaggio for existing rows without one
+    res = await db.listini.update_many(
+        {"tipo": {"$exists": False}},
+        {"$set": {"tipo": "lavaggio"}},
+    )
+    if res.modified_count:
+        logger.info(f"[SEED] migrate phase2: listini.tipo backfilled on {res.modified_count} docs")
+    # Articoli: default prezzo_noleggio=prezzo, prezzo_lavaggio=prezzo, giacenza=0
+    async for a in db.articoli.find(
+        {"$or": [
+            {"prezzo_noleggio": {"$exists": False}},
+            {"prezzo_lavaggio": {"$exists": False}},
+            {"giacenza": {"$exists": False}},
+        ]},
+        {"_id": 1, "prezzo": 1, "prezzo_noleggio": 1, "prezzo_lavaggio": 1, "giacenza": 1},
+    ):
+        base = float(a.get("prezzo") or 0)
+        upd = {}
+        if "prezzo_noleggio" not in a or a.get("prezzo_noleggio") is None:
+            upd["prezzo_noleggio"] = round(base * 0.1, 2) if base else 0.0
+        if "prezzo_lavaggio" not in a or a.get("prezzo_lavaggio") is None:
+            upd["prezzo_lavaggio"] = round(base * 0.07, 2) if base else 0.0
+        if "giacenza" not in a or a.get("giacenza") is None:
+            upd["giacenza"] = 0
+        if upd:
+            await db.articoli.update_one({"_id": a["_id"]}, {"$set": upd})
+    # Rimuovi sla_ore legacy
+    await db.clienti.update_many({"sla_ore": {"$exists": True}}, {"$unset": {"sla_ore": ""}})
+
+
 async def run_all():
     await ensure_demo_tenant()
     await seed_admin_and_users()
     await seed_clienti_articoli()
     await seed_listini_and_ddt()
+    await migrate_phase2()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

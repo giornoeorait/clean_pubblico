@@ -1,0 +1,52 @@
+{
+  "summary": "FASE 2a — Anagrafiche potenziate (Clienti split RS/struttura + SDI/PEC, Articoli noleggio/lavaggio/giacenza, Listini tipo binario, profilo cliente). Backend 11/11 pytest PASS; frontend flows all green; regression on /dashboard /ddt /fatture /sospesi /azienda /listini OK.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dialog (DialogContent)", "issues": ["Console warning: Missing `Description` or `aria-describedby={undefined}` on Radix DialogContent (form modals & profilo dialog). Accessibility fix: add <DialogDescription/> or aria-describedby. Non-blocking."]}
+    ]
+  },
+  "verified_features": [
+    "BE Articoli GET returns prezzo_noleggio/prezzo_lavaggio/giacenza for all seed items",
+    "BE Articoli POST (prezzo_noleggio=2.5, prezzo_lavaggio=1.5, giacenza=100) → 200 and persisted via GET",
+    "BE Articoli PATCH prezzo_noleggio=9.99 → 200 and persisted",
+    "BE Listini POST without tipo → 422; with tipo='altro' → 422 (pattern)",
+    "BE Listini POST tipo='noleggio' and tipo='lavaggio' → 200 and persisted",
+    "BE Listini PATCH {tipo:'altro'} silently ignored (tipo immutable, descrizione updated)",
+    "BE Listini GET /{id}/prezzi new shape {listino:{id,nome,tipo,attivo}, rows:[{articolo_id,codice,descrizione,unita_misura,prezzo,prezzo_default}]}; prezzo_default matches prezzo_noleggio for noleggio / prezzo_lavaggio for lavaggio (fallback to prezzo)",
+    "BE Clienti POST missing partita_iva → 422; invalid email → 422 (EmailStr); missing telefono → 422",
+    "BE Clienti POST full payload (RS + p.iva + indirizzo + email + telefono + pec + codice_sdi + denominazione_struttura + indirizzo_scarico) → 200; sla_ore field ignored (not in response)",
+    "BE Clienti PATCH denominazione_struttura + codice_sdi + pec → 200 + persisted",
+    "BE /api/clienti/{id}/profilo returns {cliente, listino, ddts, fatture, stats{ddt_totali,ddt_non_fatturati,fatture_totali,fatturato_totale,incassato_totale,sospeso_totale}}; fatturato_totale = sum(totale), incassato_totale = sum where stato_incasso='incassata'",
+    "FE /articoli: form has Prezzo noleggio, Prezzo lavaggio, Giacenza inputs + 'Valore convenzionale singolo prodotto (IVA esclusa)' label; card grid shows Noleggio/Lavaggio/Giacenza/V. convenz",
+    "FE /listini: Nuovo listino form shows binary Noleggio|Lavaggio buttons (data-testid listino-tipo-noleggio/lavaggio); sidebar shows tipo badges colored per type (verified LAVAGGIO badge rendering)",
+    "FE /listini: clicking listino opens prezzi table with prezzo_default column coherent with tipo",
+    "FE /clienti: form split into 2 sections ('Ragione sociale (fatturazione)' + 'Denominazione struttura (operativa)'); Salva disabled until required filled (5 required with *)",
+    "FE /clienti: Eye icon (profile-{id}) opens dialog with 4 KPI (DDT totali, Fatturato, Incassato, Sospeso)",
+    "FE /clienti: table has 'Struttura' column; no 'SLA' column",
+    "FE regression: /dashboard /ddt /fatture /sospesi /azienda /listini load with 0 error elements"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter14_phase2a.py",
+    "/app/test_reports/pytest/iter14_phase2a.xml"
+  ],
+  "critical_code_review_comments": [
+    "listini.py list_prezzi: unita_misura field is pulled from articolo but ArticoloIn schema doesn't define 'unita_misura' (always defaults to 'pz'). Consider removing the fallback or adding the field explicitly to ArticoloIn.",
+    "catalog.py profilo: stats.sospeso_totale is computed (stato_incasso='da_incassare') but not listed in the review-request spec; it is however consistent with fatturato-incassato breakdown and returned correctly.",
+    "ClienteIn / PatchClienteIn: PEC field is plain str — consider EmailStr for validation parity with email (low priority).",
+    "Radix DialogContent warnings: every modal raises 'Missing Description or aria-describedby'. Add <DialogDescription> or aria-describedby for a11y compliance.",
+    "Seed state in DEMO tenant: both existing listini appear migrated to tipo='lavaggio' (seed for 'Noleggio Standard' likely didn't run because listini already existed). Sidebar noleggio-badge rendering could only be visually verified via an ad-hoc created listino; BE badge data model is correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter14_phase2a.py"
+  ],
+  "success_rate": { "backend": "100% (11/11)", "frontend": "100% (all checked flows)" },
+  "test_credentials": "admin@cleantec.it / admin123 (DEMO tenant)",
+  "seed_data_creation": "Tests self-cleanup (TEST_PH2_* articoli/clienti/listini deleted). Demo seed untouched; 6 articoli migrated with prezzo_noleggio/lavaggio/giacenza; 2 listini (both tipo=lavaggio in current DEMO state).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 2a verified & green. Listini 'Noleggio Standard' seed name from roadmap note is not present in DEMO — both existing listini are tipo=lavaggio (migration backfill). If the main agent wants a proper noleggio listino in seed, confirm seed idempotency. Next: FASE 2b (Fornitori) still pending — no tests written yet. Auth/company from FASE 1 still working.",
+  "rca of the issue": "No bugs found."
+}

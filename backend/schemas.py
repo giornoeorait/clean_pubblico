@@ -17,18 +17,24 @@ class UserCreate(BaseModel):
 
 
 class ClienteIn(BaseModel):
+    # Identificazione giuridica (obbligatoria)
     ragione_sociale: str
-    partita_iva: Optional[str] = ""
+    partita_iva: str
     codice_fiscale: Optional[str] = ""
-    indirizzo: Optional[str] = ""
-    email: Optional[str] = ""
-    telefono: Optional[str] = ""
+    indirizzo: str                       # sede legale
+    email: EmailStr
+    telefono: str
+    pec: Optional[str] = ""
+    codice_sdi: Optional[str] = ""       # codice destinatario SDI
+
+    # Struttura operativa (denominazione + indirizzo di scarico)
+    denominazione_struttura: Optional[str] = ""
+    indirizzo_scarico: Optional[str] = ""
+
     tipologia: str = "hotel"
-    listino: str = "standard"  # legacy display-only
-    listino_id: Optional[str] = None  # FK to listini
+    listino_id: Optional[str] = None     # FK listini
     condizioni_pagamento: str = "30gg"
     giorni_ritiro: List[int] = Field(default_factory=list)
-    sla_ore: int = 48
     note: Optional[str] = ""
     attivo: bool = True
 
@@ -43,8 +49,13 @@ class ArticoloIn(BaseModel):
     temperatura: int = 60
     barcode: Optional[str] = ""
     peso_medio: float = 0.5
+    # Valore convenzionale singolo prodotto IVA esclusa
     prezzo: float = 0.0
     prezzo_tipo: str = "capo"
+    # Nuovi driver FASE 2
+    prezzo_noleggio: float = 0.0
+    prezzo_lavaggio: float = 0.0
+    giacenza: int = 0
 
 
 class MacchinaIn(BaseModel):
@@ -188,12 +199,14 @@ class PatchClienteIn(_PatchBase):
     indirizzo: Optional[str] = None
     email: Optional[str] = None
     telefono: Optional[str] = None
+    pec: Optional[str] = None
+    codice_sdi: Optional[str] = None
+    denominazione_struttura: Optional[str] = None
+    indirizzo_scarico: Optional[str] = None
     tipologia: Optional[str] = None
-    listino: Optional[str] = None
     listino_id: Optional[str] = None
     condizioni_pagamento: Optional[str] = None
     giorni_ritiro: Optional[List[int]] = None
-    sla_ore: Optional[int] = None
     note: Optional[str] = None
     attivo: Optional[bool] = None
 
@@ -210,6 +223,9 @@ class PatchArticoloIn(_PatchBase):
     peso_medio: Optional[float] = None
     prezzo: Optional[float] = None
     prezzo_tipo: Optional[str] = None
+    prezzo_noleggio: Optional[float] = None
+    prezzo_lavaggio: Optional[float] = None
+    giacenza: Optional[int] = None
 
 
 class PatchMacchinaIn(_PatchBase):

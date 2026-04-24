@@ -15,6 +15,7 @@ _WRITE = ("admin", "contabilita")
 
 class ListinoIn(BaseModel):
     nome: str = Field(..., min_length=1, max_length=120)
+    tipo: str = Field(..., pattern="^(noleggio|lavaggio)$")
     descrizione: Optional[str] = ""
     attivo: bool = True
 
@@ -23,6 +24,7 @@ class ListinoPatch(BaseModel):
     nome: Optional[str] = None
     descrizione: Optional[str] = None
     attivo: Optional[bool] = None
+    # tipo is NOT patchable (would break price references)
 
 
 class PrezzoArticoloIn(BaseModel):
@@ -106,18 +108,21 @@ async def list_prezzi(lid: str, user: Dict = Depends(get_current_user)):
     prezzi_map = {}
     async for p in db.listini_prezzi.find(merge_scope(user, {"listino_id": lid}), {"_id": 0}):
         prezzi_map[p["articolo_id"]] = p["prezzo"]
-    # Merge: every articolo + current price (if any)
+    # Default price source depends on listino type (noleggio vs lavaggio)
+    tipo = listino.get("tipo") or "lavaggio"
+    default_key = "prezzo_noleggio" if tipo == "noleggio" else "prezzo_lavaggio"
     rows = []
     for a in articoli:
+        default_price = a.get(default_key) if a.get(default_key) else a.get("prezzo", 0)
         rows.append({
             "articolo_id": a["id"],
             "codice": a.get("codice", ""),
             "descrizione": a.get("descrizione", ""),
             "unita_misura": a.get("unita_misura", "pz"),
             "prezzo": prezzi_map.get(a["id"], None),
-            "prezzo_default": a.get("prezzo", 0),
+            "prezzo_default": float(default_price or 0),
         })
-    return rows
+    return {"listino": {"id": listino["id"], "nome": listino.get("nome"), "tipo": tipo, "attivo": listino.get("attivo", True)}, "rows": rows}
 
 
 @router.put("/{lid}/prezzi")

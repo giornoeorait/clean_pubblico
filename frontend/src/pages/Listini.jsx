@@ -7,10 +7,14 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Switch } from "../components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
-import { Plus, FloppyDisk, Pencil, Trash, Receipt, CheckCircle } from "@phosphor-icons/react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Plus, FloppyDisk, Pencil, Trash, Receipt, CheckCircle, Drop, Package } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const EMPTY = { nome: "", descrizione: "", attivo: true };
+const EMPTY = { nome: "", tipo: "", descrizione: "", attivo: true };
+const TIPO_LABEL = { noleggio: "Noleggio", lavaggio: "Lavaggio" };
+const TIPO_ICON = { noleggio: Package, lavaggio: Drop };
+const TIPO_COLOR = { noleggio: "text-indaco", lavaggio: "text-celeste" };
 
 export default function Listini() {
   const [list, setList] = useState([]);
@@ -29,19 +33,26 @@ export default function Listini() {
 
   const loadPrezzi = useCallback(async (lid) => {
     const { data } = await api.get(`/listini/${lid}/prezzi`);
-    setPrezzi(data); setDirty({});
+    // API may return {listino, rows} (FASE 2) or legacy [array]
+    const rows = Array.isArray(data) ? data : data.rows;
+    setPrezzi(rows); setDirty({});
   }, []);
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { if (selected?.id) loadPrezzi(selected.id); }, [selected, loadPrezzi]);
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setFormOpen(true); };
-  const openEdit = (l) => { setEditing(l); setForm({ nome: l.nome, descrizione: l.descrizione || "", attivo: !!l.attivo }); setFormOpen(true); };
+  const openEdit = (l) => { setEditing(l); setForm({ nome: l.nome, tipo: l.tipo || "lavaggio", descrizione: l.descrizione || "", attivo: !!l.attivo }); setFormOpen(true); };
 
   const saveListino = async (e) => {
     e.preventDefault();
+    if (!editing && !form.tipo) { toast.error("Seleziona il tipo di listino"); return; }
     try {
-      if (editing) { await api.patch(`/listini/${editing.id}`, form); toast.success("Listino aggiornato"); }
+      if (editing) {
+        // tipo is immutable after creation
+        const { tipo: _t, ...patch } = form;
+        await api.patch(`/listini/${editing.id}`, patch); toast.success("Listino aggiornato");
+      }
       else { await api.post("/listini", form); toast.success("Listino creato"); }
       setFormOpen(false); loadList();
     } catch (e2) { toast.error(e2.response?.data?.detail || "Errore"); }
@@ -82,6 +93,29 @@ export default function Listini() {
             <DialogContent>
               <DialogHeader><DialogTitle>{editing ? "Modifica listino" : "Nuovo listino"}</DialogTitle></DialogHeader>
               <form onSubmit={saveListino} className="space-y-3">
+                {!editing && (
+                  <div>
+                    <Label>Tipo listino * <span className="text-xs text-slate-400 font-normal">(non modificabile dopo la creazione)</span></Label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {["noleggio","lavaggio"].map(t => {
+                        const active = form.tipo === t;
+                        const Icon = TIPO_ICON[t];
+                        return (
+                          <button key={t} type="button" onClick={() => setForm({...form, tipo: t})}
+                            className={`p-3 rounded-lg border-2 transition-all text-left ${active ? "border-indaco bg-indaco/5" : "border-slate-200 hover:border-slate-300"}`}
+                            data-testid={`listino-tipo-${t}`}>
+                            <Icon size={20} className={active ? "text-indaco" : "text-slate-400"} weight={active ? "fill" : "regular"} />
+                            <div className={`font-semibold mt-1 ${active ? "text-indaco" : "text-slate-700"}`}>{TIPO_LABEL[t]}</div>
+                            <div className="text-[11px] text-slate-500">Usa <b>prezzo_{t}</b> come default</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {editing && (
+                  <div className="text-xs bg-slate-100 rounded px-3 py-2 font-mono">Tipo: <b className={TIPO_COLOR[editing.tipo] || ""}>{TIPO_LABEL[editing.tipo] || "—"}</b></div>
+                )}
                 <div><Label>Nome *</Label><Input required value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} data-testid="listino-nome" /></div>
                 <div><Label>Descrizione</Label><Textarea rows={2} value={form.descrizione} onChange={e => setForm({...form, descrizione: e.target.value})} /></div>
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -111,6 +145,11 @@ export default function Listini() {
                 <div>
                   <div className="font-display font-bold">{l.nome}</div>
                   <div className="text-xs text-slate-500 mt-0.5">{l.descrizione || "—"}</div>
+                  {l.tipo && (
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider mt-1 px-1.5 py-0.5 rounded ${l.tipo === "noleggio" ? "bg-indaco/10 text-indaco" : "bg-celeste/10 text-azzurro"}`}>
+                      {TIPO_LABEL[l.tipo]}
+                    </span>
+                  )}
                 </div>
                 {l.attivo ? <CheckCircle size={16} className="text-emerald-500" weight="fill" /> : null}
               </div>

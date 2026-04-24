@@ -84,3 +84,37 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
 
 _register("clienti", "clienti", ClienteIn, PatchClienteIn, "cliente", ("admin", "contabilita"))
 _register("articoli", "articoli", ArticoloIn, PatchArticoloIn, "articolo", ("admin", "contabilita"))
+
+
+@router.get("/clienti/{cid}/profilo")
+async def cliente_profilo(cid: str, user: Dict = Depends(get_current_user)):
+    """Storico commerciale per un cliente: DDT + Fatture + totali."""
+    cli = await db.clienti.find_one(merge_scope(user, {"id": cid}), {"_id": 0})
+    if not cli:
+        raise HTTPException(404, "Cliente non trovato")
+    ddts = await db.ddt.find(
+        merge_scope(user, {"cliente_id": cid}), {"_id": 0}
+    ).sort("data", -1).to_list(500)
+    fatture = await db.fatture.find(
+        merge_scope(user, {"cliente_id": cid}), {"_id": 0}
+    ).sort("data", -1).to_list(500)
+    tot_fatturato = sum(f.get("totale", 0) for f in fatture)
+    tot_incassato = sum(f.get("totale", 0) for f in fatture if f.get("stato_incasso") == "incassata")
+    tot_sospeso = sum(f.get("totale", 0) for f in fatture if f.get("stato_incasso") == "da_incassare")
+    listino = None
+    if cli.get("listino_id"):
+        listino = await db.listini.find_one(merge_scope(user, {"id": cli["listino_id"]}), {"_id": 0})
+    return {
+        "cliente": cli,
+        "listino": listino,
+        "ddts": ddts,
+        "fatture": fatture,
+        "stats": {
+            "ddt_totali": len(ddts),
+            "ddt_non_fatturati": sum(1 for d in ddts if d.get("stato_fatturazione") == "non_fatturato"),
+            "fatture_totali": len(fatture),
+            "fatturato_totale": round(tot_fatturato, 2),
+            "incassato_totale": round(tot_incassato, 2),
+            "sospeso_totale": round(tot_sospeso, 2),
+        },
+    }
