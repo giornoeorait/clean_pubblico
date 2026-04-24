@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from core import db, new_id, now_utc, to_dt, get_current_user, require_roles, log_audit, tenant_scope, merge_scope, inject_tenant
 from schemas import (
-    ClienteIn, ArticoloIn, MacchinaIn,
-    PatchClienteIn, PatchArticoloIn, PatchMacchinaIn,
+    ClienteIn, ArticoloIn,
+    PatchClienteIn, PatchArticoloIn,
 )
 
 router = APIRouter(tags=["catalog"])
@@ -84,4 +84,3 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
 
 _register("clienti", "clienti", ClienteIn, PatchClienteIn, "cliente", ("admin", "contabilita"))
 _register("articoli", "articoli", ArticoloIn, PatchArticoloIn, "articolo", ("admin", "contabilita"))
-_register("macchine", "macchine", MacchinaIn, PatchMacchinaIn, "macchina", ("admin", "produzione"))

@@ -1,80 +1,87 @@
-# CleanTec - PRD (updated 23 Apr 2026)
+# CleanTec - PRD (updated 24 Apr 2026)
 
 ## Problem
-Industrial laundry full-stack SaaS — ERP+MES+WMS+TMS, multi-tenant with Stripe subscriptions and self-service onboarding.
+Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → D.D.T. → Fatture → Sospesi. Multi-tenant con abbonamenti Stripe e self-service onboarding.
 
 ## Stack
-- Backend: FastAPI + Motor + MongoDB (maxPoolSize=200)
+- Backend: FastAPI + Motor + MongoDB
 - Frontend: React 19 + Tailwind + Shadcn/UI + Phosphor Icons + Recharts
-- Auth: JWT with tenant_id in claims
+- Auth: JWT con tenant_id nei claims
 - Storage: Emergent Object Storage
-- Notifications: Twilio (optional) + stub fallback
-- Payments: Stripe via emergentintegrations
-- Email: stub (logged to db.email_events, ready for Resend/SendGrid)
+- Pagamenti: Stripe via emergentintegrations
 
-## Implemented
+## Architecture (post-refactor 24 Apr 2026)
 
-### Core SaaS (this session)
-- **Multi-tenant** complete: `tenants` collection + `tenant_id` on all 18 data collections. `tenant_scope`/`merge_scope`/`inject_tenant` helpers applied in every router. JWT carries tenant_id.
-- **Self-service registration** `/register` + `/pricing` public page + 14-day trial (no card)
-- **Stripe Subscriptions**: checkout (monthly/annual), webhook, polling status, transactions history
-- **Cancel/Resume subscription**: access retained until current_period_end
-- **Plan enforcement**: `require_active_tenant()` + `enforce_quota(user, 'users'|'lotti_monthly')` on critical POSTs. Returns 402 → frontend interceptor shows "Aggiorna piano" toast with redirect to /billing
-- **Email verification stub**: verification_token on register, POST /api/auth/verify-email, resend endpoint, /verify page with status UI. Logs link in db.email_events (Resend-ready)
-- **Superadmin dashboard** `/admin`: MRR/ARR, tenant count, conversion rate 90d, revenue this month, tenant distribution by plan/status, tenants list, transactions list. Role `superadmin` seeded as super@cleantec.it
-- **BI Insights** `/insights`: linear-regression forecast kg/day (history 21d → predict 7d), consumi detergenti vs kg lavati, costo per kg, top consumi per articolo
-- **Trial banner** global (red when ≤3 days) + **iPad swipe gesture** from left to open sidebar + `xl:` breakpoint for sticky sidebar
+### Flusso dati
+```
+Articoli ──┐
+           ├──► Listini (prezzi per articolo)
+Clienti ◄──┘        │
+   │                ▼
+   └──► D.D.T. (auto-prezza da listino cliente)
+             │
+             ▼
+       Fatture (aggregazione DDT non fatturati)
+             │
+             ▼
+       Sospesi (incasso / mark incassata)
+```
 
-### Core app (cumulative)
-- Clienti/Articoli/Macchine/Utenti CRUD
-- Accettazione → Ritiri → Lotti (9 stati) → MES Kanban → Qualità → Logistica → Fatturazione
-- Magazzino detergenti/DPI + Manutenzione macchine
-- Object Storage (foto + firme)
-- Notifiche SMS/WhatsApp (Twilio stub)
-- Hardware ingestion (barcode/bilancia/RFID)
-- Dashboard KPI, Touch tablet, Mobile autista, Portale Cliente
+### Collezioni DB
+- `tenants` — multi-tenant SaaS
+- `users` — {id, email, role, tenant_id}
+- `clienti` — {id, tenant_id, ragione_sociale, listino_id, ...}
+- `articoli` — {id, tenant_id, codice, descrizione, prezzo, ...}
+- `listini` — {id, tenant_id, nome, attivo}
+- `listini_prezzi` — {tenant_id, listino_id, articolo_id, prezzo}
+- `ddt` — {id, tenant_id, numero, cliente_id, listino_id, righe[], imponibile, stato_fatturazione, fattura_id}
+- `fatture` — {id, tenant_id, numero, cliente_id, ddt_ids[], totale, stato_incasso, data_incasso}
+- `payment_transactions` — Stripe history
 
-## Plans
-| Piano | Mensile | Annuale | Utenti | Lotti/mese | SMS |
-|-------|---------|---------|--------|-----------|------|
-| Starter | €59 | €49 | 5 | 1.000 | 0 |
-| Pro | €179 | €149 | 20 | 10.000 | 100 |
+### Backend routers (attivi)
+auth, users, catalog (clienti+articoli), listini, ddt, billing (+sospesi), dashboard, files, tenants, subscriptions, superadmin
+
+### Frontend pagine (attive)
+Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DDT, Fatture, Sospesi, Utenti, Billing, SuperAdmin
+
+## Piani SaaS (aggiornati)
+| Piano | Mensile | Annuale | Utenti | DDT/mese | SMS |
+|-------|---------|---------|--------|---------|-----|
+| Starter | €59 | €49 | 5 | 500 | 0 |
+| Pro | €179 | €149 | 20 | 5.000 | 100 |
 | Enterprise | €449 | €379 | ∞ | ∞ | 500 |
 
 ## Demo credentials
 | Email | Password | Role |
 |-------|----------|------|
-| super@cleantec.it | Superadmin123! | **superadmin** |
-| admin@cleantec.it | admin123 | admin (DEMO tenant) |
-| produzione@cleantec.it | produzione123 | produzione |
+| super@cleantec.it | Superadmin123! | superadmin |
+| admin@cleantec.it | admin123 | admin |
 | logistica@cleantec.it | logistica123 | logistica |
-| qualita@cleantec.it | qualita123 | qualita |
 | contabilita@cleantec.it | contabilita123 | contabilita |
-| cliente@cleantec.it | cliente123 | cliente → Hotel Excelsior |
-| owner@lavtest.it | segretaPWD1! | admin of Lavanderia Test Srl (Pro trial) |
 
-## Architecture
-- Backend routers (14): auth, users, catalog, operations, billing, dashboard, magazzino, manutenzione, files, notifications, hardware, tenants, subscriptions, superadmin, insights
-- Frontend pages (25+): Dashboard, Clienti, Articoli, Macchine, Accettazione, Lotti, Produzione, Qualita, Logistica, Fatture, Magazzino, Manutenzione, Notifiche, Hardware, Utenti, Touch, Mobile, Portale, Pricing, Register, Billing, SuperAdmin, Insights, VerifyEmail, Login
+## Changelog recente
+- **24 Apr 2026 — MAJOR REFACTOR "Pure commercial SaaS"**
+  - RIMOSSE pagine: Accettazione, Logistica, Macchine, Magazzino, Manutenzione, Mobile, Notifiche, Portale, Touch, Hardware, Insights
+  - RIMOSSI router backend: operations, hardware, manutenzione, magazzino, notifications, insights
+  - Aggiornato `core.PLANS` con limite `ddt_monthly` (era `lotti_monthly`)
+  - Pulito `seed.py`: via macchine/lotti/magazzino/tickets; focus su Clienti, Articoli, Listini (Std+VIP), 6 DDT demo
+  - Semplificato Dashboard KPI: DDT, fatturato, sospesi, incassato
+  - Aggiornato Pricing, Billing, Login, Utenti coerenti col nuovo flusso
+  - Test seed E2E funzionante: admin login → 2 listini → 6 DDT → 1 fattura → 1 sospeso
 
-## Testing status
-- Iteration 1-7: core features
-- Iteration 8: object storage + notifications + hardware (100% pass)
-- Iteration 9 (today): quota enforcement + email verification + cancel/resume + superadmin + insights (17/17 backend, 4/4 frontend flows — 100%)
+- **23 Apr 2026** — Listini/DDT/Sospesi/Fatture aggregate implementati
+- **Multi-tenant SaaS** — Stripe, trial, quota enforcement, email verification stub
+- **Superadmin dashboard** — MRR/ARR, conversion, tenants/transactions
 
 ## Backlog (P2 / Future)
-- 2FA OTP for admin accounts
-- Stripe Customer Portal (update card, download invoices) — requires full Stripe SDK
+- 2FA OTP per account admin
+- Stripe Customer Portal (download fatture)
 - Fatturazione elettronica italiana SDI XML
-- Inventario biancheria a noleggio per cliente (rotazione capi RFID)
-- Short-lived signed URLs per /api/files (HMAC vs `?auth=` query param)
-- TTL index db.hardware_events (retention)
-- Resend/SendGrid integration for email verification
-- Multi-sede warehouse per tenant Enterprise
-- Webhook delivery receipts Twilio per Portale Cliente
-- Onboarding wizard (import Excel, first ritiro)
+- Export Excel fatture & sospesi
+- Solleciti automatici via email/SMS per sospesi (Resend/Twilio)
+- Report BI: fatturato per cliente, top articoli, aging sospesi
 
 ## Next Action Items
-- Configurare Resend API key per email verification reali (stub pronto)
-- Configurare Stripe LIVE key in produzione (ora test)
-- (Opzionale) Superadmin: CRUD manuale tenants, reset limits, force status
+- (TEST) Eseguire `testing_agent_v3_fork` per validare E2E il flusso commerciale post-refactor (in attesa di conferma utente)
+- Configurare Stripe LIVE key in produzione
+- (Opzionale) Aggiornare copy landing/marketing per messaggio "ERP commerciale"

@@ -77,29 +77,29 @@ export default function Dashboard() {
         <div className="kpi-card">
           <div className="flex items-center gap-2 mb-3">
             <Warning size={20} className="text-amber-500" weight="duotone" />
-            <h3 className="font-display text-lg font-bold">Alert operativi</h3>
+            <h3 className="font-display text-lg font-bold">Alert commerciali</h3>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-md">
-              <div className="flex items-center gap-2">
-                <Package size={18} className="text-amber-600" weight="duotone" />
-                <span className="text-sm">Magazzino sottoscorta</span>
-              </div>
-              <span className="font-display text-2xl font-bold text-amber-600">{kpi.magazzino_allarmi}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-md">
-              <div className="flex items-center gap-2">
-                <Warning size={18} className="text-red-600" weight="duotone" />
-                <span className="text-sm">Ticket manutenzione</span>
-              </div>
-              <span className="font-display text-2xl font-bold text-red-600">{kpi.tickets_aperti}</span>
-            </div>
             <div className="flex items-center justify-between p-3 bg-indaco/10 rounded-md">
               <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-indaco" weight="duotone" />
+                <Truck size={18} className="text-indaco" weight="duotone" />
                 <span className="text-sm">DDT non fatturati</span>
               </div>
               <span className="font-display text-2xl font-bold text-indaco">{kpi.ddt_non_fatturati}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <CurrencyEur size={18} className="text-amber-600" weight="duotone" />
+                <span className="text-sm">Fatture da incassare</span>
+              </div>
+              <span className="font-display text-2xl font-bold text-amber-600">{kpi.sospesi_count}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} className="text-emerald-600" weight="duotone" />
+                <span className="text-sm">Incassato nel mese</span>
+              </div>
+              <span className="font-display text-lg font-bold text-emerald-600">€ {kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}</span>
             </div>
           </div>
         </div>

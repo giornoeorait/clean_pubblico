@@ -88,7 +88,7 @@ async def register_tenant(body: RegisterIn, request: Request):
         "stripe_customer_id": None,
         "stripe_subscription_id": None,
         "limits": dict(plan["limits"]),
-        "usage": {"users": 1, "lotti_this_month": 0, "sms_this_month": 0, "last_reset": now},
+        "usage": {"users": 1, "ddt_this_month": 0, "sms_this_month": 0, "last_reset": now},
         "created_at": now,
         "updated_at": now,
     }

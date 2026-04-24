@@ -14,7 +14,7 @@ export default function Utenti() {
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", name: "", role: "produzione" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", role: "contabilita" });
 
   const fetch = async () => {
     const [u, a] = await Promise.all([api.get("/users"), api.get("/audit-log?limit=200")]);
@@ -24,7 +24,7 @@ export default function Utenti() {
 
   const save = async (e) => {
     e.preventDefault();
-    try { await api.post("/users", form); toast.success("Utente creato"); setOpen(false); setForm({ email: "", password: "", name: "", role: "produzione" }); fetch(); }
+    try { await api.post("/users", form); toast.success("Utente creato"); setOpen(false); setForm({ email: "", password: "", name: "", role: "contabilita" }); fetch(); }
     catch (e) { toast.error(e.response?.data?.detail); }
   };
 
@@ -33,7 +33,7 @@ export default function Utenti() {
       <PageHeader
         eyebrow="Admin"
         title="Utenti & Sicurezza"
-        subtitle="Ruoli granulari (admin, produzione, logistica, qualità, contabilità), audit log completo."
+        subtitle="Ruoli: admin, logistica, contabilità. Audit log completo di tutte le operazioni."
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-user-btn"><Plus size={16} className="mr-1" />Nuovo Utente</Button></DialogTrigger>
@@ -49,11 +49,8 @@ export default function Utenti() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="produzione">Produzione</SelectItem>
                       <SelectItem value="logistica">Logistica</SelectItem>
-                      <SelectItem value="qualita">Qualità</SelectItem>
                       <SelectItem value="contabilita">Contabilità</SelectItem>
-                      <SelectItem value="cliente">Cliente (Portale)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

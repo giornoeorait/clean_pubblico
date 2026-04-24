@@ -3,34 +3,21 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import TrialBanner from "./TrialBanner";
 import {
-  ChartBar, Users, Package, HardDrives, ClipboardText, Path, Kanban,
-  ShieldCheck, Truck, Receipt, UserList, Hand, DeviceMobile, Storefront,
-  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard, ChartLineUp, Crown, CurrencyEur,
+  ChartBar, Users, Package, Receipt, Truck, UserList,
+  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur,
 } from "@phosphor-icons/react";
 
 const ALL_ITEMS = [
-  { to: "/dashboard", label: "Dashboard", icon: ChartBar, roles: ["admin", "produzione", "logistica", "qualita", "contabilita"] },
+  { to: "/dashboard", label: "Dashboard", icon: ChartBar, roles: ["admin", "contabilita", "logistica"] },
   { to: "/clienti", label: "Clienti", icon: Users, roles: ["admin", "contabilita", "logistica"] },
-  { to: "/articoli", label: "Articoli", icon: Package, roles: ["admin", "contabilita", "produzione"] },
+  { to: "/articoli", label: "Articoli", icon: Package, roles: ["admin", "contabilita"] },
   { to: "/listini", label: "Listini", icon: Receipt, roles: ["admin", "contabilita"] },
-  { to: "/macchine", label: "Macchine", icon: HardDrives, roles: ["admin", "produzione"] },
   { to: "/ddt", label: "D.D.T.", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
   { to: "/fatture", label: "Fatturazione", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, roles: ["admin", "contabilita"] },
-  { to: "/magazzino", label: "Magazzino", icon: Drop, roles: ["admin", "produzione", "contabilita", "logistica"] },
-  { to: "/manutenzione", label: "Manutenzione", icon: Wrench, roles: ["admin", "produzione"] },
-  { to: "/notifiche", label: "Notifiche", icon: ChatCircleText, roles: ["admin", "logistica", "produzione", "qualita"] },
-  { to: "/hardware", label: "Console Hardware", icon: Scan, roles: ["admin", "produzione", "logistica"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
-  { to: "/insights", label: "Insights & Forecast", icon: ChartLineUp, roles: ["admin", "produzione", "contabilita"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
   { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
-];
-
-const SPECIAL_ITEMS = [
-  { to: "/touch", label: "Modalità Touch", icon: Hand },
-  { to: "/mobile", label: "App Autista", icon: DeviceMobile },
-  { to: "/portale", label: "Portale Cliente", icon: Storefront },
 ];
 
 export default function Layout({ children }) {
@@ -113,22 +100,6 @@ export default function Layout({ children }) {
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
           <div className="overline px-3 mb-2 text-slate-500">Operativo</div>
           {items.map((it) => (
-            <NavLink
-              key={it.to}
-              to={it.to}
-              data-testid={`nav-${it.to.replace("/", "")}`}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `sidebar-item ${isActive ? "sidebar-item-active" : "text-slate-300"}`
-              }
-            >
-              <it.icon size={18} weight="regular" />
-              <span>{it.label}</span>
-            </NavLink>
-          ))}
-
-          <div className="overline px-3 mt-6 mb-2 text-slate-500">Interfacce</div>
-          {SPECIAL_ITEMS.map((it) => (
             <NavLink
               key={it.to}
               to={it.to}

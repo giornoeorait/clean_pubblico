@@ -36,8 +36,8 @@ export default function Articoli() {
     <div>
       <PageHeader
         eyebrow="Anagrafica"
-        title="Articoli & Lotti"
-        subtitle="Capi singoli, lotti a peso e kit. Prezzi per capo, kg o canone."
+        title="Articoli"
+        subtitle="Capi singoli, tovagliato a peso e kit. Prezzi per capo, kg o canone."
         actions={
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(EMPTY); }}}>
             <DialogTrigger asChild><Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-articolo-btn"><Plus size={16} weight="bold" className="mr-1" />Nuovo Articolo</Button></DialogTrigger>

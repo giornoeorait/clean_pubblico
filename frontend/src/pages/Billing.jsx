@@ -141,7 +141,7 @@ export default function Billing() {
           <div className="overline mb-3">Utilizzo</div>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span>Utenti</span><span className="font-mono font-bold">{t.usage?.users || 1}{plan.limits.users !== -1 && `/${plan.limits.users}`}</span></div>
-            <div className="flex justify-between"><span>Lotti mese</span><span className="font-mono font-bold">{t.usage?.lotti_this_month || 0}{plan.limits.lotti_monthly !== -1 && `/${plan.limits.lotti_monthly}`}</span></div>
+            <div className="flex justify-between"><span>D.D.T. mese</span><span className="font-mono font-bold">{t.usage?.ddt_this_month || 0}{plan.limits.ddt_monthly !== -1 && `/${plan.limits.ddt_monthly}`}</span></div>
             <div className="flex justify-between"><span>SMS inclusi</span><span className="font-mono font-bold">{plan.limits.sms_monthly === 0 ? "—" : `0/${plan.limits.sms_monthly}`}</span></div>
           </div>
         </div>

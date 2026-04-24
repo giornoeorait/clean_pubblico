@@ -48,8 +48,8 @@ PLANS = {
         "price_monthly": 59.00,
         "price_annual": 49.00,  # per month billed annually (2 mesi gratis)
         "currency": "eur",
-        "limits": {"users": 5, "lotti_monthly": 1000, "sms_monthly": 0},
-        "features": ["crud_base", "mes", "kanban", "tracciabilita", "fatture", "dashboard", "portale_cliente"],
+        "limits": {"users": 5, "ddt_monthly": 500, "sms_monthly": 0},
+        "features": ["clienti", "articoli", "listini", "ddt", "fatture", "sospesi", "dashboard"],
         "cta": "Parti subito",
     },
     "pro": {
@@ -58,8 +58,8 @@ PLANS = {
         "price_monthly": 179.00,
         "price_annual": 149.00,
         "currency": "eur",
-        "limits": {"users": 20, "lotti_monthly": 10000, "sms_monthly": 100},
-        "features": ["starter", "magazzino", "manutenzione", "notifiche_sms", "audit_log"],
+        "limits": {"users": 20, "ddt_monthly": 5000, "sms_monthly": 100},
+        "features": ["starter", "listini_multipli", "audit_log", "export_excel"],
         "cta": "Il più popolare",
         "highlight": True,
     },
@@ -69,8 +69,8 @@ PLANS = {
         "price_monthly": 449.00,
         "price_annual": 379.00,
         "currency": "eur",
-        "limits": {"users": -1, "lotti_monthly": -1, "sms_monthly": 500},  # -1 = unlimited
-        "features": ["pro", "hardware_ingestion", "multi_sede", "sla_24_7", "priority_support"],
+        "limits": {"users": -1, "ddt_monthly": -1, "sms_monthly": 500},  # -1 = unlimited
+        "features": ["pro", "multi_sede", "sla_24_7", "priority_support"],
         "cta": "Contattaci",
     },
 }
@@ -270,8 +270,8 @@ async def enforce_quota(user: Dict[str, Any], resource: str) -> None:
     """Raise 402 if tenant exceeds the resource quota for its plan.
 
     Resources supported:
-      - 'users'         → max concurrent active users
-      - 'lotti_monthly' → max lotti created this calendar month
+      - 'users'        → max concurrent active users
+      - 'ddt_monthly'  → max DDT created this calendar month
     """
     if user["role"] == "superadmin":
         return
@@ -286,10 +286,10 @@ async def enforce_quota(user: Dict[str, Any], resource: str) -> None:
     tid = tenant["id"]
     if resource == "users":
         current = await db.users.count_documents({"tenant_id": tid, "attivo": True})
-    elif resource == "lotti_monthly":
+    elif resource == "ddt_monthly":
         today = now_utc()
         month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        current = await db.lotti.count_documents({"tenant_id": tid, "created_at": {"$gte": month_start}})
+        current = await db.ddt.count_documents({"tenant_id": tid, "created_at": {"$gte": month_start}})
     else:
         return
     if current >= limit:

@@ -57,14 +57,14 @@ export default function Login() {
             Il sistema nervoso della tua lavanderia industriale.
           </h1>
           <p className="text-slate-300 text-lg leading-relaxed">
-            ERP, MES, WMS e logistica in un unico ambiente. Tracciabilità capo per capo, dalla ricezione alla consegna.
+            ERP commerciale completo: clienti, listini multipli, D.D.T. automatici e fatturazione aggregata in un unico ambiente.
           </p>
 
           <div className="grid grid-cols-2 gap-4 mt-10">
             {[
-              { icon: Factory, label: "MES Produzione" },
-              { icon: Truck, label: "TMS Logistica" },
-              { icon: ShieldCheck, label: "Controllo Qualità" },
+              { icon: Truck, label: "D.D.T. automatici" },
+              { icon: Factory, label: "Listini multipli" },
+              { icon: ShieldCheck, label: "Gestione sospesi" },
               { icon: ChartBar, label: "KPI Real-time" },
             ].map((f, i) => (
               <div key={i} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg p-4 flex items-center gap-3">
@@ -86,7 +86,7 @@ export default function Login() {
           <div className="mb-10">
             <div className="overline mb-2">Accesso operatore</div>
             <h2 className="font-display text-3xl font-bold text-slate-900 tracking-tight">Bentornato in CleanTec</h2>
-            <p className="text-slate-500 mt-2">Effettua l'accesso per gestire la produzione, i lotti e le consegne.</p>
+            <p className="text-slate-500 mt-2">Effettua l'accesso per gestire clienti, listini, D.D.T. e fatturazione.</p>
           </div>
 
           <form onSubmit={submit} className="space-y-5" data-testid="login-form">
@@ -138,9 +138,7 @@ export default function Login() {
             <div className="grid grid-cols-1 gap-2">
               {[
                 { e: "admin@cleantec.it", p: "admin123", r: "Admin" },
-                { e: "produzione@cleantec.it", p: "produzione123", r: "Produzione" },
                 { e: "logistica@cleantec.it", p: "logistica123", r: "Logistica" },
-                { e: "qualita@cleantec.it", p: "qualita123", r: "Qualità" },
                 { e: "contabilita@cleantec.it", p: "contabilita123", r: "Contabilità" },
               ].map((d) => (
                 <button

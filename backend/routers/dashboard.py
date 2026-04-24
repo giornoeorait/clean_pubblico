@@ -1,4 +1,4 @@
-"""Dashboard KPIs (ERP/DDT flow)."""
+"""Dashboard KPIs — flusso commerciale (Listini → DDT → Fatture → Sospesi)."""
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from fastapi import APIRouter, Depends
@@ -56,26 +56,6 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         c = await db.ddt.count_documents({**scope, "data": {"$gte": day_start, "$lt": day_end}})
         trend.append({"giorno": day_start.strftime("%m-%d"), "ddt": c})
 
-    # Magazzino allarmi (kept for warehouse module)
-    magazzino_items = await db.magazzino.find(
-        scope, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}
-    ).to_list(2000)
-    magazzino_allarmi = 0
-    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-    for it in magazzino_items:
-        scorta = float(it.get("scorta_attuale", 0) or 0)
-        minima = float(it.get("scorta_minima", 0) or 0)
-        alarm = scorta <= minima
-        sc = it.get("scadenza")
-        if sc and isinstance(sc, datetime):
-            sc_naive = sc.replace(tzinfo=None) if sc.tzinfo else sc
-            if (sc_naive - now_naive).days <= 30:
-                alarm = True
-        if alarm:
-            magazzino_allarmi += 1
-
-    tickets_aperti = await db.tickets.count_documents({**scope, "stato": {"$in": ["aperto", "in_lavorazione"]}})
-
     return {
         "clienti_totali": clienti_tot,
         "articoli_totali": articoli_tot,
@@ -87,8 +67,6 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         "incassato_mese": round(incassato_mese, 2),
         "sospesi_totale": round(sospesi_totale, 2),
         "sospesi_count": sospesi_count,
-        "magazzino_allarmi": magazzino_allarmi,
-        "tickets_aperti": tickets_aperti,
         "trend_ddt_7gg": trend,
     }
 

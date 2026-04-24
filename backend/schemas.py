@@ -12,7 +12,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
-    role: str = "produzione"
+    role: str = "contabilita"
     cliente_id: Optional[str] = None
 
 

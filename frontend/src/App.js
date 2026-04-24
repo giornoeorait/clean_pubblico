@@ -10,26 +10,15 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Clienti from "./pages/Clienti";
 import Articoli from "./pages/Articoli";
-import Macchine from "./pages/Macchine";
-import Accettazione from "./pages/Accettazione";
 import Listini from "./pages/Listini";
 import DDT from "./pages/DDT";
 import Sospesi from "./pages/Sospesi";
-import Logistica from "./pages/Logistica";
 import Fatture from "./pages/Fatture";
 import Utenti from "./pages/Utenti";
-import Magazzino from "./pages/Magazzino";
-import Manutenzione from "./pages/Manutenzione";
-import Touch from "./pages/Touch";
-import Mobile from "./pages/Mobile";
-import Portale from "./pages/Portale";
-import Notifiche from "./pages/Notifiche";
-import Hardware from "./pages/Hardware";
 import Pricing from "./pages/Pricing";
 import Register from "./pages/Register";
 import Billing from "./pages/Billing";
 import SuperAdmin from "./pages/SuperAdmin";
-import Insights from "./pages/Insights";
 import VerifyEmail from "./pages/VerifyEmail";
 
 function WithLayout({ children, roles }) {
@@ -60,26 +49,15 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
-            <Route path="/insights" element={<WithLayout roles={["admin","produzione","contabilita"]}><Insights /></WithLayout>} />
             <Route path="/admin" element={<WithLayout roles={["superadmin"]}><SuperAdmin /></WithLayout>} />
             <Route path="/dashboard" element={<WithLayout><Dashboard /></WithLayout>} />
-            <Route path="/clienti" element={<WithLayout><Clienti /></WithLayout>} />
-            <Route path="/articoli" element={<WithLayout><Articoli /></WithLayout>} />
-            <Route path="/macchine" element={<WithLayout><Macchine /></WithLayout>} />
-            <Route path="/accettazione" element={<WithLayout><Accettazione /></WithLayout>} />
+            <Route path="/clienti" element={<WithLayout roles={["admin","contabilita","logistica"]}><Clienti /></WithLayout>} />
+            <Route path="/articoli" element={<WithLayout roles={["admin","contabilita"]}><Articoli /></WithLayout>} />
             <Route path="/listini" element={<WithLayout roles={["admin","contabilita"]}><Listini /></WithLayout>} />
             <Route path="/ddt" element={<WithLayout roles={["admin","logistica","contabilita"]}><DDT /></WithLayout>} />
+            <Route path="/fatture" element={<WithLayout roles={["admin","contabilita"]}><Fatture /></WithLayout>} />
             <Route path="/sospesi" element={<WithLayout roles={["admin","contabilita"]}><Sospesi /></WithLayout>} />
-            <Route path="/logistica" element={<WithLayout><Logistica /></WithLayout>} />
-            <Route path="/fatture" element={<WithLayout><Fatture /></WithLayout>} />
-            <Route path="/magazzino" element={<WithLayout roles={["admin","produzione","contabilita","logistica"]}><Magazzino /></WithLayout>} />
-            <Route path="/manutenzione" element={<WithLayout roles={["admin","produzione"]}><Manutenzione /></WithLayout>} />
-            <Route path="/notifiche" element={<WithLayout roles={["admin","logistica","produzione","qualita"]}><Notifiche /></WithLayout>} />
-            <Route path="/hardware" element={<WithLayout roles={["admin","produzione","logistica"]}><Hardware /></WithLayout>} />
             <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
-            <Route path="/touch" element={<ProtectedRoute><Touch /></ProtectedRoute>} />
-            <Route path="/mobile" element={<ProtectedRoute><Mobile /></ProtectedRoute>} />
-            <Route path="/portale" element={<ProtectedRoute><Portale /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>

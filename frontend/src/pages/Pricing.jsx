@@ -6,21 +6,19 @@ import { Button } from "../components/ui/button";
 
 const PLAN_ICON = { starter: Star, pro: Crown, enterprise: Sparkle };
 const FEATURE_LABELS = {
-  crud_base: "Anagrafiche & CRUD completo",
-  mes: "MES Produzione",
-  kanban: "Kanban drag & drop",
-  tracciabilita: "Tracciabilità lotti (9 stati)",
-  fatture: "Fatturazione",
+  clienti: "Anagrafica clienti & articoli",
+  articoli: "Articoli & catalogo",
+  listini: "Listini personalizzati per cliente",
+  ddt: "D.D.T. con auto-prezzi",
+  fatture: "Fatturazione da D.D.T. aggregati",
+  sospesi: "Gestione sospesi & incassi",
   dashboard: "KPI Dashboard & trend",
-  portale_cliente: "Portale Cliente",
   starter: "Tutto di Starter",
-  magazzino: "Magazzino detergenti/DPI",
-  manutenzione: "Manutenzione macchine",
-  notifiche_sms: "Notifiche SMS/WhatsApp",
+  listini_multipli: "Listini multipli per cliente",
   audit_log: "Audit log completo",
+  export_excel: "Export Excel fatture & sospesi",
   pro: "Tutto di Pro",
-  hardware_ingestion: "Integrazione bilance/scanner/RFID",
-  multi_sede: "Multi-sede e multi-warehouse",
+  multi_sede: "Multi-sede",
   sla_24_7: "SLA 24/7",
   priority_support: "Supporto prioritario",
 };
@@ -126,9 +124,9 @@ export default function Pricing() {
                 </ul>
 
                 <div className={`text-xs mb-6 space-y-1 ${isHl ? "text-slate-400" : "text-slate-500"}`}>
-                  <div>👥 Utenti: {p.limits.users === -1 ? "Illimitati" : p.limits.users}</div>
-                  <div>📦 Lotti/mese: {p.limits.lotti_monthly === -1 ? "Illimitati" : p.limits.lotti_monthly.toLocaleString("it-IT")}</div>
-                  <div>📱 SMS inclusi: {p.limits.sms_monthly === 0 ? "Non incluso" : `${p.limits.sms_monthly}/mese`}</div>
+                  <div>Utenti: {p.limits.users === -1 ? "Illimitati" : p.limits.users}</div>
+                  <div>D.D.T./mese: {p.limits.ddt_monthly === -1 ? "Illimitati" : p.limits.ddt_monthly.toLocaleString("it-IT")}</div>
+                  <div>SMS inclusi: {p.limits.sms_monthly === 0 ? "Non incluso" : `${p.limits.sms_monthly}/mese`}</div>
                 </div>
 
                 {p.id === "enterprise" ? (
