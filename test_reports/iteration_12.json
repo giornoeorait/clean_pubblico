@@ -1,0 +1,34 @@
+{
+  "summary": "Iter 12 RBAC fix retest — ALL GREEN. Backend: 18/18 pytest (branding admin 403, branding super 200, /admin/stats|tenants|transactions admin 403, /admin/stats super 200, admin no regression on clienti/ddt/fatture/users/dashboard/kpi, logistica can list/create DDT, contabilita can list fatture). Frontend Playwright: admin sidebar clean (no 'Branding', no 'Pannello SaaS'), admin /admin/branding and /admin redirect to /dashboard, admin still reaches all 9 normal routes, super sees both superadmin items and can access /admin/branding page. Fix confirmed across all three layers: core.require_roles, Layout.jsx filter, ProtectedRoute.jsx.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/branding/upload/{kind}", "issue": "Empty file still returns 422 (FastAPI multipart validation) instead of 400. Documented as acceptable per review request."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_rbac.py",
+    "/app/test_reports/pytest/iter12_rbac.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core.require_roles now correctly branches: allowed==('superadmin',) => strict equality check; any other tuple keeps legacy 'admin implicit allow' — this is minimal, targeted and preserves require_roles('admin','logistica') behaviour. Good fix.",
+    "Layout.jsx filter: explicit early-return for superadmin-only items on non-super users is correct; the remaining `|| user.role === 'admin'` fallback for other items remains (preserves product behaviour, no leak since superadmin-only items are already filtered).",
+    "ProtectedRoute.jsx: superadminOnly branch cleanly redirects non-super to /dashboard — consistent with sidebar behaviour.",
+    "Optional follow-up (not blocking): add explicit 400 'File vuoto' handler on branding upload route before FastAPI's multipart 422 kicks in (purely cosmetic)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_rbac.py"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (6/6 UI scenarios)"},
+  "test_credentials": "super@cleantec.it / Superadmin123!, admin@cleantec.it / admin123, logistica@cleantec.it / logistica123, contabilita@cleantec.it / contabilita123 (all valid)",
+  "seed_data_creation": "None — tests are read-only or create a tombstone DDT with TEST_ prefix for logistica-rbac check; did not mutate branding.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "RBAC hardening for superadmin-only endpoints verified end-to-end in iter 12. The only outstanding (accepted) item is empty-file branding upload returning 422 vs 400 — cosmetic. Future testing can safely assume: (1) admin receives 403 on every /admin/* superadmin endpoint, (2) admin frontend cannot navigate to /admin or /admin/branding, (3) all other admin/logistica/contabilita flows are not affected by the fix."
+}

@@ -76,7 +76,9 @@ export default function Layout({ children }) {
 
   const items = ALL_ITEMS.filter(i => {
     if (!i.roles) return true;
-    if (user.role === "superadmin") return i.roles.includes("superadmin") || true;
+    if (user.role === "superadmin") return true;
+    // Non-superadmin users should NEVER see superadmin-only items, even if admin
+    if (i.roles.length === 1 && i.roles[0] === "superadmin") return false;
     return i.roles.includes(user.role) || user.role === "admin";
   });
 

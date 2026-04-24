@@ -199,6 +199,11 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
 def require_roles(*allowed: str):
     async def checker(user: Dict[str, Any] = Depends(get_current_user)):
+        # Special-case: superadmin-only endpoints must reject regular admins
+        if allowed == ("superadmin",):
+            if user["role"] != "superadmin":
+                raise HTTPException(status_code=403, detail="Permessi insufficienti")
+            return user
         if user["role"] not in allowed and user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Permessi insufficienti")
         return user

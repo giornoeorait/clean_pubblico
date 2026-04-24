@@ -15,8 +15,14 @@ export default function ProtectedRoute({ children, roles }) {
     );
   }
   if (user === false) return <Navigate to="/login" replace />;
-  if (roles && roles.length && !roles.includes(user.role) && user.role !== "admin") {
-    return <Navigate to="/dashboard" replace />;
+  if (roles && roles.length) {
+    // Strict: superadmin-only routes must NOT accept regular admin
+    const superadminOnly = roles.length === 1 && roles[0] === "superadmin";
+    if (superadminOnly) {
+      if (user.role !== "superadmin") return <Navigate to="/dashboard" replace />;
+    } else if (!roles.includes(user.role) && user.role !== "admin" && user.role !== "superadmin") {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
   return children;
 }
