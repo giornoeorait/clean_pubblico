@@ -1,0 +1,57 @@
+{
+  "summary": "RETEST FASE 5 Report & BI post-fix iter19 → FAIL. Il fix applicato da E1 (.toFixed difensivi in ProduzioneView/CostoKgView/KmView) NON risolve il crash reale. ROOT CAUSE effettivo (confermato da pageerror console): TypeError: Cannot read properties of undefined (reading 'map') in ProduzioneView. Il bug NON è .toFixed ma .map su array undefined, dovuto a RACE CONDITION di stato su cambio tab. Dettaglio: quando l'utente clicca su 'produzione' mentre data=<fatturato>, React ri-renderizza la pagina con tab='produzione' MA data è ancora il vecchio payload fatturato (che non contiene per_articolo né pezzi). Il guard `!loading && data && tab === 'produzione'` passa perché data è truthy, e ProduzioneView tenta d.per_articolo.map() → undefined.map → crash → ErrorBoundary globale. La useEffect che fetcha il nuovo endpoint e setta data=null avviene DOPO il render stale. Verificato con curl: fatturato keys=[anno,totale,incassato,sospeso,per_mese,per_cliente], produzione keys=[anno,totale_kg,totale_pezzi,per_mese,per_cliente,per_articolo]. Le shape dei payload sono eterogenee (ogni endpoint ha chiavi diverse) quindi il cambio tab senza reset data è intrinsecamente pericoloso. BACKEND OK: tutti e 6 gli endpoint restituiscono dati validi e coerenti con iter19 (fatturato=5647.27€, kg=713.92, costi=2800.50, margine=2846.77€, 3 sospesi bucket 0-30, 1 targa AB123CD). Non ho testato Marginalità/Aging/Km/CostoKg perché ErrorBoundary persistente blocca navigazione.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Report.jsx → ProduzioneView (+ potentially tutte le altre view)",
+        "issue": "CRASH: TypeError: Cannot read properties of undefined (reading 'map'). Stack: ProduzioneView → Array.map (bundle 144659). Il crash NON è su .toFixed come sospettato in iter19 ma su d.per_articolo.map perché data è stale (shape fatturato) al momento del primo render dopo click tab. Il fix iter19 (.toFixed difensivi) non tocca questo path. Pattern analogo rischiato anche in MarginalitaView (d.per_cliente.map riga 281), AgingView (d.buckets.map 307, 321 / d.dettagli.map 335), KmView (d.per_targa.map 387), FatturatoView (d.per_cliente.map 127). Tutte le .map non sono difensive.",
+        "selector": "[data-testid=\"report-tab-produzione\"]",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Report.jsx → Report() orchestrator",
+        "issue": "RACE CONDITION: onClick del tab chiama solo setTab(t.v). Il reset di data avviene dentro fetchReport dentro useEffect, quindi DOPO il render già avvenuto con data stale del tab precedente. Siccome le shape dei 6 endpoint sono differenti (es. fatturato non ha per_articolo, costo_kg non ha per_cliente, marginalita non ha per_mese, ecc.) qualunque cambio tab può crashare se la view di destinazione accede a una chiave non presente nel vecchio payload. FIX RACCOMANDATO (semplice): nel button onClick ‑‑ onClick={() => { setData(null); setTab(t.v); }}. In alternativa o in aggiunta: guardia difensiva su OGNI .map — es. (d.per_cliente||[]).map, (d.per_articolo||[]).map, (d.buckets||[]).map, (d.dettagli||[]).map, (d.per_targa||[]).map, (d.per_mese||[]). In aggiunta, condizionare il render della view anche sulla shape attesa (es. tab==='produzione' && Array.isArray(data.per_articolo)) previene residui.",
+        "selector": "Report.jsx righe 65-70 (onClick tab) + 77-81 (render gated)",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "ErrorBoundary (app-level)",
+        "issue": "Persistente post-crash: una volta in errore non si resetta al cambio tab né alla navigazione. L'unico modo per tornare operativi è Ricarica. Consiglio: ErrorBoundary locale a livello view (FatturatoView, ProduzioneView, …) con reset automatico al cambio prop `tab` via resetKeys/reset. Questo isola i guasti e consente al tester/utente di proseguire con gli altri tab anche in caso di bug residuo.",
+        "selector": "ErrorBoundary wrapping /report",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_phase5_reports.py"
+  ],
+  "action_items": [
+    "CRITICO: In Report.jsx, nel click del tab aggiungere reset sincrono di data: onClick={() => { setData(null); setTab(t.v); }} (righe ~65). Questo forza il render in stato 'Caricamento…' finché il refetch non completa ed elimina la race condition che rende stale il payload.",
+    "CRITICO: Applicare guardia difensiva su TUTTE le .map delle view: (d.per_cliente||[]).map in FatturatoView riga 127, ProduzioneView riga 169, MarginalitaView riga 281; (d.per_articolo||[]).map in ProduzioneView riga 180; (d.buckets||[]).map in AgingView righe 307 e 321; (d.dettagli||[]).map in AgingView riga 335; (d.per_targa||[]).map in KmView riga 387. Medesima cura per d.per_mese quando usato come data di Chart (già OK in CostoKgView con `(d.per_mese || [])`).",
+    "RACCOMANDATO: Sostituire l'ErrorBoundary globale con ErrorBoundary per-tab così un bug in una view non rende inutilizzabile tutto /report. Oppure dare all'ErrorBoundary resetKeys=[tab] in modo che si auto-resetti al cambio tab.",
+    "Dopo il fix, retestare in sequenza TUTTI i 6 tab (fatturato → produzione → costo_kg → marginalita → aging → km) + cambio anno via [data-testid=report-anno]. Verificare che il LineChart costo/kg e il PieChart per_categoria renderizzino (pie deve avere 3 fette per 2026). Verificare coloring rosso/verde marginalità e bucket badge aging."
+  ],
+  "critical_code_review_comments": [
+    "Race condition di fetching: il pattern `useState(data)` + `useEffect(fetch, [tab])` è intrinsecamente instabile quando le shape sono eterogenee. Meglio: (a) resettare data al cambio tab sincrono onClick; oppure (b) usare react-query/SWR con cache-per-key automatica; oppure (c) shape union con guardia `Array.isArray(data.X)` in ogni view.",
+    "Frontend Report.jsx (402 righe) — audit completo: 6+ occorrenze di d.XXX.map senza null-guard. Pattern non difensivo ripetuto → class of bug. Raccomando utility `safeArr = (x) => Array.isArray(x) ? x : []` riutilizzata su tutti gli accessi.",
+    "ErrorBoundary top-level cattura ma non resetta → UX degradata. Preferire ErrorBoundary con resetKeys={[tab, anno]} (react-error-boundary).",
+    "Il fix .toFixed di iter19 è corretto come hardening ma non era il root cause. Il test iter19 aveva correttamente individuato il sospetto ma la causa primaria era più profonda (shape eterogenea + stale state)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (23/23 regression iter19 non ri-eseguita ma endpoint verificati via curl, tutti OK)",
+    "frontend": "17% (solo tab Fatturato renderizza; Produzione CRASH; Costo_kg/Marginalità/Aging/Km non raggiungibili causa ErrorBoundary persistente)"
+  },
+  "test_credentials": "admin@cleantec.it / admin123",
+  "seed_data_creation": "Nessuna — dati 2026 già presenti.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Il root cause NON è .toFixed (iter19 ha ipotizzato male). È una race condition: cliccando un tab, data state contiene ancora il payload del tab precedente (shape diversa) e crasha su .map di chiave assente. Fix minimo: setData(null) sincrono nell'onClick del tab + null-guard su tutti i .map. Dopo il fix, retestare la sequenza completa 6 tab + cambio anno; verificare ~3 fette PieChart costo_kg (personale 2200, automezzi 120, utenze 480.5), LineChart costo/kg con 1 punto (3.9227 per 2026-04), tabella km 1 riga AB123CD 450km/€120, aging 3 fatture tutte bucket 0-30 (totale 2761.71€).",
+  "rca of the issue": "RACE CONDITION SU CAMBIO TAB + PAYLOAD SHAPE ETEROGENEE. Flow: (1) Report mount → tab='fatturato', fetchReport() → data={fatturato payload con per_cliente, per_mese}. (2) Utente clicca '[data-testid=report-tab-produzione]' → setTab('produzione'). (3) React ri-renderizza SUBITO: ora tab='produzione' ma data è ancora il vecchio oggetto fatturato (setData avviene solo dopo, dentro useEffect). (4) Il guard `!loading && data && tab==='produzione'` passa (data truthy). (5) ProduzioneView(d=fatturato-data).render → d.per_articolo.map() → undefined.map → TypeError → ErrorBoundary globale cattura e mostra 'Si è verificato un problema'. (6) useEffect parte, ma troppo tardi: il re-render successivo con il nuovo data è comunque sotto ErrorBoundary che non si resetta automaticamente. MITIGAZIONE: onClick={() => { setData(null); setTab(t.v); }} nella TABS.map di Report.jsx (riga ~65). Questo forza render loading-state fino all'arrivo del nuovo payload, eliminando il momento in cui tab e data sono disallineati. FIX SECONDARIO: avvolgere tutti i .map con (arr||[]).map come defense-in-depth. FIX TERZIARIO: ErrorBoundary con resetKeys={[tab]} per migliore UX."
+}

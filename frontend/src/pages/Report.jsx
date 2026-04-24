@@ -167,7 +167,7 @@ function ProduzioneView({ d }) {
             <thead><tr><th>Cliente</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
               {d.per_cliente.map((c, i) => (
-                <tr key={c.cliente_id || i}><td>{c.cliente_nome}</td><td className="text-right font-mono">{fmtK(c.kg)}</td><td className="text-right text-xs">{c.pezzi.toFixed(0)}</td></tr>
+                <tr key={c.cliente_id || i}><td>{c.cliente_nome}</td><td className="text-right font-mono">{fmtK(c.kg)}</td><td className="text-right text-xs">{(c.pezzi || 0).toFixed(0)}</td></tr>
               ))}
             </tbody>
           </table></div>
@@ -178,7 +178,7 @@ function ProduzioneView({ d }) {
             <thead><tr><th>Articolo</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
               {d.per_articolo.map((a, i) => (
-                <tr key={a.articolo_id || i}><td><div className="text-xs font-mono">{a.codice}</div><div className="text-sm">{a.descrizione}</div></td><td className="text-right font-mono">{fmtK(a.kg)}</td><td className="text-right text-xs">{a.pezzi.toFixed(0)}</td></tr>
+                <tr key={a.articolo_id || i}><td><div className="text-xs font-mono">{a.codice}</div><div className="text-sm">{a.descrizione}</div></td><td className="text-right font-mono">{fmtK(a.kg)}</td><td className="text-right text-xs">{(a.pezzi || 0).toFixed(0)}</td></tr>
               ))}
             </tbody>
           </table></div>
@@ -190,27 +190,33 @@ function ProduzioneView({ d }) {
 
 // ============== COSTO PER KG ==============
 function CostoKgView({ d }) {
-  const pieData = Object.entries(d.per_categoria).map(([k, v]) => ({ name: k, value: v }));
+  const pieData = Object.entries(d.per_categoria || {})
+    .map(([k, v]) => ({ name: k, value: Number(v?.totale ?? v ?? 0) }))
+    .filter(e => e.value > 0);
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Kpi label="Costi totali" value={fmtE(d.totale_costi)} />
         <Kpi label="Kg prodotti" value={fmtK(d.totale_kg)} color="text-celeste" />
-        <Kpi label="Costo medio €/kg" value={d.costo_kg_medio !== null ? `€ ${d.costo_kg_medio.toFixed(4)}` : "—"} color="text-amber-600" />
+        <Kpi label="Costo medio €/kg" value={d.costo_kg_medio != null ? `€ ${Number(d.costo_kg_medio).toFixed(4)}` : "—"} color="text-amber-600" />
         <Kpi label="Anno" value={d.anno || "—"} color="text-slate-900" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="kpi-card p-4">
           <h4 className="font-display font-bold mb-3">Ripartizione costi per categoria</h4>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={80} label={(e) => `${e.name}: ${fmtE(e.value)}`}>
-                {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={fmtE} />
-            </PieChart>
-          </ResponsiveContainer>
+          {pieData.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm">Nessun costo registrato</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={80} label={(e) => `${e.name}: ${fmtE(e.value)}`}>
+                  {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => fmtE(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
         <div className="kpi-card p-4">
           <h4 className="font-display font-bold mb-3">Costo per kg nel tempo</h4>
@@ -219,8 +225,13 @@ function CostoKgView({ d }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v, n) => n === "costo_kg" ? (v !== null ? `€ ${v.toFixed(4)}` : "—") : n === "kg" ? fmtK(v) : fmtE(v)} />
-              <Line type="monotone" dataKey="costo_kg" stroke="#f59e0b" strokeWidth={2} name="Costo €/kg" />
+              <Tooltip formatter={(v, n) => {
+                if (v == null) return "—";
+                if (n === "costo_kg") return `€ ${Number(v).toFixed(4)}`;
+                if (n === "kg") return fmtK(v);
+                return fmtE(v);
+              }} />
+              <Line type="monotone" dataKey="costo_kg" stroke="#f59e0b" strokeWidth={2} name="Costo €/kg" connectNulls />
               <Legend wrapperStyle={{ fontSize: 12 }} />
             </LineChart>
           </ResponsiveContainer>
@@ -232,8 +243,13 @@ function CostoKgView({ d }) {
         <div className="overflow-x-auto"><table className="data-table">
           <thead><tr><th>Mese</th><th className="text-right">Costi</th><th className="text-right">Kg prodotti</th><th className="text-right">€ / kg</th></tr></thead>
           <tbody>
-            {d.per_mese.map(m => (
-              <tr key={m.mese}><td className="font-mono">{m.mese}</td><td className="text-right font-mono">{fmtE(m.costi)}</td><td className="text-right font-mono">{fmtK(m.kg)}</td><td className="text-right font-mono font-bold">{m.costo_kg !== null ? `€ ${m.costo_kg.toFixed(4)}` : "—"}</td></tr>
+            {(d.per_mese || []).map(m => (
+              <tr key={m.mese}>
+                <td className="font-mono">{m.mese}</td>
+                <td className="text-right font-mono">{fmtE(m.costi)}</td>
+                <td className="text-right font-mono">{fmtK(m.kg)}</td>
+                <td className="text-right font-mono font-bold">{m.costo_kg != null ? `€ ${Number(m.costo_kg).toFixed(4)}` : "—"}</td>
+              </tr>
             ))}
           </tbody>
         </table></div>
@@ -270,7 +286,7 @@ function MarginalitaView({ d }) {
                 <td className="text-right font-mono text-xs">{fmtK(r.kg)}</td>
                 <td className="text-right font-mono text-xs text-red-600">{fmtE(r.costo_allocato)}</td>
                 <td className={`text-right font-mono font-bold ${r.margine >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtE(r.margine)}</td>
-                <td className={`text-right font-mono ${r.margine >= 0 ? "text-emerald-600" : "text-red-600"}`}>{r.margine_perc !== null ? `${r.margine_perc.toFixed(1)}%` : "—"}</td>
+                <td className={`text-right font-mono ${r.margine >= 0 ? "text-emerald-600" : "text-red-600"}`}>{r.margine_perc != null ? `${Number(r.margine_perc).toFixed(1)}%` : "—"}</td>
               </tr>
             ))}
             {d.per_cliente.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">Nessun dato</td></tr>}
@@ -352,7 +368,10 @@ function KmView({ d }) {
             <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
             <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
             <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v, n) => n === "spesa" ? fmtE(v) : `${v.toFixed(0)} km`} />
+            <Tooltip formatter={(v, n) => {
+              if (v == null) return "—";
+              return n === "spesa" ? fmtE(v) : `${Number(v).toFixed(0)} km`;
+            }} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar yAxisId="left" dataKey="km" fill="#0ea5e9" name="Km" />
             <Bar yAxisId="right" dataKey="spesa" fill="#f59e0b" name="Spesa €" />
@@ -368,9 +387,9 @@ function KmView({ d }) {
             {d.per_targa.map((t, i) => (
               <tr key={t.targa} data-testid={`km-targa-${i}`}>
                 <td className="font-mono font-bold">{t.targa}</td>
-                <td className="text-right font-mono">{t.km_totali.toFixed(0)} km</td>
+                <td className="text-right font-mono">{(t.km_totali || 0).toFixed(0)} km</td>
                 <td className="text-right font-mono">{fmtE(t.spesa_totale)}</td>
-                <td className="text-right font-mono font-bold text-amber-600">{t.costo_km !== null ? `€ ${t.costo_km.toFixed(3)}` : "—"}</td>
+                <td className="text-right font-mono font-bold text-amber-600">{t.costo_km != null ? `€ ${Number(t.costo_km).toFixed(3)}` : "—"}</td>
                 <td className="text-xs">{Object.entries(t.per_tipo).map(([k, v]) => <span key={k} className="inline-block mr-2"><span className="text-slate-400">{k}:</span> {fmtE(v)}</span>)}</td>
               </tr>
             ))}
