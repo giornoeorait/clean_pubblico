@@ -116,6 +116,25 @@ async def get_ddt(did: str, user: Dict = Depends(get_current_user)):
     return doc
 
 
+@router.get("/{did}/pdf")
+async def ddt_pdf(did: str, user: Dict = Depends(get_current_user)):
+    from fastapi import Response
+    from pdf_service import generate_ddt_pdf
+    from routers.company import load_company_for_tenant
+    ddt_doc = await db.ddt.find_one(merge_scope(user, {"id": did}), {"_id": 0})
+    if not ddt_doc:
+        raise HTTPException(404, "DDT non trovato")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": ddt_doc["cliente_id"]}), {"_id": 0}) or {}
+    company = await load_company_for_tenant(user["tenant_id"])
+    pdf = generate_ddt_pdf(ddt_doc, cliente, company)
+    filename = f"{ddt_doc.get('numero', 'DDT')}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.patch("/{did}")
 async def update_ddt(did: str, body: DDTPatch, user: Dict = Depends(require_roles(*_WRITE))):
     existing = await db.ddt.find_one(merge_scope(user, {"id": did}), {"_id": 0})

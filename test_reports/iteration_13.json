@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 13 — FASE 1 (Anagrafica azienda + PDF DDT/Fatture + DDT edit + first-run wizard). Backend 11/11 pytest PASS, frontend flows all green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_company_pdf.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "verified_features": [
+    "GET /api/company returns empty skeleton with setup_complete=false for empty tenant",
+    "PUT /api/company partial payload -> setup_complete=false",
+    "PUT /api/company full 6 required fields (nome/ragione_sociale/partita_iva/indirizzo/email/telefono) -> setup_complete=true; persisted via GET",
+    "POST /api/company/logo (PNG 300x300) -> 200, url=/api/company/logo, WEBP, width/height<=512",
+    "GET /api/company/logo -> image bytes (image/webp)",
+    "DELETE /api/company/logo -> 200 then GET -> 404",
+    "RBAC: GET /api/company with user logistica -> 403",
+    "GET /api/ddt/{id}/pdf -> Content-Type=application/pdf, starts with %PDF-, >1KB",
+    "GET /api/fatture/{id}/pdf -> Content-Type=application/pdf, starts with %PDF-, >1KB",
+    "PATCH /api/ddt/{id} (non_fatturato) recomputes imponibile with listino pricing",
+    "PATCH /api/ddt/{id} on stato_fatturazione=fatturato -> 409",
+    "Frontend first-run: admin login with empty company auto-redirects to /azienda?first=1 with 'Benvenuto in CleanTec!' banner",
+    "Frontend form shows * on required fields; Save button displays 'Compila 6 campi' (disabled) until all required filled, then switches to 'Salva anagrafica'",
+    "After Save with all required -> redirect to /dashboard",
+    "Subsequent logins (setup_complete=true) no longer redirect to wizard; /azienda shows 'Configurazione completa' badge",
+    "DDT list: 'Scarica PDF' button on every row; 'Modifica' pencil + delete buttons only on Non fatturato rows",
+    "DDT Edit modal opens precompilato (Cliente, Righe, Note) with 'Aggiorna DDT' button",
+    "Fatture list: PDF button on every row",
+    "Sidebar: 'Anagrafica azienda' (Buildings icon) visible for admin role"
+  ],
+  "critical_code_review_comments": [
+    "pdf_service._logo_flowable silently swallows exceptions (bare except). Consider logging to aid troubleshooting malformed logos.",
+    "company.py: PUT uses exclude_unset=False so any missing optional key resets to empty string. Acceptable for the full-form UX but worth documenting.",
+    "company.py logo upload: tenant logo files not pruned on re-upload (old path overwritten in doc but object remains in storage). Minor storage leak; low-priority.",
+    "ddt PATCH: when body.righe omitted, imponibile not recalculated (correct). When provided but empty list, becomes 0 — consider min_items=1 validation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_company_pdf.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "100% (all checked flows)"
+  },
+  "test_credentials": "admin@cleantec.it/admin123, logistica@cleantec.it/logistica123 (DEMO tenant)",
+  "seed_data_creation": "Test left DEMO company configured: nome=CleanTec Test, partita_iva=IT99999999999, etc. No DB cleanup required (singleton per-tenant). DDT-2026-00020 patched with note='TEST_patched' (qty +1 on riga[0]).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 1 complete & verified. Company anagrafica singleton per-tenant, logo tenant-scoped behind auth. PDF endpoints produce valid %PDF-1.4 bytes. DDT PATCH blocks fatturato (409). First-run wizard intercepts at Layout.jsx useEffect. Next phases: (2) offerte/contratti, (3) portale cliente con token.",
+  "rca of the issue": "No bugs found."
+}

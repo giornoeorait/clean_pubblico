@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
+import api from "../lib/api";
 import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
-  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette,
+  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings,
 } from "@phosphor-icons/react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -19,6 +20,7 @@ const ALL_ITEMS = [
   { to: "/fatture", label: "Fatturazione", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, roles: ["admin", "contabilita"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
+  { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
   { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
   { to: "/admin/branding", label: "Branding", icon: Palette, roles: ["superadmin"] },
@@ -28,8 +30,27 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const touchStart = useRef(null);
+
+  // First-run setup wizard: if admin + anagrafica azienda non completa → forza /azienda
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    if (location.pathname === "/azienda" || location.pathname === "/billing") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/company");
+        if (!cancelled && !data.setup_complete) {
+          navigate("/azienda?first=1", { replace: true });
+        }
+      } catch (e) {
+        // silently ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.role, location.pathname, navigate]);
 
   // Swipe-from-left gesture to open sidebar (iPad/mobile only, xl viewports use sticky sidebar)
   useEffect(() => {

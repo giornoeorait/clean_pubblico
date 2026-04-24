@@ -7,7 +7,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
-import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk } from "@phosphor-icons/react";
+import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 export default function DDT() {
@@ -17,6 +17,7 @@ export default function DDT() {
   const [filterCliente, setFilterCliente] = useState("all");
   const [filterStato, setFilterStato] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [cliId, setCliId] = useState("");
   const [rows, setRows] = useState([]);
   const [note, setNote] = useState("");
@@ -42,7 +43,25 @@ export default function DDT() {
   const removeRow = (i) => setRows(r => r.filter((_, idx) => idx !== i));
   const updateRow = (i, field, v) => setRows(r => r.map((x, idx) => idx === i ? { ...x, [field]: v } : x));
 
-  const resetForm = () => { setCliId(""); setRows([]); setNote(""); };
+  const resetForm = () => { setCliId(""); setRows([]); setNote(""); setEditingId(null); };
+
+  const openEdit = (d) => {
+    setEditingId(d.id);
+    setCliId(d.cliente_id);
+    setRows((d.righe || []).map(r => ({ articolo_id: r.articolo_id, quantita: r.quantita })));
+    setNote(d.note || "");
+    setFormOpen(true);
+  };
+
+  const openPdf = async (d) => {
+    try {
+      const res = await api.get(`/ddt/${d.id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      window.open(url, "_blank");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore PDF");
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -56,8 +75,13 @@ export default function DDT() {
         note,
         righe: rows.map(r => ({ articolo_id: r.articolo_id, quantita: parseFloat(r.quantita) })),
       };
-      const { data } = await api.post("/ddt", payload);
-      toast.success(`DDT ${data.numero} creato — totale €${data.imponibile.toFixed(2)}`);
+      if (editingId) {
+        await api.patch(`/ddt/${editingId}`, { note: payload.note, righe: payload.righe });
+        toast.success("DDT aggiornato");
+      } else {
+        const { data } = await api.post("/ddt", payload);
+        toast.success(`DDT ${data.numero} creato — totale €${data.imponibile.toFixed(2)}`);
+      }
       setFormOpen(false); resetForm(); fetchAll();
     } catch (e2) { toast.error(e2.response?.data?.detail || "Errore"); }
   };
@@ -84,11 +108,11 @@ export default function DDT() {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-3xl">
-              <DialogHeader><DialogTitle>Nuovo D.D.T.</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>{editingId ? "Modifica D.D.T." : "Nuovo D.D.T."}</DialogTitle></DialogHeader>
               <form onSubmit={submit} className="space-y-4">
                 <div>
                   <Label>Cliente *</Label>
-                  <Select value={cliId} onValueChange={setCliId}>
+                  <Select value={cliId} onValueChange={setCliId} disabled={!!editingId}>
                     <SelectTrigger data-testid="ddt-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
                     <SelectContent>
                       {clienti.filter(c => c.attivo !== false).map(c => (
@@ -129,7 +153,7 @@ export default function DDT() {
 
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Annulla</Button>
-                  <Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-ddt-btn"><FloppyDisk size={14} className="mr-1" />Crea DDT</Button>
+                  <Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-ddt-btn"><FloppyDisk size={14} className="mr-1" />{editingId ? "Aggiorna DDT" : "Crea DDT"}</Button>
                 </div>
               </form>
             </DialogContent>
@@ -195,9 +219,15 @@ export default function DDT() {
                   )}
                 </td>
                 <td className="py-2 px-4 text-right">
-                  {d.stato_fatturazione === "non_fatturato" && (
-                    <Button variant="ghost" size="icon" onClick={() => delDDT(d)} className="text-red-600" data-testid={`del-ddt-${d.id}`}><Trash size={14} /></Button>
-                  )}
+                  <div className="inline-flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openPdf(d)} title="Scarica PDF" data-testid={`pdf-ddt-${d.id}`}><FilePdf size={16} /></Button>
+                    {d.stato_fatturazione === "non_fatturato" && (
+                      <>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(d)} title="Modifica" data-testid={`edit-ddt-${d.id}`}><PencilSimple size={14} /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => delDDT(d)} className="text-red-600" data-testid={`del-ddt-${d.id}`}><Trash size={14} /></Button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

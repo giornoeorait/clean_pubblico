@@ -129,6 +129,29 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
     return doc
 
 
+@router.get("/{fid}/pdf")
+async def fattura_pdf(fid: str, user: Dict = Depends(get_current_user)):
+    from fastapi import Response
+    from pdf_service import generate_fattura_pdf
+    from routers.company import load_company_for_tenant
+    fatt = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fatt:
+        raise HTTPException(404, "Fattura non trovata")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": fatt["cliente_id"]}), {"_id": 0}) or {}
+    ddt_list = await db.ddt.find(
+        merge_scope(user, {"id": {"$in": fatt.get("ddt_ids", [])}}),
+        {"_id": 0},
+    ).to_list(500)
+    company = await load_company_for_tenant(user["tenant_id"])
+    pdf = generate_fattura_pdf(fatt, cliente, company, ddt_list)
+    filename = f"{fatt.get('numero', 'Fattura')}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.get("/{fid}")
 async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
     doc = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})

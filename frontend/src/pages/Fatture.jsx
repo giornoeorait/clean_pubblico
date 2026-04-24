@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 export default function Fatture() {
@@ -84,6 +84,16 @@ export default function Fatture() {
     catch (e) { toast.error(e.response?.data?.detail); }
   };
 
+  const openPdf = async (f) => {
+    try {
+      const res = await api.get(`/fatture/${f.id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      window.open(url, "_blank");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore PDF");
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -134,6 +144,7 @@ export default function Fatture() {
                   )}
                 </td>
                 <td className="py-2 px-4 text-right space-x-1">
+                  <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)}><Eye size={14} /></Button>
                   {f.stato_incasso !== "incassata" && (
                     <Button size="sm" onClick={() => incassa(f)} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`fatt-incassa-${f.id}`}>
