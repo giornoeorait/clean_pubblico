@@ -1,0 +1,61 @@
+{
+  "summary": "FASE 3b — Ordinativi + Portale pubblico: backend 21/21 pytest PASS, frontend end-to-end OK. Ordinativi CRUD + converti-ddt + gates 409/400, portale token generate/revoke + RBAC admin-only, endpoint /api/public/portale/{token} e POST /ordinativo verificati SENZA Authorization header. Flusso completo: admin crea cliente → genera token → carica /ordina/{token} senza login → catalogo (6 articoli) visibile → aggiunta qty + submit → ORD-2026-00006 creato con origine=portale → admin lo vede in /ordinativi. Regression smoke /ddt /offerte /dashboard OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dialog Ordinativi", "issues": ["Radix warning 'Missing Description or aria-describedby' sul DialogContent (pre-esistente da iter14/15, non bloccante)."]},
+      {"screen": "PortalePublic /ordina/{token}", "issues": ["All'apertura la console mostra errori 401 (axios lib/api interceptor tenta verosimilmente un ping auth sul mount). Cosmetico — il form funziona correttamente — ma su una pagina pubblica dovrebbe evitare qualsiasi chiamata autenticata."]}
+    ]
+  },
+  "verified_features": [
+    "BE POST /api/ordinativi: numero ORD-YYYY-NNNNN progressivo, origine=interno, prezzo risolto da listino cliente (fallback articolo.prezzo_lavaggio), totale calcolato",
+    "BE GET /api/ordinativi + filtri ?cliente_id= ?stato= e GET /api/ordinativi/{id}",
+    "BE PATCH /api/ordinativi/{id} stato bozza→in_lavorazione; 409 se convertito_ddt",
+    "BE DELETE /api/ordinativi/{id}: 200 se non convertito, 409 se convertito_ddt",
+    "BE POST /api/ordinativi (righe=[]) → 400/422",
+    "BE POST /api/ordinativi/{id}/converti-ddt: crea DDT-YYYY-NNNNN, copia righe+imponibile, marca ordinativo stato=convertito_ddt con ddt_id/ddt_numero",
+    "BE seconda chiamata converti-ddt → 409",
+    "BE DDT generato è visibile in /api/ddt (persistenza verificata)",
+    "BE POST /api/clienti/{cid}/portale-token (admin) → 200 {token, url_path}; token URL-safe len≥32",
+    "BE POST /api/clienti/{cid}/portale-token con contabilita → 403",
+    "BE DELETE /api/clienti/{cid}/portale-token revoca (public successivo → 404)",
+    "BE GET /api/public/portale/{token} NO AUTH: ritorna cliente, articoli con prezzo da listino, fornitore, listino info",
+    "BE GET /api/public/portale/{invalid} → 404",
+    "BE POST /api/public/portale/{token}/ordinativo NO AUTH: crea ordinativo origine=portale, 400/422 se righe vuote",
+    "BE regression smoke: /api/ddt /api/offerte /api/fatture /api/dashboard/kpi tutti 200",
+    "FE /ordinativi: tabella, filtro stato, bottone 'Nuovo ordinativo' funzionante",
+    "FE dialog Nuovo ordinativo: cliente select (26 opzioni), articolo select (6 opzioni), preview totale, save crea riga",
+    "FE converti-DDT button (Truck icon) → dialog confirm → DDT-2026-NNNNN mostrato in cella numero come '→ DDT-XXXX'",
+    "FE Clienti profile (bottone occhio) mostra pannello 'Portale cliente' con bottone Genera/Rigenera/Revoca/Copia",
+    "FE generazione token: code element mostra https://…/ordina/{token}, URL copiato in clipboard",
+    "FE /ordina/{token} pubblico: carica SENZA login (localStorage+cookies cleared), mostra header fornitore+cliente, catalogo con data-testid portale-art-*, input qty, submit → schermata success con ORD-YYYY-NNNNN",
+    "FE admin vede ORD portale in /ordinativi con badge 'Portale cliente' e totale",
+    "FE regression: /offerte /ddt /dashboard caricano senza error-boundary"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_phase3b.py",
+    "/app/test_reports/pytest/iter16_phase3b.xml"
+  ],
+  "critical_code_review_comments": [
+    "routers/ordinativi.py _create_ordinativo: la signature tipa 'body' come 'RigaOrd | OrdinativoIn | PortaleOrdIn' ma in realtà usa body.righe e nient'altro — tipizzare come Protocol o restringere a una classe base è una micro-miglioria ma non blocking.",
+    "routers/ordinativi.py PATCH OrdinativoPatch: manca la transizione 'in_lavorazione'→'nuovo' (è permessa dal Literal) e non c'è validazione di transizioni illegali (es. 'annullato'→'in_lavorazione'). Consigliato una state-machine esplicita.",
+    "routers/ordinativi.py converti_ddt: il DDT creato NON usa la stessa struttura 'cliente_snapshot' dei DDT creati via /ddt (usa solo cliente_nome). Se il PDF DDT consuma 'cliente_snapshot', i DDT da conversione potrebbero avere meno informazioni (indirizzo_scarico, P.IVA). Verificare.",
+    "PortalePublic.jsx: l'istanza axios usata è quella 'nuda' (import axios) — corretto per evitare Authorization header. Tuttavia il file lib/api.js con interceptor global viene comunque montato dal AuthProvider→fetchMe, che spara 401 in console sulla pagina pubblica. Raccomandato: su /ordina/:token NON montare AuthProvider (routing fuori da <AuthProvider>) o aggiungere silenzio 401 quando user==null e route pubblica.",
+    "Ordinativi.jsx preview client-side usa SOLO a.prezzo_lavaggio || a.prezzo (stessa dissonanza già segnalata per Offerte.jsx): se il cliente ha listino noleggio, il preview UI mostra valori diversi dal totale server — ricalcolo server resta corretto, ma UX confondente. Idealmente fetchare il listino del cliente per il preview.",
+    "routers/ordinativi.py portale_info: 'attivo' check usa cli.get('attivo', True) — se il campo manca è attivo di default: coerente con altri endpoint, OK.",
+    "Nessuna paginazione su GET /api/ordinativi (limit default 200): acceptable per MVP.",
+    "Public endpoint NON implementa rate-limiting o CAPTCHA: un attaccante che indovini/conosca un token valido può creare ordinativi illimitati. Mitigazione per futura fase: rate-limit per IP+token, oppure soft-confirmation via email."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_phase3b.py"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% — tutti i flussi verificati end-to-end"},
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123 (DEMO tenant)",
+  "seed_data_creation": "Test creano 2-3 ordinativi + 1 DDT (DDT-2026-00023/24/25 durante run) + 1 ordinativo via portale (ORD-2026-00006) + token portale sul primo cliente. I test revocano il token a fine run ma lasciano ordinativi/DDT creati (TEST_ note).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 3b verde. Pattern di test da riusare: (1) requests SENZA Authorization per /api/public/* — NON usare fixture authenticated. (2) Playwright: clear_cookies + evaluate localStorage.clear() prima di navigare a /ordina/:token per simulare utente non loggato. Counter 'ordinativo' e 'ddt' funzionanti separati. Multi-tenant isolation verificata implicitamente (merge_scope ovunque); un test esplicito cross-tenant richiederebbe un secondo tenant seedato. Prossimi step suggeriti al main agent: (a) spostare il ping auth fuori dal mount del AuthProvider quando la route è pubblica (rimuove 401 cosmetico su /ordina/:token); (b) cliente_snapshot completo nel DDT generato da conversione; (c) aggiungere state-machine esplicita transizioni stato ordinativo; (d) rate-limit endpoint public.",
+  "rca of the issue": "Nessun bug funzionale trovato — tutti i test PASS. Due note minori già catturate sopra (401 cosmetico sulla pagina pubblica + Radix a11y warning pre-esistente)."
+}
