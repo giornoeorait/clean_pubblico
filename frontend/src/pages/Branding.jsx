@@ -13,6 +13,54 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 const ICON_CHOICES = ["truck", "factory", "shield", "chart", "sparkle", "receipt", "users", "package"];
 
+function ScaleControl({ label, description, value, presets, min, max, onChange, testIdPrefix }) {
+  const v = Number(value || 1);
+  return (
+    <div className="border border-slate-200 rounded-lg p-4 bg-slate-50" data-testid={testIdPrefix}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-900 text-sm">{label}</div>
+          <div className="text-xs text-slate-500 mt-0.5 truncate">{description}</div>
+        </div>
+        <div className="font-mono text-xs text-indaco bg-white border border-slate-200 rounded px-2 py-1 flex-shrink-0 ml-2" data-testid={`${testIdPrefix}-value`}>
+          ×{v.toFixed(2)}
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 mb-3">
+        {presets.map(opt => {
+          const active = Math.abs(v - opt.v) < 0.01;
+          return (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => onChange(opt.v)}
+              data-testid={`${testIdPrefix}-${opt.lbl.toLowerCase()}`}
+              className={`flex-1 py-1.5 px-2 rounded-md text-sm font-semibold transition-all border ${active ? "bg-indaco text-white border-indaco" : "bg-white text-slate-700 border-slate-200 hover:border-indaco/50"}`}
+            >
+              {opt.lbl}
+            </button>
+          );
+        })}
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={0.05}
+        value={v}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        className="w-full accent-indaco"
+        data-testid={`${testIdPrefix}-slider`}
+      />
+      <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+        <span>{min.toFixed(2)}×</span>
+        <span>{((min + max) / 2).toFixed(2)}×</span>
+        <span>{max.toFixed(2)}×</span>
+      </div>
+    </div>
+  );
+}
+
 function ColorField({ label, value, onChange, testId }) {
   return (
     <div className="space-y-1.5">
@@ -144,20 +192,22 @@ export default function Branding() {
       indaco: root.style.getPropertyValue("--indaco"),
       celeste: root.style.getPropertyValue("--celeste"),
       azzurro: root.style.getPropertyValue("--azzurro"),
-      scale: root.style.getPropertyValue("--brand-scale"),
+      logo: root.style.getPropertyValue("--logo-scale"),
+      text: root.style.getPropertyValue("--text-scale"),
     };
     if (form.primary_color) root.style.setProperty("--indaco", form.primary_color);
     if (form.accent_color) root.style.setProperty("--celeste", form.accent_color);
     if (form.dark_color) root.style.setProperty("--azzurro", form.dark_color);
-    if (form.brand_scale) root.style.setProperty("--brand-scale", String(form.brand_scale));
+    if (form.logo_scale) root.style.setProperty("--logo-scale", String(form.logo_scale));
+    if (form.text_scale) root.style.setProperty("--text-scale", String(form.text_scale));
     return () => {
-      // on unmount, restore from current branding
       if (prev.indaco) root.style.setProperty("--indaco", prev.indaco);
       if (prev.celeste) root.style.setProperty("--celeste", prev.celeste);
       if (prev.azzurro) root.style.setProperty("--azzurro", prev.azzurro);
-      if (prev.scale) root.style.setProperty("--brand-scale", prev.scale);
+      if (prev.logo) root.style.setProperty("--logo-scale", prev.logo);
+      if (prev.text) root.style.setProperty("--text-scale", prev.text);
     };
-  }, [form?.primary_color, form?.accent_color, form?.dark_color, form?.brand_scale]);
+  }, [form?.primary_color, form?.accent_color, form?.dark_color, form?.logo_scale, form?.text_scale]);
 
   if (!form) return <div className="text-slate-400 font-mono text-sm">Caricamento branding…</div>;
 
@@ -185,7 +235,8 @@ export default function Branding() {
         primary_color: form.primary_color,
         accent_color: form.accent_color,
         dark_color: form.dark_color,
-        brand_scale: form.brand_scale,
+        logo_scale: form.logo_scale,
+        text_scale: form.text_scale,
       });
       toast.success("Branding salvato");
       await reload();
@@ -241,54 +292,28 @@ export default function Branding() {
                 currentUrl={form.logo_url} onUploaded={onAssetChanged} onDeleted={onAssetChanged}
                 accept="image/png,image/jpeg,image/webp,image/svg+xml" />
 
-              {/* Scale selector — applies to logo + nome app + tagline in sidebar & login */}
-              <div className="border border-slate-200 rounded-lg p-4 bg-slate-50" data-testid="branding-scale-control">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="font-semibold text-slate-900">Dimensioni logo & testi brand</div>
-                    <div className="text-xs text-slate-500 mt-0.5">Ingrandisci logo, nome applicazione e sottotitolo sia nella sidebar che sul login.</div>
-                  </div>
-                  <div className="font-mono text-xs text-indaco bg-white border border-slate-200 rounded px-2 py-1" data-testid="branding-scale-value">
-                    ×{Number(form.brand_scale || 1).toFixed(2)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {[
-                    { v: 1.0,  lbl: "S"  },
-                    { v: 1.25, lbl: "M"  },
-                    { v: 1.5,  lbl: "L"  },
-                    { v: 2.0,  lbl: "XL" },
-                  ].map(opt => {
-                    const active = Math.abs((form.brand_scale || 1) - opt.v) < 0.01;
-                    return (
-                      <button
-                        key={opt.v}
-                        type="button"
-                        onClick={() => update("brand_scale", opt.v)}
-                        data-testid={`branding-scale-${opt.lbl.toLowerCase()}`}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold transition-all border ${active ? "bg-indaco text-white border-indaco" : "bg-white text-slate-700 border-slate-200 hover:border-indaco/50"}`}
-                      >
-                        {opt.lbl}
-                        <div className="text-[10px] font-mono opacity-70 mt-0.5">×{opt.v.toFixed(2)}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="mt-3">
-                  <input
-                    type="range"
-                    min={0.8}
-                    max={2.5}
-                    step={0.05}
-                    value={form.brand_scale || 1}
-                    onChange={e => update("brand_scale", parseFloat(e.target.value))}
-                    className="w-full accent-indaco"
-                    data-testid="branding-scale-slider"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
-                    <span>0.80×</span><span>1.00×</span><span>1.50×</span><span>2.50×</span>
-                  </div>
-                </div>
+              {/* Scale controls — independent for logo and text */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="branding-scale-controls">
+                <ScaleControl
+                  label="Dimensione logo"
+                  description="Box logo in sidebar + hero login"
+                  testIdPrefix="branding-logo-scale"
+                  value={form.logo_scale}
+                  min={0.8}
+                  max={3.0}
+                  presets={[{v:1.0,lbl:"S"},{v:1.25,lbl:"M"},{v:1.5,lbl:"L"},{v:2.0,lbl:"XL"}]}
+                  onChange={v => update("logo_scale", v)}
+                />
+                <ScaleControl
+                  label="Dimensione testi brand"
+                  description="Nome applicazione + sottotitolo"
+                  testIdPrefix="branding-text-scale"
+                  value={form.text_scale}
+                  min={0.8}
+                  max={2.5}
+                  presets={[{v:1.0,lbl:"S"},{v:1.15,lbl:"M"},{v:1.3,lbl:"L"},{v:1.6,lbl:"XL"}]}
+                  onChange={v => update("text_scale", v)}
+                />
               </div>
 
               <ImageUploader kind="favicon" title="Favicon (tab browser)" description="Icona tab del browser. Viene forzata a PNG 96×96. Accettati PNG/ICO/JPG."

@@ -20,7 +20,8 @@ const DEFAULTS = {
   primary_color: "#4F46E5",
   accent_color: "#38BDF8",
   dark_color: "#0EA5E9",
-  brand_scale: 1.0,
+  logo_scale: 1.0,
+  text_scale: 1.0,
   logo_url: null,
   hero_url: null,
   favicon_url: null,
@@ -44,7 +45,8 @@ function applyThemeVars(b) {
   root.style.setProperty("--indaco-dark", darkenHex(b.primary_color, 0.15));
   root.style.setProperty("--celeste", b.accent_color);
   root.style.setProperty("--azzurro", b.dark_color);
-  root.style.setProperty("--brand-scale", String(b.brand_scale || 1));
+  root.style.setProperty("--logo-scale", String(b.logo_scale || 1));
+  root.style.setProperty("--text-scale", String(b.text_scale || 1));
 }
 
 function applyTabMeta(b) {

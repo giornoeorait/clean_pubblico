@@ -48,17 +48,17 @@ export default function Login() {
           <div className="flex items-center gap-3">
             <div
               className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden flex-shrink-0"
-              style={{ width: "calc(40px * var(--brand-scale, 1))", height: "calc(40px * var(--brand-scale, 1))" }}
+              style={{ width: "calc(40px * var(--logo-scale, 1))", height: "calc(40px * var(--logo-scale, 1))" }}
             >
               {branding.logo_url ? (
                 <img src={`${BACKEND}${branding.logo_url}`} alt={branding.app_name} className="w-full h-full object-contain" />
               ) : (
-                <Sparkle size={22} weight="fill" style={{ color: branding.accent_color, transform: "scale(var(--brand-scale, 1))" }} />
+                <Sparkle size={22} weight="fill" style={{ color: branding.accent_color, transform: "scale(var(--logo-scale, 1))" }} />
               )}
             </div>
             <div>
-              <div className="font-display font-bold tracking-tight" style={{ fontSize: "calc(1.5rem * var(--brand-scale, 1))" }}>{branding.app_name}</div>
-              <div className="font-mono uppercase tracking-widest" style={{ fontSize: "calc(11px * var(--brand-scale, 1))", color: branding.accent_color }}>{branding.tagline}</div>
+              <div className="font-display font-bold tracking-tight" style={{ fontSize: "calc(1.5rem * var(--text-scale, 1))" }}>{branding.app_name}</div>
+              <div className="font-mono uppercase tracking-widest" style={{ fontSize: "calc(11px * var(--text-scale, 1))", color: branding.accent_color }}>{branding.tagline}</div>
             </div>
           </div>
         </div>

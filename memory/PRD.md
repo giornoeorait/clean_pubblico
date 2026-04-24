@@ -60,6 +60,14 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (pm++) — FEATURE "Brand Scale indipendenti logo ↔ testi"**
+  - Split del campo unico `brand_scale` in due campi indipendenti:
+    - `logo_scale` (range 0.8 – 3.0) → dimensione logo box in sidebar + hero login
+    - `text_scale` (range 0.8 – 2.5) → dimensione nome applicazione + tagline
+  - Migration one-shot in `_get_or_init`: documenti con `brand_scale` legacy → backfill su entrambi i nuovi campi e `$unset` del vecchio. Testata: 1.4 → logo=1.4, text=1.4, brand_scale rimosso
+  - CSS vars `--logo-scale` e `--text-scale` sulla root, applicate separatamente nei layout
+  - UI Branding: nuovo componente riusabile `ScaleControl` con preset S/M/L/XL + slider granulare per ciascun controllo
+
 - **24 Apr 2026 (pm+) — FEATURE "Brand Scale"**
   - Aggiunto selettore dimensioni (S/M/L/XL + slider fine 0.8× - 2.5×) accanto all'uploader Logo in `/admin/branding`
   - Campo `brand_scale` (0.8-2.5) persistito in `db.branding`, validato backend via Pydantic Field(ge=0.8, le=2.5)

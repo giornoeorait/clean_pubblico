@@ -46,7 +46,8 @@ DEFAULTS = {
     "primary_color": "#4F46E5",   # indaco
     "accent_color":  "#38BDF8",   # celeste
     "dark_color":    "#0EA5E9",   # azzurro
-    "brand_scale":   1.0,          # 1.0 S · 1.25 M · 1.5 L · 2.0 XL
+    "logo_scale":    1.0,          # dimensioni logo box (sidebar + login)
+    "text_scale":    1.0,          # dimensioni nome app + tagline
 }
 
 
@@ -66,7 +67,8 @@ class BrandingPatch(BaseModel):
     primary_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     accent_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     dark_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
-    brand_scale: Optional[float] = Field(default=None, ge=0.8, le=2.5)
+    logo_scale: Optional[float] = Field(default=None, ge=0.8, le=3.0)
+    text_scale: Optional[float] = Field(default=None, ge=0.8, le=2.5)
 
 
 async def _get_or_init() -> dict:
@@ -75,6 +77,16 @@ async def _get_or_init() -> dict:
         doc = {**DEFAULTS, "created_at": now_utc(), "updated_at": now_utc()}
         await db.branding.insert_one(dict(doc))
         doc.pop("_id", None)
+        return doc
+    # One-shot migration: split legacy brand_scale -> logo_scale + text_scale
+    if "brand_scale" in doc and ("logo_scale" not in doc or "text_scale" not in doc):
+        legacy = float(doc.get("brand_scale") or 1.0)
+        await db.branding.update_one(
+            {"id": SINGLETON_ID},
+            {"$set": {"logo_scale": legacy, "text_scale": legacy, "updated_at": now_utc()},
+             "$unset": {"brand_scale": ""}},
+        )
+        doc = await db.branding.find_one({"id": SINGLETON_ID}, {"_id": 0})
     return doc
 
 
