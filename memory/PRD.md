@@ -60,6 +60,17 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (evening) — FASE 1 "Fondamenta" completata**
+  - Backend: nuovo router `/api/company` per anagrafica azienda madre (CRUD + upload logo WebP, max 4 MB, resize 512×512) — per-tenant singleton, RBAC admin-only
+  - Backend: `pdf_service.py` con ReportLab → `generate_ddt_pdf` e `generate_fattura_pdf` con intestazione azienda (sx + logo) + cliente (dx), footer "Fattura di cortesia"
+  - Backend: nuovi endpoint `GET /api/ddt/{id}/pdf` e `GET /api/fatture/{id}/pdf` (Content-Type application/pdf)
+  - Backend: `PATCH /api/ddt/{id}` già esistente, ora usato anche da UI per editare DDT non fatturati (blocca edit se `stato_fatturazione=fatturato`)
+  - Frontend: nuova pagina `/azienda` con form completo (10 campi, * sui required), upload logo con preview e delete
+  - Frontend: setup wizard first-run — Layout rileva admin con `setup_complete=false` e reindirizza automaticamente a `/azienda?first=1` con banner benvenuto
+  - Frontend: bottoni "PDF" + "Modifica" sulle righe DDT, bottone "PDF" sulle righe Fatture; apertura PDF via blob URL in nuova tab
+  - Frontend: voce sidebar "Anagrafica azienda" (admin-only)
+  - **Iter 13: 11/11 backend + 100% frontend ✅**
+
 - **24 Apr 2026 (pm++) — FEATURE "Brand Scale indipendenti logo ↔ testi"**
   - Split del campo unico `brand_scale` in due campi indipendenti:
     - `logo_scale` (range 0.8 – 3.0) → dimensione logo box in sidebar + hero login
