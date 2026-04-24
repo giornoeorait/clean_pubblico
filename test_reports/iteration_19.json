@@ -1,0 +1,61 @@
+{
+  "summary": "FASE 5 Report & BI — Backend 23/23 pytest PASS (6 endpoint aggregati con totali corretti: fatturato 5647.27€, produzione 713.92kg, costo_kg_medio 3.9227€/kg, aging 2761.71€ in bucket 0-30, km 450 AB123CD, margine 2846.77€). RBAC+multitenant OK (admin/contabilita/logistica accedono). Regression 12 rotte frontend OK (lato API /ddt-fornitore e /fatture-fornitore invece di /fornitori/ddt – path frontend diverso da backend, allineato in test). FRONTEND /report: Fatturato tab renderizza correttamente con KPI, grafico e tabella. PROBLEMA CRITICO: cliccando tab 'Produzione (kg)' la UI crasha (TypeError: Cannot read properties of undefined reading 'toFixed') in ProduzioneView e viene catturato dall'ErrorBoundary globale — tutta la pagina diventa 'Si è verificato un problema'. Anche tab 'Costo per kg' fa scattare ErrorBoundary al click (da verificare root-cause: backend dati OK via curl). Le altre tab (Marginalità, Aging, Km automezzi) non sono state testate perché ErrorBoundary blocca la navigazione successiva fino a reload.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Report.jsx → ProduzioneView",
+        "issue": "Crash 'TypeError: Cannot read properties of undefined (reading toFixed)' al click su tab Produzione. Stack trace: ProduzioneView → Array.map. Sospetti chiamate dirette c.pezzi.toFixed(0) (riga 170) e a.pezzi.toFixed(0) (riga 181) non difensive. Backend ritorna sempre pezzi:number (verificato via curl) quindi il problema potrebbe essere transitorio ma l'accesso non difensivo è comunque a rischio. Fix: usare (x.pezzi || 0).toFixed(0) e (x.kg || 0) dove serve, come già fatto per totale_pezzi/totale_kg a riga 144-145.",
+        "selector": "[data-testid=\"report-tab-produzione\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Report.jsx → CostoKgView",
+        "issue": "Al click su tab 'Costo per kg' viene catturato errore dall'ErrorBoundary globale ('Si è verificato un problema'). Curl su /api/reports/costo-kg?anno=2026 ritorna dati validi (totale_costi 2800.5, costo_kg_medio 3.9227, per_categoria dict 3 chiavi, per_mese 1 voce con costo_kg 3.9227). Ipotesi: problema con Pie `label={(e) => …}` funcional prop in Recharts (può accedere ad oggetti in maniera che qualche campo sia undefined), oppure con m.costi/m.kg.toFixed in riga 236 se backend ritorna `null`. Da investigare con console stack del browser — ma il comportamento osservato è che la pagina entra in ErrorBoundary identico a Produzione.",
+        "selector": "[data-testid=\"report-tab-costo_kg\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ErrorBoundary (app-level)",
+        "issue": "Una volta catturato l'errore in una view, l'ErrorBoundary rimane attivo anche cambiando tab: il bottone Ricarica è l'unica via d'uscita. Conseguenza: un bug in un singolo tab rende l'intera pagina /report inutilizzabile e blocca il test degli altri tab. Consigliata resettabilità dell'ErrorBoundary al cambio route/tab, o ErrorBoundary locale a livello di singola view tab per isolare i guasti.",
+        "selector": "ErrorBoundary wrapping /report",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_phase5_reports.py",
+    "/app/test_reports/pytest/iter19_phase5_reports.xml"
+  ],
+  "action_items": [
+    "Fix Report.jsx ProduzioneView: rendere difensive tutte le chiamate .toFixed su campi numerici opzionali — sostituire c.pezzi.toFixed(0) con (c.pezzi||0).toFixed(0) e a.pezzi.toFixed(0) con (a.pezzi||0).toFixed(0) (righe 170 e 181). Stessa cura per a.kg se serve.",
+    "Fix Report.jsx CostoKgView: indagare root cause crash al click (stack trace React completo dal browser). Sospetti: (1) Pie label funzione che legge e.name o e.value undefined per categorie vuote; (2) chart LineChart.formatter che fa v.toFixed su valori null. Aggiungere null/undefined guards in riga 222 formatter e 236 .toFixed. Test manuale: DevTools→Console per leggere l'errore esatto.",
+    "Valutare ErrorBoundary locale per-tab in Report.jsx, così un bug in una view non rende inutilizzabile l'intera pagina.",
+    "Dopo i fix, retestare TUTTI i 6 tab e il flusso cambio anno (non è stato possibile testarlo causa blocco ErrorBoundary)."
+  ],
+  "critical_code_review_comments": [
+    "routers/reports.py (449 righe): ben strutturato, 6 endpoint coerenti, usa tenant_scope/tenant_id_of correttamente, pipeline aggregate Mongo pulite, arrotondamenti coerenti (2 decimali importi, 4 per costo_kg). _id sempre escluso. RBAC tramite get_current_user soltanto — OK (accesso admin+contab+logistica come da spec).",
+    "Piccola incoerenza: il regex mese_riferimento `^{anno}-` è corretto per stringhe 'yyyy-mm' ma non valida il formato. Non bloccante.",
+    "Frontend Report.jsx (384 righe): componenti view inline (FatturatoView, ProduzioneView, …) nello stesso file — accettabile ma si potrebbero estrarre per maintainability.",
+    "Uso non difensivo di `.toFixed` su campi opzionali (c.pezzi, a.pezzi, m.costo_kg, ecc.) causa crash in produzione se qualche campo arriva undefined/null. Applicare pattern `(x ?? 0).toFixed(…)` o `x != null ? x.toFixed(…) : '—'` uniforme su tutto il file.",
+    "ErrorBoundary a livello app troppo 'large scope' — un guasto in una view kill tutta la pagina. Considerare ErrorBoundary locale per tab."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_phase5_reports.py"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23)",
+    "frontend": "33% (solo tab Fatturato verificato funzionante; Produzione CRASH, Costo/kg CRASH; Marginalità/Aging/Km non verificabili causa ErrorBoundary persistente)"
+  },
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123",
+  "seed_data_creation": "Nessuna — usati i dati già presenti nel DB (fatture/ddt/costi 2026 creati dal main agent e da iterazioni precedenti).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend FASE 5 stabile (test file: /app/backend/tests/test_iter19_phase5_reports.py, 23 casi, tutti PASS). Frontend ha bug di tipo 'undefined.toFixed' in ProduzioneView e probabilmente pattern simile in CostoKgView. Retest dopo fix: ri-eseguire il playwright che clicca in sequenza tutti i 6 tab e verifica presenza di .recharts-wrapper svg in ciascuno. Verificare anche cambio anno (selettore [data-testid=report-anno]) trigger refetch corretto. Aging bucket coloring e Marginalità coloring positivo/negativo non sono stati validati — da testare post-fix. Dati di riferimento (anno 2026): fatturato=5647.27, incassato=1307.28 ca (dal grafico), sospeso=2761.71, kg=713.92, costi=2800.50, costo_kg=3.9227, margine=2846.77, 3 fatture sospese tutte bucket 0-30, 1 targa AB123CD 450km €120.",
+  "rca of the issue": "PRODUZIONE CRASH: in ProduzioneView (Report.jsx ~170,181) si chiama c.pezzi.toFixed(0) e a.pezzi.toFixed(0) senza null-guard. Sebbene il backend produca sempre pezzi:number (verificato con curl e _round() inizializza 0.0), l'accesso diretto è comunque fragile e risulta rotto nel render corrente (React error boundary conferma crash). Fix proposto: sostituire con (c.pezzi || 0).toFixed(0) e (a.pezzi || 0).toFixed(0). COSTO/KG CRASH: ErrorBoundary scatta al click ma backend restituisce dati validi → investigare con browser DevTools stack trace completo; sospettati formatter Recharts e Pie label funzioni che ricevono oggetti dove qualche campo può essere undefined. Mitigazione immediata: avvolgere ogni view in un proprio ErrorBoundary locale per isolare i guasti, e fare audit sistematico di tutti i .toFixed in Report.jsx con pattern difensivo."
+}

@@ -25,6 +25,7 @@ const ALL_ITEMS = [
   { to: "/fornitori/ddt", label: "DDT ricevuti", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
   { to: "/fornitori/fatture", label: "Fatture fornitore", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/costi", label: "Costi", icon: Wallet, roles: ["admin", "contabilita"] },
+  { to: "/report", label: "Report & BI", icon: ChartBar, roles: ["admin", "contabilita"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
