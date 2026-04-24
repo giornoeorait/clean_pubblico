@@ -25,6 +25,9 @@ import Azienda from "./pages/Azienda";
 import Offerte from "./pages/Offerte";
 import Ordinativi from "./pages/Ordinativi";
 import PortalePublic from "./pages/PortalePublic";
+import Fornitori from "./pages/Fornitori";
+import DdtFornitore from "./pages/DdtFornitore";
+import FattureFornitore from "./pages/FattureFornitore";
 import VerifyEmail from "./pages/VerifyEmail";
 
 function WithLayout({ children, roles }) {
@@ -68,6 +71,9 @@ export default function App() {
               <Route path="/sospesi" element={<WithLayout roles={["admin","contabilita"]}><Sospesi /></WithLayout>} />
               <Route path="/offerte" element={<WithLayout roles={["admin","contabilita"]}><Offerte /></WithLayout>} />
               <Route path="/ordinativi" element={<WithLayout roles={["admin","logistica","contabilita"]}><Ordinativi /></WithLayout>} />
+              <Route path="/fornitori" element={<WithLayout roles={["admin","contabilita"]}><Fornitori /></WithLayout>} />
+              <Route path="/fornitori/ddt" element={<WithLayout roles={["admin","logistica","contabilita"]}><DdtFornitore /></WithLayout>} />
+              <Route path="/fornitori/fatture" element={<WithLayout roles={["admin","contabilita"]}><FattureFornitore /></WithLayout>} />
               <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
               <Route path="/azienda" element={<WithLayout roles={["admin"]}><Azienda /></WithLayout>} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

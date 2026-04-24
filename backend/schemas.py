@@ -302,3 +302,89 @@ class PatchTicketIn(_PatchBase):
     assegnato_a: Optional[str] = None
     fermo_macchina: Optional[bool] = None
     soluzione: Optional[str] = None
+
+
+
+# ============== FASE 2b — FORNITORI ==============
+
+class FornitoreIn(BaseModel):
+    # Identificazione giuridica
+    ragione_sociale: str
+    partita_iva: str
+    codice_fiscale: Optional[str] = ""
+    indirizzo: str
+    email: EmailStr
+    telefono: str
+    pec: Optional[str] = ""
+    codice_sdi: Optional[str] = ""
+    iban: Optional[str] = ""
+    sito: Optional[str] = ""
+
+    # Categoria merceologica del fornitore
+    categoria: str = "prodotti"  # prodotti | utenze | servizi | manutenzioni | trasporti | altro
+    referente: Optional[str] = ""
+
+    condizioni_pagamento: str = "30gg"
+    note: Optional[str] = ""
+    attivo: bool = True
+
+
+class PatchFornitoreIn(_PatchBase):
+    ragione_sociale: Optional[str] = None
+    partita_iva: Optional[str] = None
+    codice_fiscale: Optional[str] = None
+    indirizzo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    pec: Optional[str] = None
+    codice_sdi: Optional[str] = None
+    iban: Optional[str] = None
+    sito: Optional[str] = None
+    categoria: Optional[str] = None
+    referente: Optional[str] = None
+    condizioni_pagamento: Optional[str] = None
+    note: Optional[str] = None
+    attivo: Optional[bool] = None
+
+
+class RigaDocFornIn(BaseModel):
+    descrizione: str
+    quantita: float = Field(gt=0)
+    unita_misura: str = "pz"
+    prezzo_unitario: float = Field(ge=0)
+
+
+class DdtFornitoreIn(BaseModel):
+    fornitore_id: str
+    numero_fornitore: str           # numero DDT fornito dal fornitore stesso
+    data: str                       # ISO yyyy-mm-dd
+    righe: List[RigaDocFornIn]
+    note: Optional[str] = ""
+
+
+class PatchDdtFornitoreIn(_PatchBase):
+    numero_fornitore: Optional[str] = None
+    data: Optional[str] = None
+    righe: Optional[List[RigaDocFornIn]] = None
+    note: Optional[str] = None
+
+
+class FatturaFornitoreIn(BaseModel):
+    fornitore_id: str
+    numero_fornitore: str           # numero fattura del fornitore
+    data: str                       # ISO yyyy-mm-dd
+    data_scadenza: Optional[str] = None
+    ddt_fornitore_ids: List[str] = Field(default_factory=list)
+    righe: List[RigaDocFornIn] = Field(default_factory=list)
+    iva_perc: float = 22.0
+    note: Optional[str] = ""
+
+
+class PatchFatturaFornitoreIn(_PatchBase):
+    numero_fornitore: Optional[str] = None
+    data: Optional[str] = None
+    data_scadenza: Optional[str] = None
+    righe: Optional[List[RigaDocFornIn]] = None
+    iva_perc: Optional[float] = None
+    note: Optional[str] = None
+    stato_pagamento: Optional[str] = None  # da_pagare | pagata

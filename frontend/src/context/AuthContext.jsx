@@ -8,6 +8,11 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Skip auth ping on public routes (e.g. /ordina/:token) to avoid spurious 401 in console
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/ordina/")) {
+      setUser(false);
+      return;
+    }
     (async () => {
       try {
         const { data } = await api.get("/auth/me");

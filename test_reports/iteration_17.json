@@ -1,0 +1,58 @@
+{
+  "summary": "FASE 2b — Fornitori + DDT ricevuti + Fatture passive: backend 21/21 pytest PASS, frontend end-to-end OK. Tutte le CRUD fornitori/DDT/fatture verificate, numerazione FORN-DDT-YYYY-NNNNN e FORN-FT-YYYY-NNNNN progressiva e separata dal ciclo vendite, snapshot fornitore, IVA 22% default, transizioni stato (non_fatturato→fatturato dopo fattura; reopen su delete fattura; paga idempotente con 409), RBAC completo (logistica 403 su create fornitore/fattura; contabilita 403 su delete fornitore), profilo con 4 KPI stats, ddt-fatturabili filtro non_fatturato, modalità DDT+righe inline combinabili. Frontend: 3 pagine (/fornitori, /fornitori/ddt, /fornitori/fatture) caricano dati, dialog Nuovo/Nuova con 2 sezioni (fornitore+righe) e toggle (DDT ricevuti / righe manuali), bottone occhio profilo mostra 4 KPI cards (DDT ricevuti, Fatture, Spesa totale, Da pagare) + tabelle. Regression 8 route (/clienti /articoli /listini /ddt /offerte /ordinativi /fatture /sospesi) OK. Fix AuthContext verificato: /ordina/{token} NON emette più 401 auth/me in console.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dialog Fornitori/DDT/Fatture", "issues": ["Warning Radix 'Missing Description or aria-describedby' sul DialogContent (pre-esistente da iter14/15/16, non bloccante)"]}
+    ]
+  },
+  "verified_features": [
+    "BE POST/GET/PATCH/DELETE /api/fornitori: CRUD completo, filtri q+categoria funzionanti",
+    "BE DELETE /api/fornitori 409 se ha DDT o fatture collegati (message include conteggi)",
+    "BE GET /api/fornitori/{fid}/profilo: ritorna fornitore+ddts+fatture+stats con spesa_totale/pagato_totale/da_pagare_totale calcolati",
+    "BE POST /api/ddt-fornitore: numero FORN-DDT-YYYY-NNNNN progressivo, fornitore_snapshot popolato, totale calcolato da righe, stato_fatturazione='non_fatturato'",
+    "BE PATCH /api/ddt-fornitore: aggiorna righe + ricalcola totale; 409 se già fatturato",
+    "BE DELETE /api/ddt-fornitore: 409 se fatturato",
+    "BE POST /api/fatture-fornitore con ddt_fornitore_ids: aggrega righe, applica IVA 22%, marca DDT fatturati con fattura_fornitore_id+numero; numero FORN-FT-YYYY-NNNNN",
+    "BE POST /api/fatture-fornitore con righe inline (modalità manuale): imponibile+IVA+totale calcolati correttamente (100+22=122)",
+    "BE GET /api/fatture-fornitore/ddt-fatturabili/{fornitore_id}: ritorna solo DDT con stato non_fatturato",
+    "BE PATCH /api/fatture-fornitore/{id}/paga: imposta stato_pagamento=pagata + data_pagamento; seconda chiamata 409",
+    "BE DELETE /api/fatture-fornitore: riapre DDT collegati (stato_fatturazione back a non_fatturato, fattura_fornitore_id=None)",
+    "BE RBAC: logistica 403 su POST /api/fornitori e POST /api/fatture-fornitore; contabilita 200 su create fornitore ma 403 su DELETE /api/fornitori; admin può tutto",
+    "BE Regression smoke: /clienti /articoli /listini /ddt /offerte /ordinativi /fatture /dashboard/kpi tutti 200",
+    "FE /fornitori: tabella (3 righe), search + select categoria, bottone 'Nuovo Fornitore', bottone occhio apre dialog profilo con 4 KPI cards (DDT ricevuti, Fatture, Spesa totale, Da pagare) + tabelle DDT ricevuti e Fatture ricevute",
+    "FE /fornitori/ddt: tabella DDT (FORN-DDT-2026-00001/2/3) con stato badge 'da fatturare' o '→ FORN-FT-YYYY-NNNNN', filtro fornitore, dialog 'Nuovo DDT fornitore' con Fornitore select, Data, Numero DDT fornitore, Righe editable (Descrizione/Qtà/UM/€unit/totale riga), pulsante 'Aggiungi', totale imponibile preview",
+    "FE /fornitori/fatture: tabella fatture con stato_pagamento badge (pagata/da_pagare), filtri fornitore+stato, dialog 'Nuova fattura fornitore' con toggle 'Da DDT ricevuti' / 'Righe manuali (utenze/servizi)', IVA% field, preview live Imponibile/IVA/Totale",
+    "FE fix AuthContext: /ordina/{token} NON fa più chiamata /auth/me — console pulita da 401 auth (solo 404 del token invalido stesso, atteso)",
+    "FE Regression 8 pagine caricano heading corretto e zero ErrorBoundary"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_phase2b_fornitori.py",
+    "/app/test_reports/pytest/iter17_phase2b.xml"
+  ],
+  "action_items": [
+    "Nessun action item funzionale. Micro-miglioria cosmetica: aggiungere aria-describedby ai DialogContent di Fornitori/DDT/Fatture (Radix warning pre-esistente da iter14)."
+  ],
+  "critical_code_review_comments": [
+    "routers/fornitori.py PATCH /fatture-fornitore riga 329-339: se 'righe' è presente in body MA ddt_fornitore_ids non è vuoto, restituisce 409. Corretto. Tuttavia se l'utente passa anche iva_perc nel PATCH con DDT collegato (senza righe), il ricalcolo iva/totale NON avviene: iva_perc viene salvata ma iva/totale restano stale. Consigliato: ricalcolare iva+totale quando iva_perc cambia, anche se le righe sono bloccate.",
+    "routers/fornitori.py POST /fatture-fornitore riga 266-267: se len(ddt_docs) != len(body.ddt_fornitore_ids) risponde 400 generico. Potrebbe essere utile includere gli id mancanti nel messaggio per UX.",
+    "routers/fornitori.py POST /ddt-fornitore righe 161-162: validazione 'almeno una riga' è già garantita da Pydantic (List[RigaDocFornIn] con gt=0 su quantita), ma il controllo esplicito è difensivo e ok.",
+    "routers/fornitori.py riga 131: filter 'da_pagare' — se una fattura ha stato_pagamento=None (non atteso), non viene conteggiata. OK per schema attuale ma da tenere in mente.",
+    "Fornitori.jsx: nessuna paginazione (limit=500 default backend) — acceptable per MVP multi-tenant piccolo.",
+    "FatturaFornitoreIn consente righe=[] e ddt_fornitore_ids=[]: il 400 arriva dopo nel handler. Validazione migliore sarebbe un model_validator Pydantic con 'at least one of'.",
+    "Nessun endpoint di patch per stato_pagamento back to 'da_pagare' esposto separatamente — solo via PATCH generico /fatture-fornitore/{id}. OK.",
+    "Snapshot fornitore in DDT/Fattura è immutabile dopo creazione: se l'anagrafica fornitore cambia (IBAN, indirizzo), i documenti vecchi restano col vecchio dato. Comportamento corretto per documenti contabili, da documentare."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter17_phase2b_fornitori.py"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% — tutti i flussi verificati end-to-end"},
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123 (DEMO tenant)",
+  "seed_data_creation": "Test creano 2 fornitori TEST_ + 2 DDT fornitore (FORN-DDT-2026-0000X) + 3 fatture fornitore (2 da DDT + 1 righe inline + 1 eliminata nel test 27). Dati pre-esistenti Acme Detergenti SRL + DDT + fattura (da curl main agent) conservati. Prefisso TEST_ per identificazione.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 2b verde. Pattern da notare: (1) counter 'ddt_fornitore' e 'fattura_fornitore' separati dai contatori di vendita ('ddt', 'fattura') — verificato tramite numerazione FORN-DDT-2026-0000X indipendente da DDT-2026-0000X. (2) RBAC gerarchia per ciclo passivo: admin=tutto, contabilita=tutto tranne delete fornitore/delete fattura, logistica=solo DDT (create). (3) Snapshot fornitore è immutabile post-creazione doc (coerente con clienti). (4) Dialog Nuova fattura ha 2 modalità mutuamente esclusive (DDT / righe manuali) ma il backend le supporta anche combinate. (5) Fix AuthContext: window.location.pathname.startsWith('/ordina/') skippa il fetchMe — confermato 0 errori 401 auth/me sulla route pubblica. Prossimi step consigliati al main agent: (a) ricalcolo iva+totale quando si modifica iva_perc su fattura già legata a DDT; (b) Pydantic validator 'at least one of righe/ddt_fornitore_ids'; (c) aggiungere aria-describedby ai DialogContent Radix (pulizia console).",
+  "rca of the issue": "Nessun bug funzionale trovato — tutti i 21 test BE PASS e tutti i flussi FE verificati. Cosmetica: Radix aria warning pre-esistente, non bloccante."
+}
