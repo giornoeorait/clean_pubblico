@@ -46,6 +46,7 @@ DEFAULTS = {
     "primary_color": "#4F46E5",   # indaco
     "accent_color":  "#38BDF8",   # celeste
     "dark_color":    "#0EA5E9",   # azzurro
+    "brand_scale":   1.0,          # 1.0 S · 1.25 M · 1.5 L · 2.0 XL
 }
 
 
@@ -65,6 +66,7 @@ class BrandingPatch(BaseModel):
     primary_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     accent_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     dark_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    brand_scale: Optional[float] = Field(default=None, ge=0.8, le=2.5)
 
 
 async def _get_or_init() -> dict:

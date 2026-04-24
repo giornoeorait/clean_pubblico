@@ -46,16 +46,19 @@ export default function Login() {
         <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom right, ${branding.primary_color}99, #0f172aCC, #0f172aF2)` }} />
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden">
+            <div
+              className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden flex-shrink-0"
+              style={{ width: "calc(40px * var(--brand-scale, 1))", height: "calc(40px * var(--brand-scale, 1))" }}
+            >
               {branding.logo_url ? (
                 <img src={`${BACKEND}${branding.logo_url}`} alt={branding.app_name} className="w-full h-full object-contain" />
               ) : (
-                <Sparkle size={22} weight="fill" style={{ color: branding.accent_color }} />
+                <Sparkle size={22} weight="fill" style={{ color: branding.accent_color, transform: "scale(var(--brand-scale, 1))" }} />
               )}
             </div>
             <div>
-              <div className="font-display font-bold text-2xl tracking-tight">{branding.app_name}</div>
-              <div className="text-[11px] font-mono uppercase tracking-widest" style={{ color: branding.accent_color }}>{branding.tagline}</div>
+              <div className="font-display font-bold tracking-tight" style={{ fontSize: "calc(1.5rem * var(--brand-scale, 1))" }}>{branding.app_name}</div>
+              <div className="font-mono uppercase tracking-widest" style={{ fontSize: "calc(11px * var(--brand-scale, 1))", color: branding.accent_color }}>{branding.tagline}</div>
             </div>
           </div>
         </div>

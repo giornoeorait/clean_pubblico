@@ -92,16 +92,19 @@ export default function Layout({ children }) {
       {/* Sidebar */}
       <aside className={`fixed xl:sticky top-0 left-0 z-40 w-64 h-screen bg-slate-900 text-white flex flex-col border-r border-slate-800 transform transition-transform ${mobileOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"}`}>
         <div className="h-16 flex items-center gap-2 px-5 border-b border-slate-800">
-          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-azzurro to-indaco flex items-center justify-center overflow-hidden">
+          <div
+            className="rounded-md bg-gradient-to-br from-azzurro to-indaco flex items-center justify-center overflow-hidden flex-shrink-0"
+            style={{ width: "calc(32px * var(--brand-scale, 1))", height: "calc(32px * var(--brand-scale, 1))" }}
+          >
             {branding.logo_url ? (
               <img src={`${BACKEND}${branding.logo_url}`} alt={branding.app_name} className="w-full h-full object-contain" />
             ) : (
-              <Sparkle size={18} weight="fill" className="text-white" />
+              <Sparkle size={18} weight="fill" className="text-white" style={{ transform: "scale(var(--brand-scale, 1))" }} />
             )}
           </div>
-          <div>
-            <div className="font-display font-bold text-lg leading-none tracking-tight">{branding.app_name}</div>
-            <div className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">{branding.tagline}</div>
+          <div className="min-w-0">
+            <div className="font-display font-bold leading-none tracking-tight truncate" style={{ fontSize: "calc(1.125rem * var(--brand-scale, 1))" }}>{branding.app_name}</div>
+            <div className="text-slate-400 font-mono uppercase tracking-widest mt-0.5 truncate" style={{ fontSize: "calc(10px * var(--brand-scale, 1))" }}>{branding.tagline}</div>
           </div>
           <button className="ml-auto xl:hidden text-slate-400 hover:text-white" onClick={() => setMobileOpen(false)} data-testid="close-menu-btn">
             <X size={20} />

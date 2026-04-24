@@ -60,6 +60,12 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (pm+) — FEATURE "Brand Scale"**
+  - Aggiunto selettore dimensioni (S/M/L/XL + slider fine 0.8× - 2.5×) accanto all'uploader Logo in `/admin/branding`
+  - Campo `brand_scale` (0.8-2.5) persistito in `db.branding`, validato backend via Pydantic Field(ge=0.8, le=2.5)
+  - CSS var `--brand-scale` globale → applicata a logo box + app_name + tagline in sidebar e pagina login tramite `calc(Npx * var(--brand-scale))`
+  - Live-preview istantanea (senza reload) via CSS var hotswap durante il drag dello slider
+
 - **24 Apr 2026 (pm) — FEATURE "Branding & estetica" (superadmin-only)**
   - Nuovo router `/api/branding` (public read) + `/api/admin/branding/*` (superadmin write/upload/delete)
   - Singleton doc `db.branding` con config globale: app_name, tagline, login_eyebrow/title/subtitle/footer, login_features[], primary/accent/dark color, paths logo/hero/favicon
