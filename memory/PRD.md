@@ -1,4 +1,4 @@
-# CleanTec - PRD (updated 24 Apr 2026 · notte FASE 2b)
+# CleanTec - PRD (updated 24 Apr 2026 · FASE 4 Costi)
 
 ## Problem
 Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → Offerte → D.D.T. → Fatture → Sospesi. Ciclo acquisti: Fornitori → DDT ricevuti → Fatture passive. Portale cliente pubblico per ordinativi self-service.
@@ -60,6 +60,20 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (tarda notte) — FASE 4 "Costi"**
+  - Backend: nuovo router `/api/costi` con CRUD + `GET /api/costi/summary?anno=YYYY` (aggregazioni Mongo: per_categoria, per_mese, stack mese×categoria, totale_generale)
+  - Backend: 4 categorie validate (`personale`, `automezzi`, `utenze`, `prodotti`); campi comuni (data, mese_riferimento yyyy-mm, descrizione, importo≥0) + campi OPZIONALI context-aware (dipendente/ore, targa/km/tipo costo, tipo utenza/consumo/unità, codice articolo/qtà); fornitore_id opzionale (verifica esistenza → 400)
+  - Backend: filtri list `categoria`, `mese_riferimento`, `anno`, `fornitore_id`; RBAC admin+contabilita su write, lettura a tutti
+  - Backend schemas: `CostoIn`, `PatchCostoIn` aggiunti in coda a `schemas.py`
+  - Frontend: nuova pagina `/costi` con layout unificato:
+    - 4 KPI cards categoria (cliccabili per cambio tab) con totali annuali
+    - Strip con Totale generale + selettore anno + selettore mese (filtra lista + summary)
+    - Bar chart mensile semplice (12 barre, altezza ∝ totale mese)
+    - 4 tab categoria con tabelle colonne-specifiche (dipendente per personale, targa+km per auto, ecc.)
+    - Dialog dinamico: categoria pre-selezionata dal tab attivo (fix post-test iter18)
+  - Frontend: voce sidebar "Costi" (icon Wallet) tra Fatture fornitore e Utenti
+  - **Iter 18: 22/22 backend + 100% frontend ✅** (un bug UX MEDIUM trovato e fixato: dialog "Nuovo costo" ora apre con categoria allineata al tab)
+
 - **24 Apr 2026 (notte+) — FASE 2b "Fornitori + ciclo passivo"**
   - Backend: nuovo router `/api/fornitori` con CRUD + filtri `q`/`categoria` + `GET /{fid}/profilo` (ddts, fatture, stats: spesa_totale, pagato, da_pagare). Delete 409 se ha documenti collegati
   - Backend: `/api/ddt-fornitore` CRUD con numero interno `FORN-DDT-YYYY-NNNNN`, `fornitore_snapshot` immutabile, `stato_fatturazione` = non_fatturato|fatturato, PATCH/DELETE 409 se fatturato
@@ -164,8 +178,8 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Report BI: fatturato per cliente, top articoli, aging sospesi
 
 ## Next Action Items
-- (P1) **FASE 4 — Costi**: modulo per inserimento costi mensili con categorie: Personale, Automezzi, Utenze (gas/luce/acqua), Prodotti consumabili
-- (P2) **FASE 5 — Report & Statistiche BI**: fatturato globale/per cliente, kg/quintali prodotti (pezzi × peso), costi personale, costo produzione/kg, consegne mensili, km automezzi
-- (P2) Ricalcolo iva/totale UX: oggi corretto solo via PATCH iva_perc — a livello frontend esporre editor dedicato per fatture DDT-linked
-- (P3) Clausole: `Pydantic validator` su FatturaFornitoreIn "at least one of righe/ddt_fornitore_ids"; `aria-describedby` su tutti i DialogContent Radix
+- (P2) **FASE 5 — Report & Statistiche BI**: fatturato globale/per cliente, kg/quintali prodotti (pezzi × peso), costi personale, costo produzione/kg, consegne mensili, km automezzi — ora che i Costi sono in DB, si può calcolare la marginalità reale
+- (P2) Ricalcolo iva/totale UX: oggi corretto solo via PATCH iva_perc — frontend esporre editor dedicato per fatture DDT-linked
+- (P3) Clausole: `Pydantic validator` su FatturaFornitoreIn "at least one of righe/ddt_fornitore_ids"; validator regex su Costo.mese_riferimento (yyyy-mm); `aria-describedby` sui DialogContent Radix
+- (P3) Costi: aggiungere anagrafica dipendenti e anagrafica automezzi dedicate (ora sono campi liberi) + stipendio ricorrente mensile auto-generato
 - Configurare Stripe LIVE key in produzione

@@ -113,7 +113,7 @@ export default function Costi() {
         title="Costi"
         subtitle="Imputazione mensile dei costi aziendali per categoria. Base per i report di marginalità e costo/kg."
         actions={
-          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); resetForm(); } }}>
+          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (o && !editing) setForm(emptyFor(tab)); if (!o) { setEditing(null); resetForm(); } }}>
             <DialogTrigger asChild>
               <Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-costo-btn"><Plus size={16} weight="bold" className="mr-1" /> Nuovo costo</Button>
             </DialogTrigger>
