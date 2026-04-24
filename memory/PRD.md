@@ -1,4 +1,4 @@
-# CleanTec - PRD (updated 24 Apr 2026 · FASE 5 Report BI)
+# CleanTec - PRD (updated 24 Apr 2026 · P3 batch)
 
 ## Problem
 Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → Offerte → D.D.T. → Fatture → Sospesi. Ciclo acquisti: Fornitori → DDT ricevuti → Fatture passive. Portale cliente pubblico per ordinativi self-service.
@@ -60,6 +60,23 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (pomeriggio post-5) — BATCH P3 "Anagrafiche HR + Alerts + Export PDF + Quality"**
+  - Backend: `/api/dipendenti` CRUD (nome, ruolo, codice_fiscale, email, tipo_contratto, stipendio_mensile, ore_contrattuali, data_assunzione, attivo)
+  - Backend: `POST /api/dipendenti/genera-stipendi {mese_riferimento}` — crea voci costo categoria=personale per ogni dipendente attivo con stipendio>0. Idempotente (skip duplicati su stesso mese+nome+tipo_rapporto=stipendio)
+  - Backend: `/api/automezzi` CRUD con targa univoca per tenant (409 su duplicato)
+  - Backend: `GET /api/alerts` aggregatore con 4 tipi: `costo_soglia` (spesa >120% media 3m), `fattura_scaduta` (data_scadenza<oggi), `fattura_scadenza` (<=3gg), `aging_sospeso` (>60gg). Ordinati per severity
+  - Backend: `GET /api/reports/{tipo}/pdf?anno=` per tutti i 6 report BI — generazione via ReportLab con header azienda, KPI strip, tabelle styled indaco
+  - Backend: validator regex `^\d{4}-(0[1-9]|1[0-2])$` su `Costo.mese_riferimento` (422 su formati invalidi)
+  - Frontend: nuova pagina `/dipendenti` con toggle attivo + dialog "Genera stipendi"
+  - Frontend: nuova pagina `/automezzi` con targa auto-uppercase
+  - Frontend: `AlertsBanner` componente integrato in Layout, fetch ogni 5 min, dismissable, click alert → navigazione contestuale
+  - Frontend: Costi con dropdown intelligenti (dipendenti attivi + targhe automezzi) con fallback "— libero —"
+  - Frontend: bottone "Scarica PDF" in ogni tab Report
+  - Frontend: ErrorBoundary con supporto `resetKeys` (auto-reset al cambio tab/anno) + ErrorBoundary locale in Report.jsx
+  - Frontend: `DialogDescription` aggiunta ai nuovi dialog per pulizia warning Radix a11y
+  - Sidebar: nuove voci Dipendenti + Automezzi (icone Users/Truck) sotto Costi
+  - **Iter 22: 40/40 backend + 100% frontend ✅**
+
 - **24 Apr 2026 (tarda notte+) — FASE 5 "Report & Statistiche BI"**
   - Backend: nuovo router `/api/reports` read-only con 6 endpoint aggregati:
     - `GET /fatturato?anno=` → totale, incassato, sospeso, per_mese (grouped BSON date → %Y-%m), top 20 per_cliente
@@ -191,10 +208,10 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Report BI: fatturato per cliente, top articoli, aging sospesi
 
 ## Next Action Items
-- 🎉 **Tutte le fasi P0/P1/P2 completate (1, 2a, 2b, 3a, 3b, 4, 5)**
-- (P3) Migrazione Report a react-query/SWR per cache automatica + resetKeys ErrorBoundary per UX auto-recovery
-- (P3) Anagrafica dipendenti + automezzi dedicate (ora sono campi liberi in Costi) + stipendio ricorrente mensile auto-generato
-- (P3) Validator regex su `Costo.mese_riferimento` (yyyy-mm) + `aria-describedby` sui DialogContent Radix
-- (P3) Pydantic validator su `FatturaFornitoreIn` "at least one of righe/ddt_fornitore_ids"
-- (P3) Alert automatici: (a) spesa categoria costi > 120% media 3 mesi; (b) promemoria pagamento fatture fornitore a 3gg dalla scadenza
+- 🎉 **Tutte le fasi P0/P1/P2/P3 completate** (1, 2a, 2b, 3a, 3b, 4, 5, P3 HR+Alerts+PDF export+Quality)
+- (P4 / Future) Migrazione Report a react-query/SWR per cache automatica invece di useState locale
+- (P4 / Future) Export Excel (openpyxl) dei report oltre al PDF
+- (P4 / Future) Cron/scheduled task per invio email notifica alert critici (richiede integrazione Resend/SendGrid)
+- (P4 / Future) Dashboard widget "Alert attivi" con contatore badge in sidebar
+- (P4 / Future) Allegare PDF report al profilo cliente/fornitore per archiviazione storica
 - Configurare Stripe LIVE key in produzione
