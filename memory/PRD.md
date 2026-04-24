@@ -60,6 +60,18 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **24 Apr 2026 (evening+) — FASE 2a "Anagrafiche potenziate"**
+  - Backend schema: `ClienteIn` con 5 campi obbligatori (ragione_sociale, partita_iva, indirizzo, email EmailStr, telefono) + 4 opzionali (pec, codice_sdi, denominazione_struttura, indirizzo_scarico); `sla_ore` rimosso
+  - Backend schema: `ArticoloIn` con nuovi driver `prezzo_noleggio`, `prezzo_lavaggio`, `giacenza`; label UI "Valore convenzionale singolo prodotto (IVA esclusa)" per il campo `prezzo`
+  - Backend: `ListinoIn.tipo` obbligatorio al create (pattern `^(noleggio|lavaggio)$`); `ListinoPatch` non include `tipo` (immutabile dopo creazione)
+  - Backend: `GET /api/listini/{id}/prezzi` ora ritorna `{listino:{id,nome,tipo,attivo}, rows:[...]}` — `prezzo_default` viene da `prezzo_noleggio` o `prezzo_lavaggio` in base al tipo del listino
+  - Backend: nuovo endpoint `GET /api/clienti/{id}/profilo` → cliente + listino + ddts + fatture + stats (ddt_totali, fatturato_totale, incassato_totale, sospeso_totale)
+  - Backend: `seed.migrate_phase2` one-shot — listini preesistenti → tipo=lavaggio; articoli → prezzo_noleggio=prezzo*0.1 + prezzo_lavaggio=prezzo*0.07 + giacenza=0; clienti → unset sla_ore
+  - Frontend Clienti: form diviso in 2 sezioni visivamente distinte (Ragione sociale / Denominazione struttura), * rossi su required, banner warning se mancano, bottone occhio → dialog profilo con 4 KPI cards + tabella fatture/DDT con PDF inline
+  - Frontend Articoli: grid 2×2 card con Noleggio, Lavaggio, Giacenza, V. convenzionale
+  - Frontend Listini: scelta tipo come 2 bottoni binari al create, badge tipo visibile nella lista, tipo read-only in edit
+  - **Iter 14: 11/11 backend + 100% frontend + regressione verde ✅**
+
 - **24 Apr 2026 (evening) — FASE 1 "Fondamenta" completata**
   - Backend: nuovo router `/api/company` per anagrafica azienda madre (CRUD + upload logo WebP, max 4 MB, resize 512×512) — per-tenant singleton, RBAC admin-only
   - Backend: `pdf_service.py` con ReportLab → `generate_ddt_pdf` e `generate_fattura_pdf` con intestazione azienda (sx + logo) + cliente (dx), footer "Fattura di cortesia"
