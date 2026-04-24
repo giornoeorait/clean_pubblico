@@ -1,0 +1,52 @@
+{
+  "summary": "FASE 4 — Costi: backend 22/22 pytest PASS, frontend /costi funziona (KPI cards, totale, bar chart, tabs, filtri, dialog dinamico per categoria). 12 rotte di regressione caricano senza errori. Trovato un piccolo bug UX: il bottone 'Nuovo costo' non pre-seleziona la categoria del tab attivo — apre sempre il form con categoria 'personale' (stato iniziale), quindi un utente sul tab 'utenze' che compila solo i campi comuni registra un costo in 'personale'. Nessun bug critico backend/RBAC/multi-tenant.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Costi.jsx - dialog 'Nuovo costo'",
+        "issue": "Il dialog apre sempre con form.categoria = 'personale' (stato iniziale useState(emptyFor('personale'))) invece che la categoria del tab attivo. resetForm() viene chiamato solo alla chiusura (onOpenChange=false). Test E2E: sul tab 'utenze' abbiamo compilato descrizione+importo e salvato → il costo è stato creato come 'personale' e non appare nella tabella utenze. Fix: inizializzare il form con emptyFor(tab) quando si apre il dialog (non-editing), p.es. chiamare resetForm() anche all'apertura se !editing, oppure sincronizzare form.categoria con tab via useEffect quando il dialog si apre.",
+        "selector": "[data-testid=new-costo-btn] -> form.categoria",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Costi.jsx - DialogContent",
+        "issue": "Warning a11y: 'Missing `Description` or `aria-describedby={undefined}` for {DialogContent}'. Aggiungere <DialogDescription> o aria-describedby.",
+        "selector": "div[role=dialog]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_phase4_costi.py",
+    "/app/test_reports/pytest/iter18_phase4_costi.xml"
+  ],
+  "action_items": [
+    "Fix Costi.jsx: quando si apre il dialog 'Nuovo costo' (creazione, non edit), resettare la form con la categoria del tab attivo — es. aggiungere `if (o && !editing) resetForm()` dentro onOpenChange, oppure useEffect che sincronizza form.categoria=tab all'apertura. Questo impedisce di creare costi con categoria diversa da quella attesa dall'utente.",
+    "Opzionale: aggiungere DialogDescription per a11y (warning minore)."
+  ],
+  "critical_code_review_comments": [
+    "Costi.jsx (386 righe): il form di default è emptyFor('personale') senza sincronizzazione con `tab`. Bug UX confermato con test E2E — cliccando 'Nuovo costo' dal tab 'utenze' e compilando solo i campi comuni, il costo viene registrato come 'personale'.",
+    "routers/costi.py OK, aggregazioni Mongo pulite, gestione _id esclusa, RBAC `admin`+`contabilita` coerente con spec, logistica può solo leggere (get_current_user).",
+    "schemas.CostoIn usa Field(ge=0) su importo — produce 422 Pydantic (testato). Tutti i campi categoria-specifici sono Optional — ok per il requisito 'campi specifici OPZIONALI'.",
+    "Nessun controllo formato yyyy-mm su mese_riferimento: attualmente qualunque stringa è accettata. Non bloccante, ma si potrebbe aggiungere regex validator per solidità."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter18_phase4_costi.py"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22)",
+    "frontend": "90% (bug UX minore su default categoria dialog)"
+  },
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123",
+  "seed_data_creation": "Creati 3 costi di test su 2026-05 tramite fixture (personale 1500, utenze 300.25, prodotti 99.9) e cancellati a teardown. Preservati i 3 costi 2026-04 creati dal main agent.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file di riferimento per FASE 4 Costi: /app/backend/tests/test_iter18_phase4_costi.py (22 casi). Backend stabile. Solo un fix UX sul frontend Costi.jsx (sync categoria tab→dialog al click 'Nuovo costo').",
+  "rca of the issue": "BUG UX 'nuova categoria non allineata al tab': In Costi.jsx riga 57 useState(emptyFor('personale')) imposta sempre categoria='personale' come default iniziale. resetForm() viene chiamato solo alla chiusura del Dialog (riga 116, onOpenChange con !o). Quindi il primo 'Nuovo costo' dopo caricamento della pagina apre SEMPRE con categoria='personale' indipendentemente dal tab attivo. Riproduzione: 1) /costi 2) clic tab 'Utenze' 3) clic 'Nuovo costo' 4) compila descrizione+importo 5) Salva → costo creato come 'personale'. Mitigazione: aggiungere `if (o && !editing) setForm(emptyFor(tab))` in onOpenChange, oppure useEffect([open,tab]) che sincronizza la categoria all'apertura."
+}

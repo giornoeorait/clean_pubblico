@@ -6,7 +6,7 @@ import api from "../lib/api";
 import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
-  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory,
+  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet,
 } from "@phosphor-icons/react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -24,6 +24,7 @@ const ALL_ITEMS = [
   { to: "/fornitori", label: "Fornitori", icon: Factory, roles: ["admin", "contabilita"] },
   { to: "/fornitori/ddt", label: "DDT ricevuti", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
   { to: "/fornitori/fatture", label: "Fatture fornitore", icon: Receipt, roles: ["admin", "contabilita"] },
+  { to: "/costi", label: "Costi", icon: Wallet, roles: ["admin", "contabilita"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },

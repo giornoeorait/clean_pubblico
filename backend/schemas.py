@@ -384,6 +384,64 @@ class PatchFatturaFornitoreIn(_PatchBase):
     numero_fornitore: Optional[str] = None
     data: Optional[str] = None
     data_scadenza: Optional[str] = None
+
+
+# ============== FASE 4 — COSTI ==============
+
+class CostoIn(BaseModel):
+    categoria: str                        # personale | automezzi | utenze | prodotti
+    data: str                             # yyyy-mm-dd (data registrazione/fattura)
+    mese_riferimento: str                 # yyyy-mm (competenza)
+    descrizione: str
+    importo: float = Field(ge=0)
+
+    # opzionali (context-aware per categoria)
+    fornitore_id: Optional[str] = None
+    fattura_fornitore_id: Optional[str] = None
+
+    # Personale
+    dipendente_nome: Optional[str] = None
+    ore_lavorate: Optional[float] = None  # ore del mese
+    tipo_rapporto: Optional[str] = None   # stipendio | contributi | tfr | trasferta | straordinario | altro
+
+    # Automezzi
+    automezzo_targa: Optional[str] = None
+    automezzo_km: Optional[float] = None
+    tipo_automezzo_costo: Optional[str] = None  # carburante | manutenzione | assicurazione | bollo | revisione | altro
+
+    # Utenze
+    tipo_utenza: Optional[str] = None     # gas | luce | acqua | telefono | internet | altro
+    consumo: Optional[float] = None       # kWh, mc, unità
+    unita_consumo: Optional[str] = None   # kWh, mc, min, ecc.
+
+    # Prodotti consumabili
+    articolo_codice: Optional[str] = None
+    quantita: Optional[float] = None
+
+    note: Optional[str] = ""
+
+
+class PatchCostoIn(_PatchBase):
+    categoria: Optional[str] = None
+    data: Optional[str] = None
+    mese_riferimento: Optional[str] = None
+    descrizione: Optional[str] = None
+    importo: Optional[float] = None
+    fornitore_id: Optional[str] = None
+    fattura_fornitore_id: Optional[str] = None
+    dipendente_nome: Optional[str] = None
+    ore_lavorate: Optional[float] = None
+    tipo_rapporto: Optional[str] = None
+    automezzo_targa: Optional[str] = None
+    automezzo_km: Optional[float] = None
+    tipo_automezzo_costo: Optional[str] = None
+    tipo_utenza: Optional[str] = None
+    consumo: Optional[float] = None
+    unita_consumo: Optional[str] = None
+    articolo_codice: Optional[str] = None
+    quantita: Optional[float] = None
+    note: Optional[str] = None
+
     righe: Optional[List[RigaDocFornIn]] = None
     iva_perc: Optional[float] = None
     note: Optional[str] = None
