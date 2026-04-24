@@ -12,9 +12,9 @@ import Clienti from "./pages/Clienti";
 import Articoli from "./pages/Articoli";
 import Macchine from "./pages/Macchine";
 import Accettazione from "./pages/Accettazione";
-import Lotti from "./pages/Lotti";
-import Produzione from "./pages/Produzione";
-import Qualita from "./pages/Qualita";
+import Listini from "./pages/Listini";
+import DDT from "./pages/DDT";
+import Sospesi from "./pages/Sospesi";
 import Logistica from "./pages/Logistica";
 import Fatture from "./pages/Fatture";
 import Utenti from "./pages/Utenti";
@@ -67,9 +67,9 @@ export default function App() {
             <Route path="/articoli" element={<WithLayout><Articoli /></WithLayout>} />
             <Route path="/macchine" element={<WithLayout><Macchine /></WithLayout>} />
             <Route path="/accettazione" element={<WithLayout><Accettazione /></WithLayout>} />
-            <Route path="/lotti" element={<WithLayout><Lotti /></WithLayout>} />
-            <Route path="/produzione" element={<WithLayout><Produzione /></WithLayout>} />
-            <Route path="/qualita" element={<WithLayout><Qualita /></WithLayout>} />
+            <Route path="/listini" element={<WithLayout roles={["admin","contabilita"]}><Listini /></WithLayout>} />
+            <Route path="/ddt" element={<WithLayout roles={["admin","logistica","contabilita"]}><DDT /></WithLayout>} />
+            <Route path="/sospesi" element={<WithLayout roles={["admin","contabilita"]}><Sospesi /></WithLayout>} />
             <Route path="/logistica" element={<WithLayout><Logistica /></WithLayout>} />
             <Route path="/fatture" element={<WithLayout><Fatture /></WithLayout>} />
             <Route path="/magazzino" element={<WithLayout roles={["admin","produzione","contabilita","logistica"]}><Magazzino /></WithLayout>} />

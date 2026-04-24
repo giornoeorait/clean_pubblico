@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
-import StatoBadge from "../components/StatoBadge";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
-import { Drop, Package, Factory, Truck, Receipt, Warning, TrendUp, CheckCircle } from "@phosphor-icons/react";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { Users, Package, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 
 const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId }) => (
@@ -24,125 +23,85 @@ const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId }) 
 export default function Dashboard() {
   const { user } = useAuth();
   const [kpi, setKpi] = useState(null);
-  const [lotti, setLotti] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [k, l] = await Promise.all([api.get("/dashboard/kpi"), api.get("/lotti?limit=10")]);
-        setKpi(k.data);
-        setLotti(l.data);
-      } finally {
-        setLoading(false);
-      }
+        const { data } = await api.get("/dashboard/kpi");
+        setKpi(data);
+      } finally { setLoading(false); }
     })();
   }, []);
 
-  if (loading) {
-    return <div className="text-slate-400 font-mono text-sm">Caricamento KPI…</div>;
-  }
-
-  const colors = ["#0EA5E9", "#38BDF8", "#4F46E5", "#6366F1", "#0284C7", "#7C3AED", "#8B5CF6", "#10B981", "#059669"];
+  if (loading) return <div className="text-slate-400 font-mono text-sm">Caricamento KPI…</div>;
 
   return (
     <div>
       <PageHeader
-        eyebrow={`Benvenuto, ${user.name?.split(" ")[0]}`}
-        title="Control Room"
-        subtitle="Panoramica real-time della produzione, logistica e vendite."
+        eyebrow={`Benvenuto, ${user?.name || "utente"}`}
+        title="Dashboard operativa"
+        subtitle="Flusso DDT → Fatturazione → Incassi. Stato attuale del tuo business."
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KpiCard icon={Drop} label="Kg lavorati oggi" value={`${kpi.kg_oggi} kg`} hint="aggiornato in tempo reale" accent="azzurro" testId="kpi-kg-oggi" />
-        <KpiCard icon={Package} label="Lotti attivi" value={kpi.lotti_attivi} hint={`${kpi.lotti_totali} totali`} accent="indaco" testId="kpi-lotti-attivi" />
-        <KpiCard icon={Factory} label="Macchine in uso" value={`${kpi.macchine_in_uso}/${kpi.macchine_totali}`} hint={`${kpi.macchine_disponibili} disponibili`} accent="celeste" testId="kpi-macchine" />
-        <KpiCard icon={Warning} label="NC aperte" value={kpi.nc_aperte} hint="controllo qualità" accent="indaco" testId="kpi-nc" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <KpiCard icon={Users} label="Clienti" value={kpi.clienti_totali} hint={`${kpi.articoli_totali} articoli · ${kpi.listini_attivi} listini attivi`} testId="kpi-clienti" />
+        <KpiCard icon={Truck} label="DDT questo mese" value={kpi.ddt_mese} hint={`${kpi.ddt_oggi} oggi · ${kpi.ddt_non_fatturati} da fatturare`} accent="celeste" testId="kpi-ddt" />
+        <KpiCard icon={Receipt} label="Fatturato mese" value={`€ ${kpi.fatturato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`Incassato: € ${kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} testId="kpi-fatturato" />
+        <KpiCard icon={CurrencyEur} label="Sospesi" value={`€ ${kpi.sospesi_totale.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`${kpi.sospesi_count} fatture da incassare`} accent="amber-500" testId="kpi-sospesi" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KpiCard icon={Truck} label="Consegne oggi" value={kpi.consegne_oggi} accent="azzurro" testId="kpi-consegne-oggi" />
-        <KpiCard icon={CheckCircle} label="Puntualità" value={`${kpi.puntualita_pct}%`} hint="consegne consegnate" accent="celeste" testId="kpi-puntualita" />
-        <KpiCard icon={Receipt} label="Fatturato mese" value={`€ ${kpi.fatturato_mese.toLocaleString("it-IT")}`} accent="indaco" testId="kpi-fatturato" />
-        <KpiCard icon={TrendUp} label="Efficienza" value="94%" hint="media 7gg" accent="azzurro" testId="kpi-efficienza" />
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="lg:col-span-2 kpi-card" data-testid="chart-trend-kg">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="overline">Produzione ultimi 7 giorni</div>
-              <div className="font-display text-xl font-bold mt-1">Kg lavorati</div>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="kpi-card lg:col-span-2">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendUp size={20} className="text-indaco" weight="duotone" />
+            <h3 className="font-display text-lg font-bold">DDT ultimi 7 giorni</h3>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={kpi.trend_kg_7gg}>
+            <AreaChart data={kpi.trend_ddt_7gg}>
               <defs>
-                <linearGradient id="kgfill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.02} />
+                <linearGradient id="ddtGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="giorno" stroke="#94A3B8" fontSize={12} fontFamily="IBM Plex Mono" />
-              <YAxis stroke="#94A3B8" fontSize={12} fontFamily="IBM Plex Mono" />
-              <Tooltip contentStyle={{ background: "#0F172A", border: "none", borderRadius: 8, color: "white", fontFamily: "IBM Plex Mono", fontSize: 12 }} />
-              <Area type="monotone" dataKey="kg" stroke="#0EA5E9" strokeWidth={2.5} fill="url(#kgfill)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="giorno" fontSize={11} />
+              <YAxis fontSize={11} />
+              <Tooltip />
+              <Area type="monotone" dataKey="ddt" stroke="#6366f1" strokeWidth={2} fill="url(#ddtGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="kpi-card" data-testid="chart-stati">
-          <div className="overline mb-1">Distribuzione lotti</div>
-          <div className="font-display text-xl font-bold mb-4">Per stato</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={kpi.stati_distribution} layout="vertical" margin={{ left: 60 }}>
-              <CartesianGrid stroke="#E2E8F0" horizontal={false} strokeDasharray="3 3" />
-              <XAxis type="number" stroke="#94A3B8" fontSize={11} fontFamily="IBM Plex Mono" />
-              <YAxis dataKey="stato" type="category" stroke="#94A3B8" fontSize={11} fontFamily="IBM Plex Mono" width={90} />
-              <Tooltip contentStyle={{ background: "#0F172A", border: "none", borderRadius: 8, color: "white", fontSize: 12 }} />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                {kpi.stati_distribution.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Recent lots */}
-      <div className="kpi-card" data-testid="recent-lotti">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="overline">Attività recente</div>
-            <div className="font-display text-xl font-bold mt-1">Ultimi lotti</div>
+        <div className="kpi-card">
+          <div className="flex items-center gap-2 mb-3">
+            <Warning size={20} className="text-amber-500" weight="duotone" />
+            <h3 className="font-display text-lg font-bold">Alert operativi</h3>
           </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Lotto</th>
-                <th>Cliente</th>
-                <th>Quantità</th>
-                <th>Peso</th>
-                <th>Priorità</th>
-                <th>Stato</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lotti.slice(0, 8).map((l) => (
-                <tr key={l.id}>
-                  <td className="font-mono text-xs">{l.numero}</td>
-                  <td className="text-slate-600 text-xs">{l.cliente_id.slice(0, 8)}…</td>
-                  <td className="font-mono">{l.quantita}</td>
-                  <td className="font-mono">{l.peso} kg</td>
-                  <td><StatoBadge stato={l.priorita} /></td>
-                  <td><StatoBadge stato={l.stato_corrente} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <Package size={18} className="text-amber-600" weight="duotone" />
+                <span className="text-sm">Magazzino sottoscorta</span>
+              </div>
+              <span className="font-display text-2xl font-bold text-amber-600">{kpi.magazzino_allarmi}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-red-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <Warning size={18} className="text-red-600" weight="duotone" />
+                <span className="text-sm">Ticket manutenzione</span>
+              </div>
+              <span className="font-display text-2xl font-bold text-red-600">{kpi.tickets_aperti}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-indaco/10 rounded-md">
+              <div className="flex items-center gap-2">
+                <Receipt size={18} className="text-indaco" weight="duotone" />
+                <span className="text-sm">DDT non fatturati</span>
+              </div>
+              <span className="font-display text-2xl font-bold text-indaco">{kpi.ddt_non_fatturati}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -148,6 +148,7 @@ async def ensure_counters():
         "consegna": db.consegne,
         "fattura": db.fatture,
         "ticket": db.tickets,
+        "ddt": db.ddt,
     }
     for name, coll in mapping.items():
         existing = await db.counters.find_one({"_id": name})
@@ -322,42 +323,88 @@ async def seed_catalog_and_lotti():
         await db.macchine.insert_many(macchine_demo)
 
     if await db.lotti.count_documents({}) == 0:
-        clienti = await db.clienti.find({}, {"_id": 0}).to_list(100)
-        articoli = await db.articoli.find({}, {"_id": 0}).to_list(100)
-        if clienti and articoli:
-            random.seed(42)
-            stati_sample = list(STATI_LOTTO)
-            for i in range(30):
-                cli = random.choice(clienti)
-                art = random.choice(articoli)
-                stato = random.choice(stati_sample)
-                qta = random.randint(10, 200)
-                peso = round(qta * (art.get("peso_medio", 0.5) or 0.5), 1)
-                lid = new_id()
-                storico = []
-                idx = STATI_LOTTO.index(stato)
-                base_time = now_utc() - timedelta(hours=random.randint(1, 48))
-                for j in range(idx + 1):
-                    storico.append({
-                        "stato": STATI_LOTTO[j],
-                        "timestamp": base_time + timedelta(hours=j * 2),
-                        "operatore": "Sistema Demo",
-                        "note": "",
-                        "esito": "ok",
-                    })
-                await db.lotti.insert_one({
-                    "id": lid,
-                    "numero": f"LOT-{datetime.now().year}-{i + 1:06d}",
-                    "ritiro_id": "",
-                    "cliente_id": cli["id"],
-                    "articolo_id": art["id"],
-                    "quantita": qta,
-                    "peso": peso,
-                    "priorita": random.choice(["normale", "normale", "alta", "urgente"]),
-                    "stato_corrente": stato,
-                    "storico_stati": storico,
-                    "created_at": base_time,
+        pass  # Lotti sono stati rimossi dal modulo. Non creare più demo lotti.
+
+
+async def seed_listini_and_ddt():
+    """Seed demo listini + prezzi + DDT non fatturati per dimostrare il flusso."""
+    if await db.listini.count_documents({"tenant_id": {"$exists": True}}) > 0:
+        return
+    from core import DEMO_TENANT_ID
+    clienti = await db.clienti.find({"tenant_id": DEMO_TENANT_ID}, {"_id": 0}).to_list(100)
+    articoli = await db.articoli.find({"tenant_id": DEMO_TENANT_ID}, {"_id": 0}).to_list(100)
+    if not clienti or not articoli:
+        return
+
+    # 2 listini: Standard e VIP (prezzi +20%)
+    listino_std = {
+        "id": new_id(), "tenant_id": DEMO_TENANT_ID,
+        "nome": "Standard", "descrizione": "Listino standard", "attivo": True,
+        "created_at": now_utc(), "updated_at": now_utc(),
+    }
+    listino_vip = {
+        "id": new_id(), "tenant_id": DEMO_TENANT_ID,
+        "nome": "VIP Hotel 5 stelle", "descrizione": "Listino agevolato clienti top", "attivo": True,
+        "created_at": now_utc(), "updated_at": now_utc(),
+    }
+    await db.listini.insert_many([listino_std, listino_vip])
+
+    prezzi_std = []
+    prezzi_vip = []
+    for a in articoli:
+        base = float(a.get("prezzo", 1) or 1)
+        prezzi_std.append({
+            "tenant_id": DEMO_TENANT_ID, "listino_id": listino_std["id"],
+            "articolo_id": a["id"], "prezzo": round(base, 2), "updated_at": now_utc(),
+        })
+        prezzi_vip.append({
+            "tenant_id": DEMO_TENANT_ID, "listino_id": listino_vip["id"],
+            "articolo_id": a["id"], "prezzo": round(base * 0.9, 2), "updated_at": now_utc(),
+        })
+    if prezzi_std:
+        await db.listini_prezzi.insert_many(prezzi_std + prezzi_vip)
+
+    # Assign listino ai clienti: prime 2 → VIP, altri → Standard
+    for idx, cli in enumerate(clienti):
+        lid = listino_vip["id"] if idx < 2 else listino_std["id"]
+        await db.clienti.update_one({"id": cli["id"]}, {"$set": {"listino_id": lid}})
+
+    # Seed 6 DDT demo (non_fatturati) sui primi 2 clienti
+    import random as _r
+    _r.seed(11)
+    for i, cli in enumerate(clienti[:3]):
+        fresh_cli = await db.clienti.find_one({"id": cli["id"]}, {"_id": 0})
+        listino_id = fresh_cli.get("listino_id")
+        for k in range(2):
+            rows = []
+            imp = 0.0
+            for a in _r.sample(articoli, min(3, len(articoli))):
+                q = _r.randint(5, 80)
+                p_doc = await db.listini_prezzi.find_one({
+                    "tenant_id": DEMO_TENANT_ID, "listino_id": listino_id, "articolo_id": a["id"],
                 })
+                prezzo = float((p_doc or {}).get("prezzo", a.get("prezzo", 1)))
+                tot = round(prezzo * q, 2)
+                rows.append({
+                    "articolo_id": a["id"], "codice": a.get("codice", ""),
+                    "descrizione": a.get("descrizione", ""), "unita_misura": a.get("unita_misura", "pz"),
+                    "quantita": q, "prezzo_unitario": prezzo, "totale": tot,
+                })
+                imp += tot
+            seq = await __import__("core", fromlist=["next_seq"]).next_seq("ddt")
+            await db.ddt.insert_one({
+                "id": new_id(), "tenant_id": DEMO_TENANT_ID,
+                "numero": f"DDT-{datetime.now().year}-{seq:05d}",
+                "cliente_id": cli["id"], "cliente_nome": cli.get("ragione_sociale", ""),
+                "listino_id": listino_id,
+                "data": now_utc() - timedelta(days=_r.randint(1, 20)),
+                "note": "",
+                "righe": rows, "imponibile": round(imp, 2),
+                "stato_fatturazione": "non_fatturato",
+                "fattura_id": None, "fattura_numero": None,
+                "created_at": now_utc(), "updated_at": now_utc(),
+            })
+    logger.info("[SEED] Listini + DDT demo creati")
 
 
 async def seed_magazzino():
@@ -463,6 +510,7 @@ async def run_all():
     await seed_portale_cliente_user()
     await seed_magazzino()
     await seed_tickets()
+    await seed_listini_and_ddt()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

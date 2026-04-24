@@ -11,12 +11,13 @@ import { toast } from "sonner";
 
 const EMPTY = {
   ragione_sociale: "", partita_iva: "", codice_fiscale: "", indirizzo: "",
-  email: "", telefono: "", tipologia: "hotel", listino: "standard",
+  email: "", telefono: "", tipologia: "hotel", listino: "standard", listino_id: "",
   condizioni_pagamento: "30gg", giorni_ritiro: [], sla_ore: 48, note: "", attivo: true,
 };
 
 export default function Clienti() {
   const [list, setList] = useState([]);
+  const [listini, setListini] = useState([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -27,7 +28,12 @@ export default function Clienti() {
     setList(data);
   };
 
+  const fetchListini = async () => {
+    try { const { data } = await api.get("/listini?solo_attivi=true"); setListini(data); } catch {}
+  };
+
   useEffect(() => { fetch(); }, [q]);
+  useEffect(() => { fetchListini(); }, []);
 
   const save = async (e) => {
     e.preventDefault();
@@ -85,7 +91,17 @@ export default function Clienti() {
                 </div>
                 <div><Label>Condizioni pagamento</Label><Input value={form.condizioni_pagamento} onChange={e => setForm({...form, condizioni_pagamento: e.target.value})} /></div>
                 <div><Label>SLA (ore)</Label><Input type="number" value={form.sla_ore} onChange={e => setForm({...form, sla_ore: parseInt(e.target.value)})} /></div>
-                <div><Label>Listino</Label><Input value={form.listino} onChange={e => setForm({...form, listino: e.target.value})} /></div>
+                <div className="col-span-2">
+                  <Label>Listino associato</Label>
+                  <Select value={form.listino_id || "none"} onValueChange={v => setForm({...form, listino_id: v === "none" ? null : v})}>
+                    <SelectTrigger data-testid="cliente-listino"><SelectValue placeholder="Nessuno (usa prezzi default)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Nessun listino —</SelectItem>
+                      {listini.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {listini.length === 0 && <p className="text-xs text-amber-700 mt-1">Nessun listino disponibile. Creane uno nella sezione Listini.</p>}
+                </div>
                 <div className="col-span-2"><Label>Note</Label><Input value={form.note} onChange={e => setForm({...form, note: e.target.value})} /></div>
                 <div className="col-span-2 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-cliente-btn">Salva</Button></div>
               </form>
@@ -111,7 +127,7 @@ export default function Clienti() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Ragione sociale</th><th>Tipologia</th><th>P.IVA</th><th>Contatto</th><th>SLA</th><th>Azioni</th>
+                <th>Ragione sociale</th><th>Tipologia</th><th>P.IVA</th><th>Listino</th><th>SLA</th><th>Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -130,7 +146,13 @@ export default function Clienti() {
                   </td>
                   <td><span className="text-xs uppercase tracking-wider text-slate-500">{c.tipologia}</span></td>
                   <td className="font-mono text-xs">{c.partita_iva || "—"}</td>
-                  <td><div className="text-xs">{c.email}</div><div className="text-xs text-slate-500 font-mono">{c.telefono}</div></td>
+                  <td>
+                    {c.listino_id ? (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-indaco/10 text-indaco">
+                        {listini.find(l => l.id === c.listino_id)?.nome || "—"}
+                      </span>
+                    ) : <span className="text-xs text-slate-400">—</span>}
+                  </td>
                   <td><span className="font-mono text-xs">{c.sla_ore}h</span></td>
                   <td>
                     <div className="flex gap-1">

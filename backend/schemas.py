@@ -24,7 +24,8 @@ class ClienteIn(BaseModel):
     email: Optional[str] = ""
     telefono: Optional[str] = ""
     tipologia: str = "hotel"
-    listino: str = "standard"
+    listino: str = "standard"  # legacy display-only
+    listino_id: Optional[str] = None  # FK to listini
     condizioni_pagamento: str = "30gg"
     giorni_ritiro: List[int] = Field(default_factory=list)
     sla_ore: int = 48
@@ -189,6 +190,7 @@ class PatchClienteIn(_PatchBase):
     telefono: Optional[str] = None
     tipologia: Optional[str] = None
     listino: Optional[str] = None
+    listino_id: Optional[str] = None
     condizioni_pagamento: Optional[str] = None
     giorni_ritiro: Optional[List[int]] = None
     sla_ore: Optional[int] = None

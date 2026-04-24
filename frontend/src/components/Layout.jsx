@@ -5,20 +5,18 @@ import TrialBanner from "./TrialBanner";
 import {
   ChartBar, Users, Package, HardDrives, ClipboardText, Path, Kanban,
   ShieldCheck, Truck, Receipt, UserList, Hand, DeviceMobile, Storefront,
-  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard, ChartLineUp, Crown,
+  SignOut, List, X, Sparkle, Drop, Wrench, ChatCircleText, Scan, CreditCard, ChartLineUp, Crown, CurrencyEur,
 } from "@phosphor-icons/react";
 
 const ALL_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: ChartBar, roles: ["admin", "produzione", "logistica", "qualita", "contabilita"] },
   { to: "/clienti", label: "Clienti", icon: Users, roles: ["admin", "contabilita", "logistica"] },
   { to: "/articoli", label: "Articoli", icon: Package, roles: ["admin", "contabilita", "produzione"] },
+  { to: "/listini", label: "Listini", icon: Receipt, roles: ["admin", "contabilita"] },
   { to: "/macchine", label: "Macchine", icon: HardDrives, roles: ["admin", "produzione"] },
-  { to: "/accettazione", label: "Accettazione", icon: ClipboardText, roles: ["admin", "logistica", "produzione"] },
-  { to: "/lotti", label: "Tracciabilità Lotti", icon: Path, roles: ["admin", "produzione", "qualita", "logistica"] },
-  { to: "/produzione", label: "Produzione MES", icon: Kanban, roles: ["admin", "produzione"] },
-  { to: "/qualita", label: "Controllo Qualità", icon: ShieldCheck, roles: ["admin", "qualita", "produzione"] },
-  { to: "/logistica", label: "Logistica", icon: Truck, roles: ["admin", "logistica"] },
+  { to: "/ddt", label: "D.D.T.", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
   { to: "/fatture", label: "Fatturazione", icon: Receipt, roles: ["admin", "contabilita"] },
+  { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, roles: ["admin", "contabilita"] },
   { to: "/magazzino", label: "Magazzino", icon: Drop, roles: ["admin", "produzione", "contabilita", "logistica"] },
   { to: "/manutenzione", label: "Manutenzione", icon: Wrench, roles: ["admin", "produzione"] },
   { to: "/notifiche", label: "Notifiche", icon: ChatCircleText, roles: ["admin", "logistica", "produzione", "qualita"] },

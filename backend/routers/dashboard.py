@@ -1,11 +1,8 @@
-"""Dashboard KPIs, audit log, health.
-
-Uses native BSON datetime fields for efficient range queries.
-"""
+"""Dashboard KPIs (ERP/DDT flow)."""
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, require_roles, STATI_LOTTO, tenant_scope, merge_scope
+from core import db, get_current_user, require_roles, tenant_scope
 
 router = APIRouter(tags=["dashboard"])
 
@@ -22,23 +19,47 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     first_day_month = today_start.replace(day=1)
     scope = tenant_scope(user)
 
-    lotti_totali = await db.lotti.count_documents(scope)
-    lotti_attivi = await db.lotti.count_documents({**scope, "stato_corrente": {"$nin": ["consegnato"]}})
-    lotti_oggi = await db.lotti.find(
-        {**scope, "created_at": {"$gte": today_start, "$lt": tomorrow_start}},
-        {"peso": 1, "_id": 0},
+    clienti_tot = await db.clienti.count_documents(scope)
+    articoli_tot = await db.articoli.count_documents(scope)
+    listini_tot = await db.listini.count_documents({**scope, "attivo": True})
+
+    # DDT
+    ddt_mese = await db.ddt.count_documents({**scope, "data": {"$gte": first_day_month}})
+    ddt_non_fatturati = await db.ddt.count_documents({**scope, "stato_fatturazione": "non_fatturato"})
+    ddt_oggi = await db.ddt.count_documents({**scope, "created_at": {"$gte": today_start, "$lt": tomorrow_start}})
+
+    # Fatture
+    fatture_mese_docs = await db.fatture.find(
+        {**scope, "data": {"$gte": first_day_month}}, {"totale": 1, "stato_incasso": 1, "_id": 0}
     ).to_list(5000)
-    kg_oggi = sum(l.get("peso", 0) for l in lotti_oggi)
+    fatturato_mese = sum(f.get("totale", 0) for f in fatture_mese_docs)
 
-    macchine = await db.macchine.find(scope, {"_id": 0}).to_list(500)
-    macchine_in_uso = sum(1 for m in macchine if m.get("stato") == "in_uso")
-    macchine_disp = sum(1 for m in macchine if m.get("stato") == "disponibile")
+    # Sospesi (da_incassare)
+    sospesi_docs = await db.fatture.find(
+        {**scope, "stato_incasso": "da_incassare"}, {"totale": 1, "_id": 0}
+    ).to_list(5000)
+    sospesi_totale = sum(f.get("totale", 0) for f in sospesi_docs)
+    sospesi_count = len(sospesi_docs)
 
-    nc_aperte = await db.non_conformita.count_documents({**scope, "stato": "aperta"})
-    tickets_aperti = await db.tickets.count_documents({**scope, "stato": {"$in": ["aperto", "in_lavorazione"]}})
+    # Incassato questo mese
+    incassate_docs = await db.fatture.find(
+        {**scope, "stato_incasso": "incassata", "data_incasso": {"$gte": first_day_month}},
+        {"totale": 1, "_id": 0},
+    ).to_list(5000)
+    incassato_mese = sum(f.get("totale", 0) for f in incassate_docs)
 
-    # Magazzino: conta gli articoli in allarme (scorta <= minima oppure scadenza imminente/scaduta)
-    magazzino_items = await db.magazzino.find(scope, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}).to_list(2000)
+    # Trend DDT 7gg (count per day)
+    trend = []
+    for i in range(6, -1, -1):
+        day_start = today_start - timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
+        c = await db.ddt.count_documents({**scope, "data": {"$gte": day_start, "$lt": day_end}})
+        trend.append({"giorno": day_start.strftime("%m-%d"), "ddt": c})
+
+    # Magazzino allarmi (kept for warehouse module)
+    magazzino_items = await db.magazzino.find(
+        scope, {"_id": 0, "scorta_attuale": 1, "scorta_minima": 1, "scadenza": 1}
+    ).to_list(2000)
     magazzino_allarmi = 0
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     for it in magazzino_items:
@@ -52,64 +73,23 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
                 alarm = True
         if alarm:
             magazzino_allarmi += 1
-    consegne_oggi = await db.consegne.count_documents(
-        {**scope, "data_prevista": {"$gte": today_start, "$lt": tomorrow_start}}
-    )
 
-    # Real punctuality KPI
-    consegne_consegnate = await db.consegne.find(
-        {**scope, "stato": "consegnata"},
-        {"data_prevista": 1, "data_consegna_effettiva": 1, "_id": 0},
-    ).to_list(5000)
-    total_delivered = len(consegne_consegnate)
-    puntuali = sum(
-        1 for c in consegne_consegnate
-        if c.get("data_consegna_effettiva") and c.get("data_prevista")
-        and c["data_consegna_effettiva"] <= c["data_prevista"]
-    )
-    puntualita_pct = round((puntuali / total_delivered * 100) if total_delivered else 100.0, 1)
-
-    fatture_mese = await db.fatture.find(
-        {**scope, "data": {"$gte": first_day_month}}, {"totale": 1, "_id": 0}
-    ).to_list(2000)
-    fatturato_mese = sum(f.get("totale", 0) for f in fatture_mese)
-
-    # Trend last 7 days
-    trend = []
-    for i in range(6, -1, -1):
-        day_start = today_start - timedelta(days=i)
-        day_end = day_start + timedelta(days=1)
-        lotti_d = await db.lotti.find(
-            {**scope, "created_at": {"$gte": day_start, "$lt": day_end}},
-            {"peso": 1, "_id": 0},
-        ).to_list(5000)
-        trend.append({
-            "giorno": day_start.strftime("%m-%d"),
-            "kg": round(sum(l.get("peso", 0) for l in lotti_d), 1),
-        })
-
-    stati_dist = []
-    for s in STATI_LOTTO:
-        c = await db.lotti.count_documents({**scope, "stato_corrente": s})
-        stati_dist.append({"stato": s, "count": c})
+    tickets_aperti = await db.tickets.count_documents({**scope, "stato": {"$in": ["aperto", "in_lavorazione"]}})
 
     return {
-        "kg_oggi": round(kg_oggi, 1),
-        "lotti_totali": lotti_totali,
-        "lotti_attivi": lotti_attivi,
-        "macchine_in_uso": macchine_in_uso,
-        "macchine_disponibili": macchine_disp,
-        "macchine_totali": len(macchine),
-        "nc_aperte": nc_aperte,
-        "tickets_aperti": tickets_aperti,
-        "magazzino_allarmi": magazzino_allarmi,
-        "consegne_oggi": consegne_oggi,
-        "consegne_consegnate": total_delivered,
-        "consegne_puntuali": puntuali,
-        "puntualita_pct": puntualita_pct,
+        "clienti_totali": clienti_tot,
+        "articoli_totali": articoli_tot,
+        "listini_attivi": listini_tot,
+        "ddt_mese": ddt_mese,
+        "ddt_oggi": ddt_oggi,
+        "ddt_non_fatturati": ddt_non_fatturati,
         "fatturato_mese": round(fatturato_mese, 2),
-        "trend_kg_7gg": trend,
-        "stati_distribution": stati_dist,
+        "incassato_mese": round(incassato_mese, 2),
+        "sospesi_totale": round(sospesi_totale, 2),
+        "sospesi_count": sospesi_count,
+        "magazzino_allarmi": magazzino_allarmi,
+        "tickets_aperti": tickets_aperti,
+        "trend_ddt_7gg": trend,
     }
 
 
@@ -120,7 +100,7 @@ async def get_audit(user: Dict = Depends(require_roles("admin")), limit: int = 5
 
 @router.get("/")
 async def root():
-    return {"app": "CleanTec", "status": "ok", "version": "1.2.0"}
+    return {"app": "CleanTec", "status": "ok", "version": "2.0.0"}
 
 
 @router.get("/health")
