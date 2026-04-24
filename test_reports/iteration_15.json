@@ -1,0 +1,56 @@
+{
+  "summary": "FASE 3a — Offerte & Preventivi + conversione in Contratto + PDF. Backend 19/19 pytest PASS (termini-templates GET/POST RBAC, offerte POST/GET filters/PATCH/DELETE, conversione CT progressivo, gates 409/400/403, PDF offerta + PDF contratto >10KB %PDF-1.4). Frontend /offerte fully working: sidebar 'Offerte & Preventivi' tra Listini e D.D.T., form dialog con cliente/durata=12/scadenza+30gg, add-riga, preview live sconto con line-through, termini templates dropdown (4 opzioni), salvataggio crea riga in tabella, workflow bozza→inviata→accettata→contratto OK, CT-YYYY reso in prima cella, PDF contratto button visibile, logistica NON vede sidebar item né può navigare /offerte (redirect /dashboard). Regression: /dashboard /clienti /articoli /listini /ddt /fatture /sospesi /azienda tutte caricate senza error-boundary.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dialog Offerte", "issues": ["Come per iter-14 rimane warning Radix DialogContent 'Missing Description or aria-describedby' (a11y, non bloccante)."]}
+    ]
+  },
+  "verified_features": [
+    "BE GET /api/termini-templates: seed 4 template (Modalità pagamento, Durata e rinnovo, Responsabilità, Foro competente) visibili ad admin + contabilita",
+    "BE POST /api/termini-templates admin → 200 + persist; contabilita → 403 (solo admin)",
+    "BE POST /api/offerte → numero OF-YYYY-NNNNN progressivo, stato=bozza, cliente_snapshot popolato, imponibile/sconto_totale calcolati",
+    "BE POST /api/offerte formula sconto: prezzo_finale = max(0, prezzo*(1-perc/100) - eur) verificata con perc=10 eur=0.5",
+    "BE POST /api/offerte validation: cliente inesistente→404, righe vuote→400 'Almeno una riga', articolo inesistente→400",
+    "BE RBAC POST /api/offerte con logistica → 403",
+    "BE GET /api/offerte + filtri ?stato=bozza ?cliente_id=X funzionanti",
+    "BE PATCH /api/offerte stato bozza→inviata→accettata OK; PATCH su stato=contratto → 409",
+    "BE POST /api/offerte/{id}/converti-contratto su accettata → 200 + CT-YYYY-NNNNN (counter separato)",
+    "BE converti doppio → 409; converti su rifiutata → 400",
+    "BE DELETE /api/offerte/{id} su contratto → 409 'Contratto attivo'",
+    "BE GET /api/offerte/{id}/pdf: Content-Type application/pdf, starts with %PDF-1.4, size >10KB",
+    "BE GET /api/offerte/{id}/pdf?tipo=contratto su stato≠contratto → 400; su stato=contratto → 200 PDF OK",
+    "FE /offerte accessibile admin; logistica NON vede link né può accedere (redirect /dashboard)",
+    "FE sidebar: 'Offerte & Preventivi' posizionato tra 'Listini' e 'D.D.T.' (HandHeart icon)",
+    "FE 'Nuova offerta' apre dialog: durata default 12, scadenza default +30gg, cliente select (26 opzioni), righe vuote, termini vuoti",
+    "FE 'Aggiungi riga' crea riga con select articolo (6 opzioni), q.tà, sconto%, sconto€; preview live con line-through + prezzo finale + totale",
+    "FE dropdown 'Template…' presenta i 4 template seed; selezione inserisce termine-0 precompilato",
+    "FE Salva → dialog chiuso + riga appare in tabella con numero OF-YYYY",
+    "FE workflow: bottone Invia (bozza→inviata), Accetta (inviata→accettata), Handshake converti-contratto (conferma JS + CT-YYYY reso + pdf-ct button appare + edit/delete nascosti)",
+    "FE regression: /dashboard /clienti /articoli /listini /ddt /fatture /sospesi /azienda load OK (0 error-boundary)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_phase3a.py",
+    "/app/test_reports/pytest/iter15_phase3a.xml"
+  ],
+  "critical_code_review_comments": [
+    "routers/offerte.py PATCH body schema OffertaPatch NON permette stato='contratto' (solo bozza/inviata/accettata/rifiutata): corretto perché la transizione verso contratto è atomica via endpoint dedicato. OK.",
+    "routers/offerte.py /pdf: il check 'tipo==contratto' è fatto solo per stato; però non previene tipo arbitrari diversi da offerta/contratto (silenziosamente tratta come offerta). Minor — aggiungere validazione Literal['offerta','contratto'] via Query param.",
+    "Offerte.jsx preview client-side usa sempre prezzo_lavaggio come base; se il listino del cliente è di tipo 'noleggio' il preview visualizzato sarà incoerente col totale ricalcolato server-side (ricalcolo server è corretto, ma UX può confondere). Raccomandato usare il listino del cliente per determinare prezzo_default nel preview.",
+    "Offerte.jsx: dialogo senza DialogDescription → warning Radix (a11y) persistente dalla fase 2a.",
+    "Offerte.jsx termini templates select: dopo la selezione di un template il trigger non si 'resetta' (manca key/reset) — se l'utente vuole inserire lo stesso template due volte, il select stays on previous value (poi filtrato con toast.info 'Già inserito'). Minor UX.",
+    "Nessuna paginazione su GET /api/offerte (hard cap 200): acceptable per MVP ma da ricordare quando il volume cresce."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_phase3a.py"
+  ],
+  "success_rate": { "backend": "100% (19/19)", "frontend": "100% (all flows verified)" },
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123 (DEMO tenant)",
+  "seed_data_creation": "Test creates temporary offerte (2 di cui una convertita in contratto CT-2026-00002) che rimangono in DB demo. Template TEST_clausola_X creato e rimosso in-test. Pulizia manuale: db.offerte.deleteMany({note: /TEST_/}) se necessario.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 3a verde. Counter 'offerta' e 'contratto' separati funzionano correttamente (OF-2026-0000X vs CT-2026-0000X). Tenant-scoping verificato a livello query (merge_scope); non ho creato un secondo tenant per il test cross-tenant ma l'enforcement è identico a fatture/ddt già provati in fase 1-2. Prossimi step suggeriti: gestione signature+timbro PDF contratto (attualmente placeholder boxes), editor visuale termini (WYSIWYG), conversione inversa contratto→offerta è volutamente bloccata (immutabile).",
+  "rca of the issue": "Nessun bug trovato — tutti i test PASS."
+}

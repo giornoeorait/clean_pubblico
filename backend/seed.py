@@ -12,6 +12,7 @@ logger = logging.getLogger("cleantec.seed")
 TENANT_SCOPED_COLLECTIONS = [
     "users", "clienti", "articoli",
     "listini", "listini_prezzi", "ddt", "fatture",
+    "offerte", "termini_templates",
     "audit_log", "files",
 ]
 
@@ -100,6 +101,11 @@ async def ensure_indexes():
     await db.fatture.create_index("cliente_id")
     await db.fatture.create_index("data")
     await db.fatture.create_index("stato_incasso")
+    await db.offerte.create_index("id", unique=True)
+    await db.offerte.create_index("cliente_id")
+    await db.offerte.create_index("stato")
+    await db.offerte.create_index("numero")
+    await db.termini_templates.create_index("id", unique=True)
     await db.audit_log.create_index("timestamp")
     await db.tenants.create_index("id", unique=True)
     await db.tenants.create_index("slug", unique=True)
@@ -118,12 +124,36 @@ async def ensure_counters():
     mapping = {
         "fattura": db.fatture,
         "ddt": db.ddt,
+        "offerta": db.offerte,
+        "contratto": db.offerte,
     }
     for name, coll in mapping.items():
         existing = await db.counters.find_one({"_id": name})
         if existing is None:
-            count = await coll.count_documents({})
+            if name == "contratto":
+                count = await db.offerte.count_documents({"stato": "contratto"})
+            else:
+                count = await coll.count_documents({})
             await db.counters.insert_one({"_id": name, "seq": count})
+
+
+async def seed_termini_templates():
+    if await db.termini_templates.count_documents({"tenant_id": DEMO_TENANT_ID}) > 0:
+        return
+    defaults = [
+        {"titolo": "1. Modalità di pagamento",
+         "testo": "Il pagamento dei corrispettivi avverrà entro 30 giorni data fattura, a mezzo bonifico bancario sulle coordinate riportate in fattura. In caso di ritardo si applicheranno gli interessi legali ex D.lgs. 231/2002."},
+        {"titolo": "2. Durata e rinnovo",
+         "testo": "Il presente contratto ha la durata indicata nell'offerta decorrente dalla data di attivazione del servizio. Alla scadenza si rinnoverà tacitamente per ulteriori 12 mesi salvo disdetta con preavviso di 90 giorni mediante raccomandata A/R o PEC."},
+        {"titolo": "3. Responsabilità e assicurazione",
+         "testo": "Il Fornitore è responsabile dei capi affidati in misura pari al valore convenzionale indicato nel listino. Sono escluse dalla responsabilità le rotture dovute a usura naturale, a difetti del tessuto o a macchie indelebili preesistenti non segnalate."},
+        {"titolo": "4. Foro competente",
+         "testo": "Per qualsiasi controversia relativa all'interpretazione ed all'esecuzione del presente contratto sarà competente in via esclusiva il Foro della sede legale del Fornitore."},
+    ]
+    for d in defaults:
+        d.update({"id": new_id(), "tenant_id": DEMO_TENANT_ID, "created_at": now_utc(), "updated_at": now_utc()})
+    await db.termini_templates.insert_many(defaults)
+    logger.info(f"[SEED] termini templates: {len(defaults)}")
 
 
 async def seed_admin_and_users():
@@ -345,6 +375,7 @@ async def run_all():
     await seed_admin_and_users()
     await seed_clienti_articoli()
     await seed_listini_and_ddt()
+    await seed_termini_templates()
     await migrate_phase2()
     await backfill_tenant_id()
     await ensure_indexes()

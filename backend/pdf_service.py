@@ -216,3 +216,134 @@ def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: 
     el.append(Spacer(1, 10*mm))
     el.append(Paragraph("Fattura di cortesia — non sostituisce la fattura elettronica SDI.", st["small"]))
     return _build(el)
+
+
+def _offerta_rows_table(righe: List[Dict], st: Dict) -> Table:
+    header = [
+        Paragraph("<b>Codice</b>", st["body"]),
+        Paragraph("<b>Descrizione</b>", st["body"]),
+        Paragraph("<b>Q.tà</b>", st["right"]),
+        Paragraph("<b>Listino</b>", st["right"]),
+        Paragraph("<b>Sconto</b>", st["right"]),
+        Paragraph("<b>Unit.</b>", st["right"]),
+        Paragraph("<b>Totale</b>", st["right"]),
+    ]
+    data = [header]
+    for r in righe:
+        sc_perc = float(r.get("sconto_perc", 0) or 0)
+        sc_eur = float(r.get("sconto_eur", 0) or 0)
+        sconto_txt = ""
+        if sc_perc:
+            sconto_txt += f"-{sc_perc:g}%"
+        if sc_eur:
+            sconto_txt += f" -€{sc_eur:.2f}" if sconto_txt else f"-€{sc_eur:.2f}"
+        data.append([
+            Paragraph(r.get("codice", ""), st["mono"]),
+            Paragraph(r.get("descrizione", ""), st["body"]),
+            Paragraph(f"{r.get('quantita', 0):g} {r.get('unita_misura', 'pz')}", st["right"]),
+            Paragraph(f"€ {float(r.get('prezzo_unitario', 0)):.2f}", st["right"]),
+            Paragraph(sconto_txt or "—", st["right"]),
+            Paragraph(f"€ {float(r.get('prezzo_finale', 0)):.2f}", st["right"]),
+            Paragraph(f"<b>€ {float(r.get('totale', 0)):.2f}</b>", st["right"]),
+        ])
+    t = Table(data, colWidths=[22*mm, 50*mm, 20*mm, 22*mm, 18*mm, 20*mm, 23*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, INDACO),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.3, SLATE_200),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return t
+
+
+def generate_offerta_pdf(offerta: Dict, cliente: Dict, company: Dict, as_contratto: bool = False) -> bytes:
+    st = _styles()
+    el: List = []
+    el.append(_header_table(company, cliente, st))
+    el.append(Spacer(1, 6*mm))
+
+    if as_contratto:
+        numero = offerta.get("contratto_numero", "")
+        title = f"<b>CONTRATTO DI SERVIZIO N. {numero}</b>"
+        data_emissione = offerta.get("contratto_data") or offerta.get("data_creazione")
+        subtitle = f"Origine: Offerta {offerta.get('numero','')} · Data attivazione: {_fmt_date(data_emissione)}"
+    else:
+        numero = offerta.get("numero", "")
+        title = f"<b>OFFERTA COMMERCIALE {numero}</b>"
+        subtitle = f"Data: {_fmt_date(offerta.get('data_creazione'))}"
+        if offerta.get("data_scadenza"):
+            subtitle += f" · Validità fino al {_fmt_date(offerta['data_scadenza'])}"
+
+    el.append(Paragraph(title, ParagraphStyle("tit", parent=st["h1"], fontSize=16, textColor=INDACO)))
+    el.append(Paragraph(subtitle, st["small"]))
+    el.append(Spacer(1, 4*mm))
+
+    # Meta block
+    meta_data = [
+        [Paragraph("<b>Durata contratto</b>", st["body"]),
+         Paragraph(f"{offerta.get('durata_mesi', 12)} mesi", st["body"])],
+    ]
+    if offerta.get("listino_id"):
+        meta_data.append([Paragraph("<b>Listino applicato</b>", st["body"]),
+                          Paragraph("Riferimento interno", st["body"])])
+    mt = Table(meta_data, colWidths=[45*mm, 130*mm], style=TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    el.append(mt)
+    el.append(Spacer(1, 4*mm))
+
+    # Items
+    el.append(_offerta_rows_table(offerta.get("righe", []), st))
+    el.append(Spacer(1, 3*mm))
+
+    # Totals
+    sconto_tot = float(offerta.get("sconto_totale", 0) or 0)
+    if sconto_tot > 0:
+        el.append(Paragraph(
+            f"<b>Risparmio totale sconto: € {sconto_tot:.2f}</b>",
+            ParagraphStyle("sc", parent=st["right"], fontName="Helvetica-Bold", fontSize=10, textColor=colors.HexColor("#059669")),
+        ))
+    el.append(Paragraph(
+        f"<b>Imponibile: € {float(offerta.get('imponibile', 0)):.2f}</b>",
+        ParagraphStyle("tot2", parent=st["right"], fontName="Helvetica-Bold", fontSize=12, textColor=INDACO),
+    ))
+    el.append(Spacer(1, 6*mm))
+
+    # Termini & Condizioni
+    termini = offerta.get("termini_condizioni", [])
+    if termini:
+        el.append(Paragraph("<b>Termini e Condizioni</b>", st["h2"]))
+        el.append(Spacer(1, 2*mm))
+        for t in termini:
+            titolo = (t.get("titolo") or "").strip()
+            testo = (t.get("testo") or "").strip()
+            if titolo:
+                el.append(Paragraph(f"<b>{titolo}</b>", st["body"]))
+            if testo:
+                el.append(Paragraph(testo.replace("\n", "<br/>"), st["small"]))
+            el.append(Spacer(1, 2*mm))
+
+    if offerta.get("note"):
+        el.append(Spacer(1, 2*mm))
+        el.append(Paragraph("<b>Note</b>", st["body"]))
+        el.append(Paragraph(offerta["note"], st["small"]))
+
+    el.append(Spacer(1, 10*mm))
+    if as_contratto:
+        # Signature boxes
+        sig = Table([[
+            Paragraph("<b>Per il Fornitore</b><br/><br/><br/>____________________<br/><font size=8>Timbro e firma</font>", st["body"]),
+            Paragraph("<b>Per il Cliente</b><br/><br/><br/>____________________<br/><font size=8>Timbro e firma</font>", st["body"]),
+        ]], colWidths=[85*mm, 85*mm])
+        el.append(sig)
+    else:
+        el.append(Paragraph(
+            "La presente offerta commerciale ha valore di proposta contrattuale. L'accettazione avviene con sottoscrizione o comunicazione scritta.",
+            st["small"],
+        ))
+    return _build(el)
+

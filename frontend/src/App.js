@@ -22,6 +22,7 @@ import Billing from "./pages/Billing";
 import SuperAdmin from "./pages/SuperAdmin";
 import Branding from "./pages/Branding";
 import Azienda from "./pages/Azienda";
+import Offerte from "./pages/Offerte";
 import VerifyEmail from "./pages/VerifyEmail";
 
 function WithLayout({ children, roles }) {
@@ -62,6 +63,7 @@ export default function App() {
               <Route path="/ddt" element={<WithLayout roles={["admin","logistica","contabilita"]}><DDT /></WithLayout>} />
               <Route path="/fatture" element={<WithLayout roles={["admin","contabilita"]}><Fatture /></WithLayout>} />
               <Route path="/sospesi" element={<WithLayout roles={["admin","contabilita"]}><Sospesi /></WithLayout>} />
+              <Route path="/offerte" element={<WithLayout roles={["admin","contabilita"]}><Offerte /></WithLayout>} />
               <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
               <Route path="/azienda" element={<WithLayout roles={["admin"]}><Azienda /></WithLayout>} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
