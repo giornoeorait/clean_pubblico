@@ -1,0 +1,46 @@
+{
+  "summary": "Post-refactor (24 Apr 2026) commercial-flow validation: 21/21 backend pytest passed + full frontend e2e via Playwright. Clienti -> Articoli -> Listini -> DDT (auto-price) -> Fatture (aggregate) -> Sospesi (incassa) flow end-to-end working. Multi-tenant isolation verified. 14 legacy routes correctly redirect to /dashboard. No legacy MES/magazzino/manutenzione leakage in UI or KPI. Two minor spec/impl discrepancies surfaced, none blocking.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/fatture",
+        "issue": "Numero fattura prefix is 'FT-YYYY-NNNNN' (billing.py line 91) but spec in review request states 'FAT-YYYY-NNNNN'. Decide and align spec/code."
+      },
+      {
+        "endpoint": "GET /api/tenants/me (DEMO tenant)",
+        "issue": "DEMO tenant document persisted pre-refactor still has legacy keys limits.lotti_monthly and usage.lotti_this_month (no ddt_monthly/ddt_this_month). ensure_demo_tenant in seed.py does not migrate existing records. New registrations get correct ddt_this_month. Impact: Billing.jsx for admin@cleantec.it may read wrong/missing usage key, and quota bypass hides the issue. Fix: add one-shot migration in seed that $rename or $unset+$set lotti_* -> ddt_* on existing tenants."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_commercial.py",
+    "/app/test_reports/pytest/iter10_results.xml"
+  ],
+  "action_items": [
+    "Align invoice numbering: either change code to 'FAT-' or update the spec/doc to 'FT-' (currently 'FT-2026-00045').",
+    "Write a one-off seed migration that renames limits.lotti_monthly->ddt_monthly and usage.lotti_this_month->ddt_this_month on the pre-existing DEMO tenant document so /api/tenants/me returns the new shape consistently (new tenants already correct).",
+    "Optional: hide 'magazzino' keyword still inside usage/limits legacy fields from tenants/me response for DEMO."
+  ],
+  "critical_code_review_comments": [
+    "seed.ensure_demo_tenant only creates new DEMO tenant; it does NOT migrate an existing one. After the 24 Apr refactor the DEMO tenant in DB still carries legacy lotti_* keys. Add explicit migration step.",
+    "require_roles() always implicitly allows 'admin' (core.py line 202-203). Good for convenience but means explicit allowlists in routers are somewhat misleading; document this behaviour.",
+    "enforce_quota() reads resource 'ddt_monthly' from tenant.limits. For any tenant whose limits still contain lotti_monthly (like DEMO), the lookup returns 0, which would block DDT creation if not for the is_demo bypass — risk if a non-demo pre-refactor tenant exists.",
+    "GET /api/sospesi returns an object {fatture: [...]} while many other list endpoints return a bare array. Inconsistent shape; consider standardising."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_commercial.py"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (all flows and route redirects validated)"},
+  "test_credentials": "Uses /app/memory/test_credentials.md (admin@cleantec.it/admin123, logistica@cleantec.it/logistica123, contabilita@cleantec.it/contabilita123, super@cleantec.it/Superadmin123!) — all valid.",
+  "seed_data_creation": "Tests rely on existing DEMO seed (5 clienti, 6 articoli, 2 listini, 6+ DDT). TestFatturazione creates a fresh DDT each run then invoices it (self-contained). TestRegistration creates a new tenant TEST_<random> in DB (not cleaned up) — consider periodic cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full commercial flow is green. If fixing the two minor items, re-run backend/tests/test_iter10_commercial.py and verify /api/tenants/me for admin@cleantec.it now exposes usage.ddt_this_month instead of lotti_this_month. Frontend is clean — only console 401s pre-login which are expected. DDT seq counter is now at ~16 because of prior test runs; this is fine.",
+  "rca_of_minor_issues": "DEMO tenant was seeded before the MES->commercial refactor; seed.ensure_demo_tenant has an if-not-exists guard so the existing document is never re-shaped. Proper fix: after ensure_demo_tenant insert block, add an $unset/$set migration that converts lotti_* keys to ddt_* on the DEMO tenant doc (idempotent). Invoice prefix mismatch is pure spec vs code drift — billing.py line 91 hardcodes 'FT-'."
+}
