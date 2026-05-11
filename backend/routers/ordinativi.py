@@ -246,6 +246,95 @@ async def revoca_portale_token(cid: str, user: Dict = Depends(require_roles("adm
     return {"ok": True}
 
 
+class InviaLinkIn(BaseModel):
+    tipo: Literal["self_service", "diretto"] = "self_service"
+    to_override: Optional[str] = None
+    base_url: Optional[str] = None  # origin del frontend (es. https://app.cleantec.it)
+
+
+@router.post("/clienti/{cid}/invia-link-portale")
+async def invia_link_portale(cid: str, body: InviaLinkIn,
+                             user: Dict = Depends(require_roles("admin", "contabilita"))):
+    """Invia via email al cliente il link al portale (self-service o diretto)."""
+    from smtp_service import send_email, is_smtp_configured
+
+    cli = await db.clienti.find_one(merge_scope(user, {"id": cid}), {"_id": 0})
+    if not cli:
+        raise HTTPException(404, "Cliente non trovato")
+    if not cli.get("attivo", True):
+        raise HTTPException(400, "Cliente disattivato")
+
+    to_email = (body.to_override or cli.get("email") or "").strip()
+    if not to_email or "@" not in to_email:
+        raise HTTPException(400, "Email cliente mancante o non valida — aggiorna l'anagrafica")
+
+    company = await db.company.find_one({"tenant_id": cli["tenant_id"]}, {"_id": 0}) or {}
+
+    if body.tipo == "diretto":
+        token = cli.get("portale_token")
+        if not token:
+            # genera al volo se mancante
+            token = secrets.token_urlsafe(24)
+            await db.clienti.update_one(merge_scope(user, {"id": cid}),
+                                        {"$set": {"portale_token": token, "portale_token_created_at": now_utc()}})
+        link_path = f"/ordina/{token}"
+        link_label = "link diretto al catalogo"
+    else:
+        link_path = "/portale"
+        link_label = "link al portale (accedi con la tua P.IVA o Codice Fiscale)"
+
+    # URL completo: priority a base_url passato dal frontend, poi company.sito
+    base = (body.base_url or company.get("sito") or "").rstrip("/")
+    full_url = (base + link_path) if base else link_path
+
+    subject = f"Il tuo link per gli ordini · {company.get('nome') or company.get('ragione_sociale') or 'CleanTec'}"
+    body_text = (
+        f"Gentile {cli.get('ragione_sociale')},\n\n"
+        f"di seguito il {link_label} per inviare facilmente un nuovo ordinativo:\n\n"
+        f"  {full_url}\n\n"
+        f"{'Il link è personale e valido fino a revoca.' if body.tipo == 'diretto' else 'Apri il link e identificati con P.IVA o Codice Fiscale per accedere al tuo catalogo personalizzato.'}\n\n"
+        f"Cordiali saluti,\n"
+        f"{company.get('nome') or company.get('ragione_sociale') or 'CleanTec'}"
+    )
+    body_html = f"""
+    <html><body style="font-family:Arial,sans-serif;color:#1e293b;line-height:1.5;max-width:560px;margin:auto;padding:24px;">
+      <h2 style="color:#4F46E5;margin:0 0 16px;">Il tuo link per gli ordini</h2>
+      <p>Gentile <b>{cli.get('ragione_sociale')}</b>,</p>
+      <p>di seguito il {link_label}:</p>
+      <p style="margin:24px 0;">
+        <a href="{full_url}" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:600;">Apri portale ordini</a>
+      </p>
+      <p style="font-size:12px;color:#64748b;">Oppure copia questo link nel browser:<br/><code style="word-break:break-all;">{full_url}</code></p>
+      <p style="font-size:12px;color:#94a3b8;margin-top:24px;">{'Il link è personale e valido fino a revoca.' if body.tipo == 'diretto' else 'Identificati con la tua P.IVA o Codice Fiscale per accedere al catalogo.'}</p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;"/>
+      <p style="font-size:11px;color:#94a3b8;">{company.get('nome') or 'CleanTec'} · {company.get('email') or ''}</p>
+    </body></html>
+    """
+
+    smtp_ok = await is_smtp_configured()
+    event = await send_email(
+        to=to_email, subject=subject, body_text=body_text, body_html=body_html,
+        context={"trigger": "invio_link_portale", "cliente_id": cid, "tipo": body.tipo},
+        tenant_id=cli["tenant_id"],
+    )
+
+    await log_audit(user, "EMAIL_SEND", "cliente", cid,
+                    {"to": to_email, "tipo": body.tipo, "smtp_configured": smtp_ok, "status": event.get("status")})
+
+    return {
+        "ok": True,
+        "to": to_email,
+        "tipo": body.tipo,
+        "url": full_url,
+        "smtp_configured": smtp_ok,
+        "status": event.get("status"),
+        "provider": event.get("provider"),
+        "message": ("Email inviata con successo" if event.get("status") == "sent"
+                    else "SMTP non configurato: link salvato nei log (stub)" if event.get("status") == "logged"
+                    else f"Invio fallito: {event.get('error', 'errore sconosciuto')}"),
+    }
+
+
 @public_router.get("/portale/{token}")
 async def portale_info(token: str):
     cli = await _resolve_portale_token(token)

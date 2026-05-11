@@ -60,6 +60,17 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **11 May 2026 (pomeriggio) — INVIO LINK PORTALE VIA EMAIL**
+  - Backend: nuovo endpoint `POST /api/clienti/{cid}/invia-link-portale` body `{tipo: self_service|diretto, to_override?, base_url?}` → invia email al cliente (campo email dell'anagrafica, con override opzionale) con il link al portale
+    - **tipo=self_service**: link generico `/portale` dove il cliente si identifica via P.IVA/CF
+    - **tipo=diretto**: link personalizzato `/ordina/{token}` (genera token statico al volo se mancante)
+    - Costruzione URL completo: priorità a `base_url` passato dal frontend (origin del browser), fallback a `company.sito`
+  - Backend: usa `smtp_service.send_email` esistente con body sia text che HTML stylato; se SMTP non configurato, fa fallback stub (logga in `email_events`) e ritorna status nel response
+  - Backend: audit log `EMAIL_SEND` con context (cliente_id, tipo, to, status)
+  - Frontend: due nuovi bottoni "Email" nel pannello "Portale cliente" del profilo, uno per ciascun tipo di link. Disabilitati se email cliente mancante. Confirm dialog prima dell'invio; toast differenziato per "sent" / "logged (SMTP not configured)" / "failed"
+  - Frontend: il bottone "Genera & invia" sostituisce "Genera link diretto" quando il cliente ha email — genera token + invia in un'unica azione
+  - **Verificato E2E**: invio self-service → status=logged (stub) perché SMTP demo non configurato; invio diretto → genera token + invio. UI mostra entrambi i bottoni Email correttamente.
+
 - **11 May 2026 — PORTALE SELF-SERVICE (P.IVA/CF lookup)**
   - Backend: nuovo endpoint pubblico `POST /api/public/portale/lookup` body `{identificativo}` → cerca cliente cross-tenant su `partita_iva` OR `codice_fiscale` (esatto, case-insensitive), genera session token effimero TTL 1h salvato in `portale_sessions`
   - Backend: helper `_resolve_portale_token` unifica risoluzione token statico (`clienti.portale_token`) e sessione effimera — riusa l'intero flusso esistente (GET catalogo + POST ordinativo)

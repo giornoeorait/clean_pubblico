@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit } from "@phosphor-icons/react";
+import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit, EnvelopeSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const EMPTY = {
@@ -91,6 +91,26 @@ export default function Clienti() {
     const fullUrl = `${window.location.origin}/ordina/${profile.cliente.portale_token}`;
     navigator.clipboard?.writeText(fullUrl).catch(() => {});
     toast.success("Link copiato");
+  };
+
+  const inviaLinkEmail = async (tipo) => {
+    if (!profile?._cid) return;
+    const cliEmail = profile.cliente?.email;
+    if (!cliEmail) { toast.error("Email cliente mancante — aggiorna l'anagrafica"); return; }
+    if (!window.confirm(`Inviare il link ${tipo === "diretto" ? "diretto" : "self-service"} a ${cliEmail}?`)) return;
+    try {
+      const { data } = await api.post(`/clienti/${profile._cid}/invia-link-portale`, {
+        tipo, base_url: window.location.origin,
+      });
+      if (data.status === "sent") {
+        toast.success(`Email inviata a ${data.to}`);
+      } else if (data.status === "logged") {
+        toast.warning("SMTP non configurato — link registrato nei log. Configura SMTP da Impostazioni.");
+      } else {
+        toast.error(data.message || "Invio fallito");
+      }
+      if (tipo === "diretto") await openProfile({ id: profile._cid }); // refresh per il token appena creato
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 
   const openPdf = async (entity, id) => {
@@ -308,6 +328,12 @@ export default function Clienti() {
                       <Button type="button" size="sm" variant="outline"
                         onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/portale`); toast.success("Copiato"); }}
                         data-testid="copy-portale-selfservice"><Copy size={13} /></Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => inviaLinkEmail("self_service")}
+                        title={profile.cliente?.email ? `Invia a ${profile.cliente.email}` : "Email cliente mancante"}
+                        disabled={!profile.cliente?.email}
+                        data-testid="send-portale-selfservice-email">
+                        <EnvelopeSimple size={13} className="mr-1" />Email
+                      </Button>
                     </div>
                     <div className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-indaco/10">
                       In alternativa, link diretto con token statico (utile per QR code o email):
@@ -318,12 +344,26 @@ export default function Clienti() {
                           {window.location.origin}/ordina/{profile.cliente.portale_token}
                         </code>
                         <Button type="button" size="sm" variant="outline" onClick={copiaLink} data-testid="copy-portale-link"><Copy size={13} /></Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => inviaLinkEmail("diretto")}
+                          title={profile.cliente?.email ? `Invia a ${profile.cliente.email}` : "Email cliente mancante"}
+                          disabled={!profile.cliente?.email}
+                          data-testid="send-portale-diretto-email">
+                          <EnvelopeSimple size={13} className="mr-1" />Email
+                        </Button>
                         <Button type="button" size="sm" variant="outline" onClick={revocaPortale} className="text-red-600" data-testid="revoke-portale-link"><Prohibit size={13} /></Button>
                       </div>
                     ) : (
-                      <Button type="button" size="sm" variant="outline" className="mt-1" onClick={generaPortale} data-testid="generate-portale-link">
-                        <LinkIcon size={13} className="mr-1" />Genera link diretto
-                      </Button>
+                      <div className="mt-1 flex gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={generaPortale} data-testid="generate-portale-link">
+                          <LinkIcon size={13} className="mr-1" />Genera link diretto
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => inviaLinkEmail("diretto")}
+                          title={profile.cliente?.email ? `Genera e invia a ${profile.cliente.email}` : "Email cliente mancante"}
+                          disabled={!profile.cliente?.email}
+                          data-testid="send-portale-diretto-email">
+                          <EnvelopeSimple size={13} className="mr-1" />Genera & invia
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
