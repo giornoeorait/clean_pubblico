@@ -60,6 +60,16 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 | contabilita@cleantec.it | contabilita123 | contabilita |
 
 ## Changelog recente
+- **11 May 2026 — PORTALE SELF-SERVICE (P.IVA/CF lookup)**
+  - Backend: nuovo endpoint pubblico `POST /api/public/portale/lookup` body `{identificativo}` → cerca cliente cross-tenant su `partita_iva` OR `codice_fiscale` (esatto, case-insensitive), genera session token effimero TTL 1h salvato in `portale_sessions`
+  - Backend: helper `_resolve_portale_token` unifica risoluzione token statico (`clienti.portale_token`) e sessione effimera — riusa l'intero flusso esistente (GET catalogo + POST ordinativo)
+  - Backend: **anti-enumeration** stesso 404 per non-trovato e disattivato; **rate-limit 10 fail/60s** per identificativo (collezione `portale_lookup_failed`); fix timezone mismatch Mongo (naive) vs `now_utc()` (aware)
+  - Backend: **TTL indexes** creati allo startup su `portale_sessions.expires_at` (0s) e `portale_lookup_failed.at` (300s) per cleanup automatico
+  - Frontend: nuova pagina pubblica `/portale` con form input P.IVA/CF, card di conferma con ragione sociale e indirizzo, bottoni "Non sono io" / "Continua" → redirect a `/ordina/{token}` esistente
+  - Frontend: pannello "Portale cliente" in profilo Clienti ora espone DUE link (self-service `/portale` + token statico opzionale `/ordina/{token}`)
+  - Frontend: AuthContext skippa `/auth/me` anche su `/portale` (no 401 in console)
+  - **Iter 23: 12/12 backend + frontend E2E ✅** + verifica manuale rate-limit (429 dopo 10 fail) e screenshot UI Hotel Excelsior Roma identificato correttamente
+
 - **24 Apr 2026 (pomeriggio post-5) — BATCH P3 "Anagrafiche HR + Alerts + Export PDF + Quality"**
   - Backend: `/api/dipendenti` CRUD (nome, ruolo, codice_fiscale, email, tipo_contratto, stipendio_mensile, ore_contrattuali, data_assunzione, attivo)
   - Backend: `POST /api/dipendenti/genera-stipendi {mese_riferimento}` — crea voci costo categoria=personale per ogni dipendente attivo con stipendio>0. Idempotente (skip duplicati su stesso mese+nome+tipo_rapporto=stipendio)

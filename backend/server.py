@@ -52,6 +52,13 @@ app.add_middleware(
 async def on_startup():
     init_storage()
     await run_seed()
+    # TTL indexes: cleanup automatico dei record scaduti
+    try:
+        from core import db as _db
+        await _db.portale_sessions.create_index("expires_at", expireAfterSeconds=0)
+        await _db.portale_lookup_failed.create_index("at", expireAfterSeconds=300)  # 5 min cleanup
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")

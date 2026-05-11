@@ -342,11 +342,22 @@ async def portale_lookup(body: PortaleLookupIn):
     """Cliente self-service: inserisce P.IVA o CF, riceve un session_token effimero (TTL 1h).
 
     Ricerca esatta su `partita_iva` OR `codice_fiscale` cross-tenant.
-    Per evitare enumeration: messaggio di errore generico identico a 'non trovato' e 'disattivato'.
+    Anti-enumeration: stesso 404 per non-trovato e disattivato.
+    Rate-limit: max 10 lookup falliti per identificativo nei 60s precedenti (mitigazione brute-force).
     """
     ident = (body.identificativo or "").strip().upper()
     if not ident:
         raise HTTPException(400, "Identificativo richiesto")
+
+    # Rate-limit semplice: conta i tentativi falliti recenti per questo identificativo
+    cutoff = now_utc() - timedelta(seconds=60)
+    fails_recent = await db.portale_lookup_failed.count_documents({
+        "identificativo": ident,
+        "at": {"$gte": cutoff.replace(tzinfo=None)},
+    })
+    if fails_recent >= 10:
+        raise HTTPException(429, "Troppi tentativi. Riprova tra qualche minuto.")
+
     cli = await db.clienti.find_one({
         "$or": [
             {"partita_iva": ident},
@@ -354,7 +365,11 @@ async def portale_lookup(body: PortaleLookupIn):
         ],
     }, {"_id": 0})
     if not cli or not cli.get("attivo", True):
-        # Anti-enumeration: stesso errore in entrambi i casi
+        # Log tentativo fallito per rate-limit
+        await db.portale_lookup_failed.insert_one({
+            "identificativo": ident,
+            "at": now_utc().replace(tzinfo=None),
+        })
         raise HTTPException(404, "Nessun cliente trovato con questo identificativo")
 
     token = secrets.token_urlsafe(24)
