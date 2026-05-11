@@ -25,6 +25,7 @@ import Azienda from "./pages/Azienda";
 import Offerte from "./pages/Offerte";
 import Ordinativi from "./pages/Ordinativi";
 import PortalePublic from "./pages/PortalePublic";
+import PortaleAccesso from "./pages/PortaleAccesso";
 import Fornitori from "./pages/Fornitori";
 import DdtFornitore from "./pages/DdtFornitore";
 import FattureFornitore from "./pages/FattureFornitore";
@@ -63,6 +64,7 @@ export default function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/ordina/:token" element={<PortalePublic />} />
+            <Route path="/portale" element={<PortaleAccesso />} />
               <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
               <Route path="/admin" element={<WithLayout roles={["superadmin"]}><SuperAdmin /></WithLayout>} />
               <Route path="/admin/branding" element={<WithLayout roles={["superadmin"]}><Branding /></WithLayout>} />

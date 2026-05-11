@@ -1,0 +1,25 @@
+{
+  "summary": "Iter 23 — CleanTec portale self-service /portale (lookup per P.IVA/CF). 12/12 backend pytest PASS + full UI flow validato (form → confirm card → redirect /ordina/{token} → catalogo). Anche regression: token statico continua a funzionare via la stessa GET /api/public/portale/{token}, e il pannello Clienti mostra correttamente sia URL self-service sia bottone 'Genera link diretto'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_portale_selfservice.py",
+    "/app/test_reports/pytest/iter23_portale.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Anti-enumeration OK: stesso 404 sia per P.IVA inesistente sia per cliente disattivato.",
+    "min_length=4 + .upper() lato server gestiscono correttamente input minuscolo e troppo corto (422).",
+    "Rate-limiting su /api/public/portale/lookup NON implementato → endpoint pubblico potenzialmente vulnerabile a brute-force enumeration di P.IVA (anche se il dominio P.IVA è 11 cifre = 10^11, non infinito). Considerare un semplice middleware/Redis rate-limit (es. 10 req/IP/min) prima del go-live.",
+    "Anche la collezione portale_sessions non ha indici TTL — i token scaduti restano in DB. Suggerito: `db.portale_sessions.create_index('expires_at', expireAfterSeconds=0)` per cleanup automatico.",
+    "_resolve_portale_token gestisce correttamente il mismatch timezone Mongo naive vs now_utc() aware: confronto fatto su entrambi naive."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 ; P.IVA test: IT01234567890 → Hotel Excelsior Roma",
+  "seed_data_creation": "Creato un ordinativo ORD-2026-XXXXX di test (cliente Hotel Excelsior Roma, listino Standard, 1 riga). Test_ data prefix non applicabile ai numerici sequenziali.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Endpoint /api/public/portale/lookup è no-auth e cross-tenant per P.IVA univoca. Token effimero ha TTL 1h e vive in db.portale_sessions. Frontend /portale è fuori dal layout autenticato (PublicLayout o nessun layout). I selettori UI sono: portale-input-ident, portale-submit, portale-confirm, portale-back, portale-proceed, copy-portale-selfservice. La regressione su rotte autenticate è OK (AuthContext skip /auth/me sui path /portale).",
+  "rca of the issue": "N/A — nessun bug riscontrato in questa iterazione."
+}

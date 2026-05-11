@@ -298,24 +298,32 @@ export default function Clienti() {
                   <LinkIcon size={18} className="text-indaco flex-shrink-0 mt-0.5" weight="duotone" />
                   <div className="flex-1 min-w-0">
                     <div className="font-display font-bold text-sm text-indaco">Portale cliente</div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      Il cliente può accedere autonomamente al portale self-service inserendo la propria P.IVA / Codice Fiscale:
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-[11px] font-mono truncate">
+                        {window.location.origin}/portale
+                      </code>
+                      <Button type="button" size="sm" variant="outline"
+                        onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/portale`); toast.success("Copiato"); }}
+                        data-testid="copy-portale-selfservice"><Copy size={13} /></Button>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-indaco/10">
+                      In alternativa, link diretto con token statico (utile per QR code o email):
+                    </div>
                     {profile.cliente.portale_token ? (
-                      <>
-                        <div className="text-[11px] text-slate-600 mt-0.5">Il cliente può creare ordinativi autonomamente da questo link pubblico:</div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <code className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-[11px] font-mono truncate">
-                            {window.location.origin}/ordina/{profile.cliente.portale_token}
-                          </code>
-                          <Button type="button" size="sm" variant="outline" onClick={copiaLink} data-testid="copy-portale-link"><Copy size={13} /></Button>
-                          <Button type="button" size="sm" variant="outline" onClick={revocaPortale} className="text-red-600" data-testid="revoke-portale-link"><Prohibit size={13} /></Button>
-                        </div>
-                      </>
+                      <div className="mt-1 flex items-center gap-2">
+                        <code className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-[11px] font-mono truncate">
+                          {window.location.origin}/ordina/{profile.cliente.portale_token}
+                        </code>
+                        <Button type="button" size="sm" variant="outline" onClick={copiaLink} data-testid="copy-portale-link"><Copy size={13} /></Button>
+                        <Button type="button" size="sm" variant="outline" onClick={revocaPortale} className="text-red-600" data-testid="revoke-portale-link"><Prohibit size={13} /></Button>
+                      </div>
                     ) : (
-                      <>
-                        <div className="text-[11px] text-slate-600 mt-0.5">Nessun link attivo. Genera un link pubblico univoco per far inviare ordinativi al cliente.</div>
-                        <Button type="button" size="sm" className="mt-2 bg-indaco hover:bg-indaco-dark" onClick={generaPortale} data-testid="generate-portale-link">
-                          <LinkIcon size={13} className="mr-1" />Genera link portale
-                        </Button>
-                      </>
+                      <Button type="button" size="sm" variant="outline" className="mt-1" onClick={generaPortale} data-testid="generate-portale-link">
+                        <LinkIcon size={13} className="mr-1" />Genera link diretto
+                      </Button>
                     )}
                   </div>
                 </div>

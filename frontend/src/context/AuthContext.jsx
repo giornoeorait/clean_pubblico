@@ -8,8 +8,8 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Skip auth ping on public routes (e.g. /ordina/:token) to avoid spurious 401 in console
-    if (typeof window !== "undefined" && window.location.pathname.startsWith("/ordina/")) {
+    // Skip auth ping on public routes (e.g. /ordina/:token, /portale) to avoid spurious 401 in console
+    if (typeof window !== "undefined" && (window.location.pathname.startsWith("/ordina/") || window.location.pathname === "/portale")) {
       setUser(false);
       return;
     }

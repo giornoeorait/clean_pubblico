@@ -16,7 +16,7 @@ Schema:
   note_cliente, note_interne
 """
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -248,8 +248,8 @@ async def revoca_portale_token(cid: str, user: Dict = Depends(require_roles("adm
 
 @public_router.get("/portale/{token}")
 async def portale_info(token: str):
-    cli = await db.clienti.find_one({"portale_token": token}, {"_id": 0})
-    if not cli: raise HTTPException(404, "Link non valido o revocato")
+    cli = await _resolve_portale_token(token)
+    if not cli: raise HTTPException(404, "Link non valido o scaduto")
     if not cli.get("attivo", True): raise HTTPException(403, "Account disattivato")
     # Load company (branding della lavanderia madre) e articoli
     tenant_id = cli["tenant_id"]
@@ -296,7 +296,7 @@ async def portale_info(token: str):
 
 @public_router.post("/portale/{token}/ordinativo")
 async def portale_crea_ordinativo(token: str, body: PortaleOrdIn):
-    cli = await db.clienti.find_one({"portale_token": token}, {"_id": 0})
+    cli = await _resolve_portale_token(token)
     if not cli: raise HTTPException(404, "Link non valido")
     if not cli.get("attivo", True): raise HTTPException(403, "Account disattivato")
     if not body.righe: raise HTTPException(400, "Almeno una riga")
@@ -304,11 +304,75 @@ async def portale_crea_ordinativo(token: str, body: PortaleOrdIn):
         cli["tenant_id"], cli["id"], body, "portale",
         body.data_consegna_richiesta, body.note_cliente or "",
     )
-    # Return minimal safe view
     return {
         "numero": doc["numero"],
         "totale": doc["totale"],
         "righe": doc["righe"],
         "data_consegna_richiesta": doc["data_consegna_richiesta"],
         "stato": doc["stato"],
+    }
+
+
+# ---------- Portale self-service: lookup per P.IVA/CF ----------
+class PortaleLookupIn(BaseModel):
+    identificativo: str = Field(min_length=4, max_length=32)  # P.IVA (11) o CF (16)
+
+
+async def _resolve_portale_token(token: str) -> Optional[Dict]:
+    """Cerca il cliente collegato al token: prima nei token statici (clienti.portale_token),
+    poi nelle sessioni effimere (portale_sessions con expires_at futuro)."""
+    cli = await db.clienti.find_one({"portale_token": token}, {"_id": 0})
+    if cli:
+        return cli
+    sess = await db.portale_sessions.find_one({"token": token}, {"_id": 0})
+    if not sess:
+        return None
+    exp = sess.get("expires_at")
+    if exp:
+        # Mongo restituisce datetime naive; rendi naive anche il riferimento
+        ref = now_utc().replace(tzinfo=None) if hasattr(now_utc(), "tzinfo") and now_utc().tzinfo else now_utc()
+        exp_n = exp.replace(tzinfo=None) if getattr(exp, "tzinfo", None) else exp
+        if exp_n < ref:
+            return None
+    return await db.clienti.find_one({"id": sess["cliente_id"], "tenant_id": sess["tenant_id"]}, {"_id": 0})
+
+
+@public_router.post("/portale/lookup")
+async def portale_lookup(body: PortaleLookupIn):
+    """Cliente self-service: inserisce P.IVA o CF, riceve un session_token effimero (TTL 1h).
+
+    Ricerca esatta su `partita_iva` OR `codice_fiscale` cross-tenant.
+    Per evitare enumeration: messaggio di errore generico identico a 'non trovato' e 'disattivato'.
+    """
+    ident = (body.identificativo or "").strip().upper()
+    if not ident:
+        raise HTTPException(400, "Identificativo richiesto")
+    cli = await db.clienti.find_one({
+        "$or": [
+            {"partita_iva": ident},
+            {"codice_fiscale": ident},
+        ],
+    }, {"_id": 0})
+    if not cli or not cli.get("attivo", True):
+        # Anti-enumeration: stesso errore in entrambi i casi
+        raise HTTPException(404, "Nessun cliente trovato con questo identificativo")
+
+    token = secrets.token_urlsafe(24)
+    expires = now_utc() + timedelta(hours=1)
+    await db.portale_sessions.insert_one({
+        "token": token,
+        "tenant_id": cli["tenant_id"],
+        "cliente_id": cli["id"],
+        "created_at": now_utc(),
+        "expires_at": expires,
+    })
+    return {
+        "token": token,
+        "cliente": {
+            "ragione_sociale": cli.get("ragione_sociale"),
+            "denominazione_struttura": cli.get("denominazione_struttura") or cli.get("ragione_sociale"),
+            "indirizzo": cli.get("indirizzo"),
+        },
+        "url_path": f"/ordina/{token}",
+        "expires_at": expires.isoformat(),
     }
