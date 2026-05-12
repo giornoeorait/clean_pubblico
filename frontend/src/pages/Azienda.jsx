@@ -19,6 +19,7 @@ const FIELDS = [
   { k: "iban",             label: "IBAN",                    required: false, placeholder: "IT60 X 05428 11101 00000 0123456" },
   { k: "email",            label: "Email",                   required: true,  placeholder: "info@tuaazienda.it" },
   { k: "pec",              label: "PEC",                     required: false, placeholder: "azienda@pec.it" },
+  { k: "codice_sdi",       label: "Codice destinatario SDI", required: false, placeholder: "0000000 oppure ABC1234" },
   { k: "telefono",         label: "Telefono",                required: true,  placeholder: "+39 02 1234567" },
   { k: "sito_web",         label: "Sito internet",           required: false, placeholder: "https://tuaazienda.it" },
 ];

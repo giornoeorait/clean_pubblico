@@ -25,6 +25,7 @@ class CompanyIn(BaseModel):
     iban: Optional[str] = ""
     email: Optional[str] = ""
     pec: Optional[str] = ""
+    codice_sdi: Optional[str] = ""
     telefono: Optional[str] = ""
     sito_web: Optional[str] = ""
 
