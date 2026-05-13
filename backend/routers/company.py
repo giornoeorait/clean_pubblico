@@ -10,6 +10,7 @@ from PIL import Image
 
 from core import db, now_utc, require_roles, tenant_scope, tenant_id_of, log_audit
 from storage import put_object, get_object, APP_NAME
+from smtp_service import send_email
 from backup_service import (
     create_snapshot as _create_snapshot,
     list_snapshots as _list_snapshots,
@@ -441,3 +442,81 @@ async def run_scheduler_now(user: Dict = Depends(require_roles("superadmin"))):
     """Trigger manuale del run quotidiano per TUTTI i tenant (riservato a superadmin)."""
     result = await _run_daily_snapshots()
     return result
+
+
+# ============== NOTIFICATION SETTINGS (backup alerts via email) ==============
+
+
+class NotificationSettingsIn(BaseModel):
+    recipients: list[str] = []   # additional emails to alert on failures
+    include_admin: bool = True   # also include current tenant admin emails
+
+
+def _validate_email(e: str) -> str:
+    e = (e or "").strip().lower()
+    if not e or "@" not in e or "." not in e.split("@", 1)[1]:
+        raise HTTPException(400, f"Email non valida: {e!r}")
+    return e
+
+
+@router.get("/company/notifications")
+async def get_notification_settings(user: Dict = Depends(require_roles("admin"))):
+    """Restituisce la configurazione notifiche email del tenant (lista destinatari + flag admin)."""
+    doc = await db.company.find_one(tenant_scope(user), {"_id": 0}) or {}
+    n = doc.get("notifications") or {}
+    return {
+        "recipients": list(n.get("recipients") or []),
+        "include_admin": bool(n.get("include_admin", True)),
+    }
+
+
+@router.put("/company/notifications")
+async def update_notification_settings(body: NotificationSettingsIn,
+                                       user: Dict = Depends(require_roles("admin"))):
+    """Aggiorna la lista dei destinatari email per le notifiche di sistema (backup falliti, ecc.)."""
+    seen = set()
+    cleaned: list[str] = []
+    for raw in (body.recipients or []):
+        e = _validate_email(raw)
+        if e in seen:
+            continue
+        seen.add(e)
+        cleaned.append(e)
+    if len(cleaned) > 20:
+        raise HTTPException(400, "Massimo 20 destinatari")
+    n = {"recipients": cleaned, "include_admin": bool(body.include_admin)}
+    await db.company.update_one(
+        tenant_scope(user),
+        {"$set": {"notifications": n, "tenant_id": tenant_id_of(user), "updated_at": now_utc()},
+         "$setOnInsert": {"created_at": now_utc()}},
+        upsert=True,
+    )
+    await log_audit(user, "UPDATE", "company_notifications", tenant_id_of(user),
+                    {"count": len(cleaned), "include_admin": n["include_admin"]})
+    return n
+
+
+@router.post("/company/notifications/test")
+async def test_notification(user: Dict = Depends(require_roles("admin"))):
+    """Invia un'email di test ai destinatari configurati (e admin se attivo)."""
+    from backup_service import resolve_alert_recipients
+    tid = tenant_id_of(user)
+    recipients = await resolve_alert_recipients(tid)
+    if not recipients:
+        raise HTTPException(400, "Nessun destinatario configurato")
+    company = await db.company.find_one({"tenant_id": tid}, {"_id": 0}) or {}
+    azienda = company.get("nome") or company.get("ragione_sociale") or "Il tuo tenant"
+    sent = []
+    for r in recipients:
+        ev = await send_email(
+            to=r,
+            subject=f"[CleanTec] Test notifica · {azienda}",
+            body_text=(f"Ciao,\n\nquesto è un test del sistema di notifiche di CleanTec per il tenant "
+                       f"\"{azienda}\".\n\nSe ricevi questa email, le notifiche di sistema (es. backup "
+                       f"falliti) ti raggiungeranno correttamente.\n\n— CleanTec"),
+            tenant_id=tid,
+            context={"type": "notification_test"},
+        )
+        sent.append({"to": r, "status": ev.get("status")})
+    await log_audit(user, "TEST", "company_notifications", tid, {"count": len(sent)})
+    return {"ok": True, "sent": sent}

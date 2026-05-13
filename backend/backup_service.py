@@ -210,6 +210,61 @@ _scheduler_task: Optional[asyncio.Task] = None
 _last_run_date: Optional[str] = None  # 'YYYY-MM-DD' (UTC) of the last successful run
 
 
+async def resolve_alert_recipients(tenant_id: str) -> list:
+    """Return the deduped list of email recipients for alert notifications of a tenant.
+
+    Sources:
+      - company.notifications.recipients (always)
+      - if company.notifications.include_admin (default True): all active admin users of the tenant
+    """
+    company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
+    n = company.get("notifications") or {}
+    recipients = [r for r in (n.get("recipients") or []) if r]
+    include_admin = bool(n.get("include_admin", True))
+    seen = set(r.strip().lower() for r in recipients if r)
+    out = list(recipients)
+    if include_admin:
+        cursor = db.users.find(
+            {"tenant_id": tenant_id, "role": "admin", "attivo": True},
+            {"_id": 0, "email": 1},
+        )
+        async for u in cursor:
+            e = (u.get("email") or "").strip().lower()
+            if e and e not in seen:
+                seen.add(e)
+                out.append(e)
+    return out
+
+
+async def _send_failure_alert(tenant_id: str, error: str) -> None:
+    """Notify configured recipients that a scheduled backup failed for this tenant."""
+    try:
+        from smtp_service import send_email  # local import avoids circular
+        recipients = await resolve_alert_recipients(tenant_id)
+        if not recipients:
+            logger.info(f"No alert recipients for tenant {tenant_id} — skipping email")
+            return
+        company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
+        azienda = company.get("nome") or company.get("ragione_sociale") or tenant_id
+        subject = f"[CleanTec] ⚠️ Backup automatico fallito · {azienda}"
+        when = now_utc().strftime("%d/%m/%Y %H:%M UTC")
+        text = (
+            f"Attenzione,\n\nil backup automatico programmato di CleanTec per il tenant \"{azienda}\" "
+            f"è fallito il {when}.\n\nDettagli errore:\n{error}\n\n"
+            f"Cosa fare:\n"
+            f"1. Accedi alla pagina Azienda → sezione 'Snapshot Cloud' e prova a creare uno snapshot manuale.\n"
+            f"2. Se l'errore persiste, contatta il supporto.\n\n"
+            f"— CleanTec (notifica automatica)"
+        )
+        for r in recipients:
+            await send_email(
+                to=r, subject=subject, body_text=text,
+                tenant_id=tenant_id, context={"type": "backup_failure", "error": error[:200]},
+            )
+    except Exception as e:
+        logger.error(f"Failed to send failure alert for tenant {tenant_id}: {e}")
+
+
 async def run_daily_snapshots() -> dict:
     """Iterate every tenant and create one snapshot. Apply retention. Returns summary."""
     tenants = await db.tenants.find({}, {"_id": 0, "id": 1, "stato": 1}).to_list(10000)
@@ -230,6 +285,7 @@ async def run_daily_snapshots() -> dict:
         except Exception as e:
             logger.error(f"Snapshot failed for tenant {tid}: {e}")
             failed.append({"tenant_id": tid, "error": str(e)})
+            await _send_failure_alert(tid, str(e))
     logger.info(f"Daily snapshots: {created} created, {pruned} pruned, {len(failed)} failed")
     return {"created": created, "pruned": pruned, "failed": failed, "at": now_utc().isoformat()}
 

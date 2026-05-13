@@ -1,0 +1,35 @@
+{
+  "summary": "Iter-25 backup-failure notification settings fully validated. Backend: 13/13 pytest cases passed covering GET defaults, PUT save/persist, invalid email -> 400 'Email non valida', dedupe+lowercase, max 20 recipients (21 -> 400), POST test endpoint persists email_events rows per recipient with status in (sent|logged|failed), 400 when no recipients (include_admin=False + empty list), tenant isolation via injected fake tenant doc, auth guards (401/403 without token), and direct backup_service._send_failure_alert pipeline writing one email_events row per recipient with context.type='backup_failure' (admin email auto-included when include_admin=True). Frontend: 'Notifiche email' section under CloudBackups expands, add/remove email chips works, invalid email blocked, include_admin checkbox toggles, Salva persists across reload (verified 2 chips after reload), '✉️ Invia email di test' triggers correct 'Email loggate (SMTP non configurato): 2' toast. SMTP stub behavior verified — emails written to db.email_events with status='logged' as expected in this env.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_notifications.py",
+    "/app/test_reports/pytest/iter25_notifications.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_validate_email in /app/backend/routers/company.py uses an extremely loose check (just '@' and '.' after '@'). Strings like 'a@b.c' or 'foo@bar.x' pass, while pydantic EmailStr (already imported) would be stricter. Consider switching to EmailStr in NotificationSettingsIn or using a robust regex.",
+    "Max-recipients limit (20) is enforced AFTER dedupe; a payload of 21 unique emails fails (correct) but 25 with many duplicates can silently dedupe down to 20. Acceptable but could be documented as 'distinct recipients'.",
+    "resolve_alert_recipients() in backup_service.py mixes the original-cased recipients (kept as stored) with lowercased admin emails for dedupe; since the stored ones are already lowercased by PUT this is fine today, but a directly-injected uppercase doc could yield duplicates. Minor.",
+    "_send_failure_alert swallows ALL exceptions with a single logger.error — if SMTP fails for one recipient, the rest still attempt (current implementation actually loops per-recipient inside the try, so a single failure aborts the rest). Consider per-recipient try/except so one bad address doesn't skip others.",
+    "POST /company/notifications/test returns 400 when no recipients, but the UI already disables the button in that case; redundant guard is fine but the API response code could be clarified in the toast (it currently shows raw detail).",
+    "Frontend addEmail() lowercases the draft before isValidEmail() — server also lowercases on PUT — so display order is consistent. However the React state's recipients can drift from server's deduped/normalized list until the next GET; current save() re-syncs from response which is correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_notifications.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 (tenant admin, demo-tenant-0000-0000-0000-000000000001)",
+  "seed_data_creation": "None persisted. Per request, db.company.notifications was reset to {recipients: [], include_admin: true} for admin@cleantec.it after tests. The fixture's autouse reset_notifications also wipes between tests. email_events rows generated during testing (context.type in {notification_test, backup_failure}) were left in place as evidence; they are non-destructive and naturally pruned by retention.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iter25_notifications.py self-contained. Imports backup_service in-process to invoke _send_failure_alert and resolve_alert_recipients directly (same DB connection, so persistence verifiable). SMTP is in stub mode — every email_events row will have status='logged'. To run: set REACT_APP_BACKEND_URL + MONGO_URL + DB_NAME envs, then `pytest backend/tests/test_iter25_notifications.py -v`. The fake-tenant isolation test injects a doc with tenant_id starting 'TEST_FAKE_TENANT_' and cleans up via finally.",
+  "rca of the issue": "N/A — no defects found"
+}

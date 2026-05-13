@@ -229,6 +229,7 @@ export default function Azienda() {
       {/* DANGER ZONE */}
       <DangerZone />
       <CloudBackups />
+      <NotificationSettings />
     </div>
   );
 }
@@ -727,6 +728,173 @@ function CloudBackups() {
               </div>
             </div>
           )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+
+function NotificationSettings() {
+  const [recipients, setRecipients] = React.useState([]);
+  const [includeAdmin, setIncludeAdmin] = React.useState(true);
+  const [draft, setDraft] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [testing, setTesting] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/company/notifications");
+      setRecipients(data.recipients || []);
+      setIncludeAdmin(data.include_admin !== false);
+    } catch (e) {
+      toast.error("Errore caricamento notifiche");
+    } finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
+
+  const addEmail = () => {
+    const e = draft.trim().toLowerCase();
+    if (!e) return;
+    if (!isValidEmail(e)) { toast.error("Email non valida"); return; }
+    if (recipients.includes(e)) { toast.info("Email già presente"); setDraft(""); return; }
+    if (recipients.length >= 20) { toast.error("Massimo 20 destinatari"); return; }
+    setRecipients([...recipients, e]);
+    setDraft("");
+  };
+
+  const removeEmail = (e) => setRecipients(recipients.filter(x => x !== e));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.put("/company/notifications", { recipients, include_admin: includeAdmin });
+      setRecipients(data.recipients || []);
+      setIncludeAdmin(data.include_admin !== false);
+      toast.success("Notifiche salvate");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore salvataggio");
+    } finally { setSaving(false); }
+  };
+
+  const sendTest = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post("/company/notifications/test");
+      const ok = data.sent.filter(s => s.status === "sent").length;
+      const stub = data.sent.filter(s => s.status === "logged").length;
+      const failed = data.sent.filter(s => s.status === "failed").length;
+      if (failed > 0) toast.error(`${failed} email fallite`);
+      else if (stub > 0) toast.info(`Email loggate (SMTP non configurato): ${stub}`);
+      else toast.success(`✉️ ${ok} email di test inviate`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore invio test");
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="mt-6 max-w-4xl mx-auto" data-testid="notification-settings">
+      <details className="rounded-lg border-2 border-indaco/30 bg-indaco/5 overflow-hidden">
+        <summary className="px-5 py-3 cursor-pointer font-display font-bold text-indaco hover:bg-indaco/10 select-none">
+          📧 Notifiche email · backup falliti & avvisi di sistema
+        </summary>
+        <div className="p-5 border-t border-indaco/30 bg-white space-y-4">
+          <p className="text-sm text-slate-700">
+            Configura chi deve ricevere un'email in caso di problemi con i backup automatici (es. storage non raggiungibile).
+            Le notifiche verranno inviate sia ai destinatari elencati qui che, opzionalmente, agli amministratori del tenant.
+          </p>
+
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={includeAdmin}
+              onChange={e => setIncludeAdmin(e.target.checked)}
+              className="mt-1"
+              data-testid="notif-include-admin"
+            />
+            <span>
+              <b>Includi tutti gli amministratori del tenant</b>
+              <span className="block text-xs text-slate-500">Invia anche agli utenti con ruolo "admin" attivi (consigliato).</span>
+            </span>
+          </label>
+
+          <div>
+            <Label>Destinatari aggiuntivi</Label>
+            <p className="text-xs text-slate-500 mb-2">
+              Aggiungi fino a 20 email (es. amministratore di sistema, IT, contabilità).
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addEmail(); } }}
+                placeholder="es. it@tuaazienda.it"
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indaco"
+                data-testid="notif-email-input"
+              />
+              <button
+                type="button"
+                onClick={addEmail}
+                className="px-3 py-2 bg-indaco hover:bg-indaco-dark text-white rounded-md text-sm font-medium"
+                data-testid="notif-add-btn">
+                Aggiungi
+              </button>
+            </div>
+
+            {loading ? (
+              <p className="mt-3 text-xs text-slate-400 font-mono">Caricamento…</p>
+            ) : recipients.length === 0 ? (
+              <p className="mt-3 text-xs text-slate-400 italic">Nessun destinatario aggiuntivo configurato.</p>
+            ) : (
+              <ul className="mt-3 flex flex-wrap gap-2" data-testid="notif-recipients-list">
+                {recipients.map(e => (
+                  <li key={e}
+                    className="inline-flex items-center gap-2 bg-celeste/15 text-indaco border border-celeste/30 rounded-full pl-3 pr-1 py-1 text-xs font-mono"
+                    data-testid={`notif-chip-${e}`}>
+                    {e}
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(e)}
+                      className="w-5 h-5 rounded-full hover:bg-red-100 hover:text-red-600 flex items-center justify-center"
+                      aria-label={`Rimuovi ${e}`}
+                      data-testid={`notif-remove-${e}`}>
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="px-4 py-2 bg-indaco hover:bg-indaco-dark disabled:opacity-40 text-white rounded-md text-sm font-medium"
+              data-testid="notif-save-btn">
+              {saving ? "Salvataggio…" : "💾 Salva"}
+            </button>
+            <button
+              type="button"
+              onClick={sendTest}
+              disabled={testing || (recipients.length === 0 && !includeAdmin)}
+              className="px-4 py-2 border border-indaco text-indaco hover:bg-indaco/5 disabled:opacity-40 rounded-md text-sm font-medium"
+              data-testid="notif-test-btn">
+              {testing ? "Invio test…" : "✉️ Invia email di test"}
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-500 mt-2">
+            ℹ️ Se l'SMTP non è ancora configurato, le email vengono solo registrate nel log (
+            <code className="font-mono bg-slate-100 px-1">db.email_events</code>) senza essere effettivamente spedite.
+          </p>
         </div>
       </details>
     </div>
