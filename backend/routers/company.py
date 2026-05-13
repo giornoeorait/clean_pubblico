@@ -137,3 +137,63 @@ async def load_company_for_tenant(tenant_id: str) -> dict:
     """Helper for PDF generation."""
     doc = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0})
     return doc or {}
+
+
+# ============== RESET OPERATIVO ==============
+
+OPERATIONAL_COLLECTIONS = [
+    "clienti", "ddt", "fatture", "offerte", "ordinativi",
+    "fornitori", "ddt_fornitore", "fatture_fornitore",
+    "costi", "dipendenti", "automezzi",
+    "portale_sessions", "portale_lookup_failed",
+    "audit_log", "email_events",
+]
+
+COUNTER_KEYS = ["ddt", "fattura", "ordinativi", "offerta", "ddt_fornitore", "fattura_fornitore"]
+
+
+class ResetOperativoIn(BaseModel):
+    confirm: str  # deve essere "RESET" per procedere
+    reset_counters: bool = True
+
+
+@router.post("/company/reset-operativo")
+async def reset_operativo(body: ResetOperativoIn, user: Dict = Depends(require_roles("admin"))):
+    """Cancella tutti i dati operativi del proprio tenant (richiede confirm='RESET').
+
+    NON tocca: articoli, listini, listini_prezzi, termini_templates, users, tenants,
+    company, branding, app_settings, payment_transactions, files.
+
+    I counters di numerazione sono globali; se reset_counters=True vengono azzerati
+    (utile se sei l'unico tenant del DB).
+    """
+    if body.confirm != "RESET":
+        raise HTTPException(400, "Confirm string non valida — atteso 'RESET'")
+
+    tid = tenant_id_of(user)
+    deleted: Dict[str, int] = {}
+    total = 0
+    for c in OPERATIONAL_COLLECTIONS:
+        res = await db[c].delete_many({"tenant_id": tid})
+        deleted[c] = int(res.deleted_count)
+        total += int(res.deleted_count)
+
+    counters_reset = 0
+    if body.reset_counters:
+        for key in COUNTER_KEYS:
+            res = await db.counters.delete_one({"_id": key})
+            if res.deleted_count:
+                counters_reset += 1
+
+    # Log dopo aver pulito (l'audit_log appena svuotato riceve subito un nuovo record)
+    await log_audit(user, "WIPE", "tenant_data", tid,
+                    {"deleted": deleted, "counters_reset": counters_reset, "total": total})
+
+    return {
+        "ok": True,
+        "tenant_id": tid,
+        "total_deleted": total,
+        "per_collection": deleted,
+        "counters_reset": counters_reset,
+        "message": f"{total} record cancellati dal tuo tenant. Catalogo, anagrafica azienda e utenti sono stati preservati.",
+    }

@@ -225,6 +225,136 @@ export default function Azienda() {
           </div>
         </div>
       </div>
+
+      {/* DANGER ZONE */}
+      <DangerZone />
+    </div>
+  );
+}
+
+function DangerZone() {
+  const [open, setOpen] = React.useState(false);
+  const [confirmText, setConfirmText] = React.useState("");
+  const [resetCounters, setResetCounters] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+
+  const doReset = async () => {
+    if (confirmText !== "RESET") return;
+    setLoading(true);
+    try {
+      const { data } = await api.post("/company/reset-operativo", { confirm: "RESET", reset_counters: resetCounters });
+      setResult(data);
+      toast.success(`${data.total_deleted} record cancellati`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore");
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="mt-12 max-w-4xl mx-auto" data-testid="danger-zone">
+      <details className="rounded-lg border-2 border-red-200 bg-red-50/30 overflow-hidden">
+        <summary className="px-5 py-3 cursor-pointer font-display font-bold text-red-700 hover:bg-red-100/40 select-none">
+          ⚠️ Zona pericolosa — Reset dati operativi
+        </summary>
+        <div className="p-5 border-t border-red-200 bg-white space-y-4">
+          <p className="text-sm text-slate-700">
+            Questa operazione <b>cancella in modo irreversibile</b> tutti i dati operativi del tuo tenant:
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <p className="font-bold text-red-700 mb-1">❌ Verrà cancellato:</p>
+              <ul className="space-y-0.5 text-slate-600">
+                <li>• Clienti</li>
+                <li>• DDT, Fatture, Sospesi</li>
+                <li>• Offerte, Contratti, Ordinativi</li>
+                <li>• Fornitori, DDT fornitore, Fatture fornitore</li>
+                <li>• Costi, Dipendenti, Automezzi</li>
+                <li>• Sessioni portale, Audit log, Email log</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-bold text-emerald-700 mb-1">✅ NON sarà toccato:</p>
+              <ul className="space-y-0.5 text-slate-600">
+                <li>• Articoli (catalogo)</li>
+                <li>• Listini & Prezzi</li>
+                <li>• Anagrafica Azienda (questa)</li>
+                <li>• Branding & Logo</li>
+                <li>• Utenti & Login</li>
+                <li>• Termini di pagamento</li>
+              </ul>
+            </div>
+          </div>
+
+          {!result && !open && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium"
+              data-testid="open-reset-dialog">
+              Apri procedura di reset
+            </button>
+          )}
+
+          {open && !result && (
+            <div className="border-2 border-red-300 rounded-lg p-4 bg-red-50 space-y-3">
+              <p className="text-sm font-bold text-red-700">
+                Per confermare, digita esattamente <code className="bg-white px-2 py-0.5 rounded border border-red-300">RESET</code> qui sotto:
+              </p>
+              <input
+                type="text"
+                autoFocus
+                value={confirmText}
+                onChange={e => setConfirmText(e.target.value)}
+                placeholder="Digita RESET"
+                className="w-full px-3 py-2 border-2 border-red-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                data-testid="reset-confirm-input"
+              />
+              <label className="flex items-center gap-2 text-xs text-slate-700">
+                <input type="checkbox" checked={resetCounters} onChange={e => setResetCounters(e.target.checked)} data-testid="reset-counters-checkbox" />
+                Resetta anche i contatori di numerazione (DDT, FT, ORD ripartono da 1)
+              </label>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); setConfirmText(""); }}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-md text-sm">
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={doReset}
+                  disabled={confirmText !== "RESET" || loading}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
+                  data-testid="reset-execute-btn">
+                  {loading ? "Cancellazione in corso..." : "CANCELLA TUTTO"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {result && (
+            <div className="border-2 border-emerald-300 rounded-lg p-4 bg-emerald-50" data-testid="reset-result">
+              <p className="font-bold text-emerald-700 mb-2">✅ Operazione completata</p>
+              <p className="text-sm text-slate-700 mb-3">{result.message}</p>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">Dettaglio per collezione ({result.total_deleted} record · {result.counters_reset} contatori)</summary>
+                <table className="mt-2 w-full text-xs"><tbody>
+                  {Object.entries(result.per_collection).map(([k, v]) => (
+                    <tr key={k}><td className="py-0.5 font-mono">{k}</td><td className="text-right font-mono">{v}</td></tr>
+                  ))}
+                </tbody></table>
+              </details>
+              <button
+                type="button"
+                onClick={() => { setResult(null); setOpen(false); setConfirmText(""); window.location.reload(); }}
+                className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm">
+                Ricarica pagina
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
