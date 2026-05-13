@@ -223,6 +223,100 @@ class ResetOperativoIn(BaseModel):
     reset_counters: bool = True
 
 
+class RestoreOperativoIn(BaseModel):
+    confirm: str                # deve essere "RESTORE"
+    mode: str = "merge"         # "merge" (upsert per id) | "replace" (wipe + import)
+    data: dict                  # contenuto del file JSON di backup
+
+
+@router.post("/company/restore-operativo")
+async def restore_operativo(body: RestoreOperativoIn, user: Dict = Depends(require_roles("admin"))):
+    """Ripristina un backup JSON precedentemente esportato.
+
+    mode:
+      - "merge"  → upsert per id (mantiene i record esistenti non in backup)
+      - "replace"→ cancella tutto poi reinserisce SOLO i record del backup
+
+    Safety: confirm='RESTORE' obbligatorio; tutti i record vengono forzati al tenant_id corrente.
+    """
+    if body.confirm != "RESTORE":
+        raise HTTPException(400, "Confirm string non valida — atteso 'RESTORE'")
+    if body.mode not in ("merge", "replace"):
+        raise HTTPException(400, "mode deve essere 'merge' o 'replace'")
+
+    tid = tenant_id_of(user)
+    collections = body.data.get("collections") or {}
+    if not isinstance(collections, dict):
+        raise HTTPException(400, "Formato backup non valido — 'collections' mancante o invalido")
+
+    # Validazione: il backup deve essere dello stesso tenant (oppure superadmin can override)
+    backup_tid = body.data.get("tenant_id")
+    if backup_tid and backup_tid != tid:
+        raise HTTPException(400, f"Backup tenant_id mismatch (backup: {backup_tid}, attuale: {tid})")
+
+    summary: Dict[str, Dict[str, int]] = {}
+
+    # Determine which collections to import (operative + catalog se presenti)
+    ALL_RESTORABLE = OPERATIONAL_COLLECTIONS + ["articoli", "listini", "listini_prezzi", "termini_templates", "branding"]
+
+    for cname, docs in collections.items():
+        if cname not in ALL_RESTORABLE:
+            continue
+        if not isinstance(docs, list):
+            continue
+
+        if body.mode == "replace":
+            del_res = await db[cname].delete_many({"tenant_id": tid})
+            wiped = int(del_res.deleted_count)
+        else:
+            wiped = 0
+
+        inserted = 0
+        updated = 0
+        for doc in docs:
+            if not isinstance(doc, dict) or "id" not in doc:
+                continue
+            # Forza il tenant_id corrente (mai fidarsi del backup)
+            doc["tenant_id"] = tid
+            doc.pop("_id", None)
+            res = await db[cname].update_one(
+                {"id": doc["id"], "tenant_id": tid},
+                {"$set": doc},
+                upsert=True,
+            )
+            if res.upserted_id:
+                inserted += 1
+            elif res.modified_count:
+                updated += 1
+        summary[cname] = {"inserted": inserted, "updated": updated, "wiped": wiped}
+
+    # Ripristina anche company se presente nel backup
+    if isinstance(body.data.get("company"), dict):
+        c = dict(body.data["company"])
+        c["tenant_id"] = tid
+        c.pop("_id", None)
+        await db.company.update_one({"tenant_id": tid}, {"$set": c}, upsert=True)
+        summary["company"] = {"inserted": 0, "updated": 1, "wiped": 0}
+
+    total_in = sum(v["inserted"] for v in summary.values())
+    total_up = sum(v["updated"] for v in summary.values())
+    total_wiped = sum(v["wiped"] for v in summary.values())
+
+    await log_audit(user, "RESTORE", "tenant_data", tid,
+                    {"mode": body.mode, "total_inserted": total_in, "total_updated": total_up, "total_wiped": total_wiped})
+
+    return {
+        "ok": True,
+        "mode": body.mode,
+        "tenant_id": tid,
+        "total_inserted": total_in,
+        "total_updated": total_up,
+        "total_wiped": total_wiped,
+        "per_collection": summary,
+        "message": f"Ripristinati {total_in + total_up} record ({total_in} nuovi, {total_up} aggiornati). Wipe pre-restore: {total_wiped} record.",
+    }
+
+
 @router.post("/company/reset-operativo")
 async def reset_operativo(body: ResetOperativoIn, user: Dict = Depends(require_roles("admin"))):
     """Cancella tutti i dati operativi del proprio tenant (richiede confirm='RESET').

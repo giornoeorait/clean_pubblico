@@ -396,6 +396,134 @@ function DangerZone() {
           )}
         </div>
       </details>
+
+      {/* Sezione Ripristino */}
+      <RestoreBackup />
+    </div>
+  );
+}
+
+function RestoreBackup() {
+  const [file, setFile] = React.useState(null);
+  const [mode, setMode] = React.useState("merge");
+  const [confirmText, setConfirmText] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const [preview, setPreview] = React.useState(null);
+
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f); setResult(null); setPreview(null);
+    try {
+      const text = await f.text();
+      const data = JSON.parse(text);
+      const counts = Object.fromEntries(
+        Object.entries(data.collections || {}).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
+      );
+      setPreview({
+        tenant_id: data.tenant_id, exported_at: data.exported_at,
+        total: Object.values(counts).reduce((a, b) => a + b, 0), counts,
+      });
+    } catch (e2) { toast.error("File non valido: " + e2.message); setFile(null); }
+  };
+
+  const doRestore = async () => {
+    if (!file || confirmText !== "RESTORE") return;
+    setLoading(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const { data: res } = await api.post("/company/restore-operativo", { confirm: "RESTORE", mode, data });
+      setResult(res);
+      toast.success(`${res.total_inserted + res.total_updated} record ripristinati`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="mt-6" data-testid="restore-zone">
+      <details className="rounded-lg border-2 border-amber-200 bg-amber-50/30 overflow-hidden">
+        <summary className="px-5 py-3 cursor-pointer font-display font-bold text-amber-800 hover:bg-amber-100/40 select-none">
+          📥 Ripristina backup JSON
+        </summary>
+        <div className="p-5 border-t border-amber-200 bg-white space-y-4">
+          <p className="text-sm text-slate-700">
+            Carica un file JSON esportato dal bottone "Scarica backup" e ripristina i dati nel tuo tenant.
+          </p>
+
+          <div>
+            <label className="block text-xs font-mono uppercase tracking-wide text-slate-600 mb-1">File backup (.json)</label>
+            <input type="file" accept="application/json,.json" onChange={onFile} data-testid="restore-file-input"
+              className="block w-full text-sm border border-slate-200 rounded px-3 py-2 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-indaco file:text-white file:cursor-pointer" />
+          </div>
+
+          {preview && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs">
+              <p><b>Tenant nel backup:</b> <span className="font-mono">{preview.tenant_id || "—"}</span></p>
+              <p><b>Esportato il:</b> {preview.exported_at?.slice(0, 19).replace("T", " ")}</p>
+              <p><b>Totale record:</b> {preview.total}</p>
+              <details className="mt-1"><summary className="cursor-pointer text-slate-500">Dettaglio collezioni</summary>
+                <table className="mt-1 w-full"><tbody>
+                  {Object.entries(preview.counts).map(([k, v]) => v > 0 && (
+                    <tr key={k}><td className="font-mono py-0.5">{k}</td><td className="text-right font-mono">{v}</td></tr>
+                  ))}
+                </tbody></table>
+              </details>
+            </div>
+          )}
+
+          {file && !result && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-bold text-slate-700 mb-2">Modalità ripristino:</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setMode("merge")}
+                    className={`flex-1 border-2 rounded-md p-2 text-xs text-left ${mode === "merge" ? "border-indaco bg-indaco/5" : "border-slate-200"}`}
+                    data-testid="restore-mode-merge">
+                    <p className="font-bold">🔀 Merge (consigliato)</p>
+                    <p className="text-slate-500 mt-0.5">I record esistenti vengono sovrascritti per ID. I record non presenti nel backup restano.</p>
+                  </button>
+                  <button type="button" onClick={() => setMode("replace")}
+                    className={`flex-1 border-2 rounded-md p-2 text-xs text-left ${mode === "replace" ? "border-red-500 bg-red-50" : "border-slate-200"}`}
+                    data-testid="restore-mode-replace">
+                    <p className="font-bold">🗑️ Replace</p>
+                    <p className="text-slate-500 mt-0.5">Cancella TUTTI i dati esistenti, poi importa quelli del backup. Più aggressivo.</p>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-bold text-amber-800">
+                  Per confermare, digita esattamente <code className="bg-white px-2 py-0.5 rounded border border-amber-300">RESTORE</code> qui sotto:
+                </p>
+                <input type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)}
+                  placeholder="Digita RESTORE"
+                  className="mt-1 w-full px-3 py-2 border-2 border-amber-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  data-testid="restore-confirm-input" />
+              </div>
+
+              <button type="button" onClick={doRestore} disabled={confirmText !== "RESTORE" || loading}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
+                data-testid="restore-execute-btn">
+                {loading ? "Ripristino in corso..." : "RIPRISTINA"}
+              </button>
+            </div>
+          )}
+
+          {result && (
+            <div className="border-2 border-emerald-300 rounded-lg p-4 bg-emerald-50" data-testid="restore-result">
+              <p className="font-bold text-emerald-700 mb-2">✅ Ripristino completato</p>
+              <p className="text-sm text-slate-700 mb-2">{result.message}</p>
+              <p className="text-xs text-slate-500">Modalità: <span className="font-mono">{result.mode}</span></p>
+              <button type="button" onClick={() => window.location.reload()}
+                className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm">
+                Ricarica pagina
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
