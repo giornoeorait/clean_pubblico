@@ -257,12 +257,15 @@ async def _send_failure_alert(tenant_id: str, error: str) -> None:
             f"— CleanTec (notifica automatica)"
         )
         for r in recipients:
-            await send_email(
-                to=r, subject=subject, body_text=text,
-                tenant_id=tenant_id, context={"type": "backup_failure", "error": error[:200]},
-            )
+            try:
+                await send_email(
+                    to=r, subject=subject, body_text=text,
+                    tenant_id=tenant_id, context={"type": "backup_failure", "error": error[:200]},
+                )
+            except Exception as e:
+                logger.error(f"Failed to send alert to {r} for tenant {tenant_id}: {e}")
     except Exception as e:
-        logger.error(f"Failed to send failure alert for tenant {tenant_id}: {e}")
+        logger.error(f"Failed to dispatch failure alert for tenant {tenant_id}: {e}")
 
 
 async def run_daily_snapshots() -> dict:
