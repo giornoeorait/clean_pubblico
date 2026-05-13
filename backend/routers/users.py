@@ -9,7 +9,11 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("")
 async def list_users(user: Dict = Depends(require_roles("admin"))):
-    users = await db.users.find(tenant_scope(user), {"_id": 0, "password_hash": 0}).to_list(5000)
+    """Lista utenti del tenant — esclude i superadmin (che non sono gestibili dall'admin di tenant)."""
+    users = await db.users.find(
+        {**tenant_scope(user), "role": {"$ne": "superadmin"}},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(5000)
     return users
 
 
@@ -38,6 +42,11 @@ async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admi
 
 @router.patch("/{uid}")
 async def update_user(uid: str, body: PatchUserIn, user: Dict = Depends(require_roles("admin"))):
+    target = await db.users.find_one(merge_scope(user, {"id": uid}), {"_id": 0})
+    if not target:
+        raise HTTPException(404, "Utente non trovato")
+    if target.get("role") == "superadmin":
+        raise HTTPException(403, "I superadmin non sono modificabili da questo pannello")
     data = body.model_dump(exclude_unset=True)
     if "password" in data and data["password"]:
         data["password_hash"] = hash_password(data.pop("password"))
@@ -57,6 +66,7 @@ async def delete_user(uid: str, hard: bool = False, user: Dict = Depends(require
     Safety:
     - Non puoi eliminare/disattivare te stesso
     - Non puoi rimuovere l'ULTIMO admin attivo del tenant
+    - I superadmin sono intoccabili
     """
     if uid == user["id"]:
         raise HTTPException(400, "Non puoi eliminare il tuo stesso account")
@@ -64,6 +74,8 @@ async def delete_user(uid: str, hard: bool = False, user: Dict = Depends(require
     target = await db.users.find_one(merge_scope(user, {"id": uid}), {"_id": 0})
     if not target:
         raise HTTPException(404, "Utente non trovato")
+    if target.get("role") == "superadmin":
+        raise HTTPException(403, "I superadmin non possono essere eliminati o disattivati")
 
     # Se è admin e stiamo per disattivarlo/eliminarlo, verifica che ci siano altri admin attivi
     if target.get("role") == "admin":
@@ -85,8 +97,11 @@ async def delete_user(uid: str, hard: bool = False, user: Dict = Depends(require
 
 @router.patch("/{uid}/riattiva")
 async def riattiva_user(uid: str, user: Dict = Depends(require_roles("admin"))):
-    res = await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": True}})
-    if res.matched_count == 0:
+    target = await db.users.find_one(merge_scope(user, {"id": uid}), {"_id": 0})
+    if not target:
         raise HTTPException(404, "Utente non trovato")
+    if target.get("role") == "superadmin":
+        raise HTTPException(403, "I superadmin non sono gestibili da questo pannello")
+    await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": True}})
     await log_audit(user, "REACTIVATE", "user", uid)
     return {"ok": True}
