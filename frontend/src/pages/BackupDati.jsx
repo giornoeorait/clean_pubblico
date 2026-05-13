@@ -76,6 +76,23 @@ function SectionCard({ icon: Icon, eyebrow, title, subtitle, accent = "indaco", 
 /* -------------------------------------------------------------------------- */
 
 export default function BackupDati() {
+  const [snapshots, setSnapshots] = useState([]);
+  const [retention, setRetention] = useState(7);
+  const [snapsLoading, setSnapsLoading] = useState(true);
+
+  const reloadSnapshots = useCallback(async () => {
+    setSnapsLoading(true);
+    try {
+      const { data } = await api.get("/company/backup/cloud/list");
+      setSnapshots(data.snapshots || []);
+      setRetention(data.retention_days || 7);
+    } catch (e) {
+      toast.error("Errore caricamento snapshot");
+    } finally { setSnapsLoading(false); }
+  }, []);
+
+  useEffect(() => { reloadSnapshots(); }, [reloadSnapshots]);
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto" data-testid="backup-dati-page">
       <PageHeader
@@ -84,9 +101,14 @@ export default function BackupDati() {
         subtitle="Snapshot automatici su cloud, backup manuali in JSON, notifiche email per gli alert e zona pericolosa per il reset operativo."
       />
 
-      <StatusStrip />
+      <StatusStrip snapshots={snapshots} retention={retention} />
 
-      <CloudSnapshotsCard />
+      <CloudSnapshotsCard
+        snapshots={snapshots}
+        retention={retention}
+        loading={snapsLoading}
+        reload={reloadSnapshots}
+      />
 
       <NotificationCard />
 
@@ -101,20 +123,13 @@ export default function BackupDati() {
 /*  Status strip — overview KPIs                                               */
 /* -------------------------------------------------------------------------- */
 
-function StatusStrip() {
-  const [stats, setStats] = useState({ count: 0, latest: null, retention: 7, size: 0 });
-
-  useEffect(() => {
-    api.get("/company/backup/cloud/list").then(({ data }) => {
-      const snaps = data.snapshots || [];
-      setStats({
-        count: snaps.length,
-        latest: snaps[0]?.created_at || null,
-        retention: data.retention_days || 7,
-        size: snaps.reduce((acc, s) => acc + (s.size_bytes || 0), 0),
-      });
-    }).catch(() => {});
-  }, []);
+function StatusStrip({ snapshots, retention }) {
+  const stats = {
+    count: snapshots.length,
+    latest: snapshots[0]?.created_at || null,
+    retention: retention || 7,
+    size: snapshots.reduce((acc, s) => acc + (s.size_bytes || 0), 0),
+  };
 
   const cards = [
     { label: "Snapshot attivi", value: stats.count, sub: `max ${stats.retention}`, icon: Database, accent: "text-indaco" },
@@ -143,25 +158,9 @@ function StatusStrip() {
 /*  Card: Cloud snapshots                                                      */
 /* -------------------------------------------------------------------------- */
 
-function CloudSnapshotsCard() {
-  const [snapshots, setSnapshots] = useState([]);
-  const [loading, setLoading] = useState(true);
+function CloudSnapshotsCard({ snapshots, retention, loading, reload }) {
   const [creating, setCreating] = useState(false);
-  const [retention, setRetention] = useState(7);
   const [restoreState, setRestoreState] = useState({ open: false, id: null, mode: "merge", confirm: "", running: false });
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get("/company/backup/cloud/list");
-      setSnapshots(data.snapshots || []);
-      setRetention(data.retention_days || 7);
-    } catch (e) {
-      toast.error("Errore caricamento snapshot");
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const createNow = async () => {
     setCreating(true);
@@ -169,7 +168,7 @@ function CloudSnapshotsCard() {
       const { data } = await api.post("/company/backup/cloud");
       toast.success(`Snapshot creato · ${fmtSize(data.snapshot.size_bytes)} · ${data.snapshot.total_records} record`);
       if (data.pruned > 0) toast.info(`${data.pruned} snapshot più vecchi rimossi per retention`);
-      await load();
+      await reload();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Errore creazione snapshot");
     } finally { setCreating(false); }
@@ -197,7 +196,7 @@ function CloudSnapshotsCard() {
     try {
       await api.delete(`/company/backup/cloud/${id}`);
       toast.success("Snapshot eliminato");
-      await load();
+      await reload();
     } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 
