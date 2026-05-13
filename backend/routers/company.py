@@ -37,9 +37,10 @@ def _public_view(doc: Optional[dict]) -> dict:
     if not doc:
         return {**{k: "" for k in CompanyIn.model_fields.keys()}, "logo_url": None, "setup_complete": False}
     setup_complete = all((doc.get(k) or "").strip() for k in REQUIRED_FIELDS)
+    tid = doc.get("tenant_id") or ""
     out = {
         **{k: doc.get(k, "") for k in CompanyIn.model_fields.keys()},
-        "logo_url": "/api/company/logo" if doc.get("logo_path") else None,
+        "logo_url": f"/api/company/logo/{tid}" if doc.get("logo_path") and tid else None,
         "setup_complete": setup_complete,
         "updated_at": doc.get("updated_at"),
     }
@@ -104,13 +105,32 @@ async def delete_company_logo(user: Dict = Depends(require_roles("admin"))):
 
 @router.get("/company/logo")
 async def get_company_logo(user: Dict = Depends(require_roles("admin"))):
-    """Return the tenant company logo (tenant-scoped, auth required)."""
+    """Return the tenant company logo (tenant-scoped, auth required). Legacy."""
     doc = await db.company.find_one(tenant_scope(user), {"_id": 0})
     path = (doc or {}).get("logo_path")
     if not path:
         raise HTTPException(404, "Logo non configurato")
     data, ctype = get_object(path)
     return Response(content=data, media_type=ctype or "image/webp", headers={"Cache-Control": "private, max-age=300"})
+
+
+@router.get("/company/logo/{tenant_id}")
+async def get_company_logo_public(tenant_id: str):
+    """Public endpoint to load the company logo — used by <img> tags which can't send auth headers.
+
+    Only returns the binary if a logo is configured for that tenant. The tenant_id is unguessable
+    (UUID) and the logo is intended as public branding (visible on portale pubblico, fatture, ecc.).
+    """
+    doc = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    path = (doc or {}).get("logo_path")
+    if not path:
+        raise HTTPException(404, "Logo non configurato")
+    data, ctype = get_object(path)
+    return Response(
+        content=data,
+        media_type=ctype or "image/webp",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 async def load_company_for_tenant(tenant_id: str) -> dict:
