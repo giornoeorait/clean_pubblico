@@ -51,7 +51,42 @@ async def update_user(uid: str, body: PatchUserIn, user: Dict = Depends(require_
 
 
 @router.delete("/{uid}")
-async def delete_user(uid: str, user: Dict = Depends(require_roles("admin"))):
-    await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": False}})
-    await log_audit(user, "DEACTIVATE", "user", uid)
+async def delete_user(uid: str, hard: bool = False, user: Dict = Depends(require_roles("admin"))):
+    """Soft-delete (default) o hard-delete dell'utente.
+
+    Safety:
+    - Non puoi eliminare/disattivare te stesso
+    - Non puoi rimuovere l'ULTIMO admin attivo del tenant
+    """
+    if uid == user["id"]:
+        raise HTTPException(400, "Non puoi eliminare il tuo stesso account")
+
+    target = await db.users.find_one(merge_scope(user, {"id": uid}), {"_id": 0})
+    if not target:
+        raise HTTPException(404, "Utente non trovato")
+
+    # Se è admin e stiamo per disattivarlo/eliminarlo, verifica che ci siano altri admin attivi
+    if target.get("role") == "admin":
+        from core import tenant_id_of as _tid
+        n_admin = await db.users.count_documents({
+            "tenant_id": _tid(user), "role": "admin", "attivo": True, "id": {"$ne": uid},
+        })
+        if n_admin == 0:
+            raise HTTPException(400, "Impossibile rimuovere l'ultimo admin attivo del tenant")
+
+    if hard:
+        await db.users.delete_one(merge_scope(user, {"id": uid}))
+        await log_audit(user, "DELETE", "user", uid, {"email": target.get("email")})
+    else:
+        await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": False}})
+        await log_audit(user, "DEACTIVATE", "user", uid, {"email": target.get("email")})
+    return {"ok": True, "mode": "hard" if hard else "soft"}
+
+
+@router.patch("/{uid}/riattiva")
+async def riattiva_user(uid: str, user: Dict = Depends(require_roles("admin"))):
+    res = await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": {"attivo": True}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Utente non trovato")
+    await log_audit(user, "REACTIVATE", "user", uid)
     return {"ok": True}
