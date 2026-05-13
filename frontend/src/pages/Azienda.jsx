@@ -238,6 +238,27 @@ function DangerZone() {
   const [resetCounters, setResetCounters] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState(null);
+  const [downloadedBackup, setDownloadedBackup] = React.useState(false);
+  const [backingUp, setBackingUp] = React.useState(false);
+
+  const downloadBackup = async () => {
+    setBackingUp(true);
+    try {
+      const res = await api.get("/company/export-operativo", { responseType: "blob" });
+      // Estrae nome file dall'header
+      const disp = res.headers["content-disposition"] || "";
+      const match = disp.match(/filename="?([^";]+)"?/);
+      const filename = match ? match[1] : `backup-${new Date().toISOString().slice(0,10)}.json`;
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      setDownloadedBackup(true);
+      toast.success("Backup scaricato — conservalo in un posto sicuro");
+    } catch (e) {
+      toast.error("Errore download backup: " + (e.response?.data?.detail || e.message));
+    } finally { setBackingUp(false); }
+  };
 
   const doReset = async () => {
     if (confirmText !== "RESET") return;
@@ -298,6 +319,21 @@ function DangerZone() {
 
           {open && !result && (
             <div className="border-2 border-red-300 rounded-lg p-4 bg-red-50 space-y-3">
+              <div className="bg-amber-50 border border-amber-300 rounded-md p-3 flex items-start gap-2 text-sm">
+                <span className="text-2xl leading-none">💾</span>
+                <div className="flex-1">
+                  <p className="font-bold text-amber-800 mb-1">Consigliato: scarica un backup prima di cancellare</p>
+                  <p className="text-xs text-amber-700 mb-2">Salva un file JSON con tutti i tuoi dati. Potrai ripristinarli in futuro se necessario.</p>
+                  <button
+                    type="button"
+                    onClick={downloadBackup}
+                    disabled={backingUp}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-md text-xs font-medium"
+                    data-testid="download-backup-btn">
+                    {backingUp ? "Esportazione in corso..." : downloadedBackup ? "✅ Backup scaricato — riscarica" : "📥 Scarica backup JSON"}
+                  </button>
+                </div>
+              </div>
               <p className="text-sm font-bold text-red-700">
                 Per confermare, digita esattamente <code className="bg-white px-2 py-0.5 rounded border border-red-300">RESET</code> qui sotto:
               </p>
@@ -314,10 +350,15 @@ function DangerZone() {
                 <input type="checkbox" checked={resetCounters} onChange={e => setResetCounters(e.target.checked)} data-testid="reset-counters-checkbox" />
                 Resetta anche i contatori di numerazione (DDT, FT, ORD ripartono da 1)
               </label>
+              {confirmText === "RESET" && !downloadedBackup && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  ⚠️ Non hai ancora scaricato il backup. Sei sicuro di voler procedere senza?
+                </p>
+              )}
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => { setOpen(false); setConfirmText(""); }}
+                  onClick={() => { setOpen(false); setConfirmText(""); setDownloadedBackup(false); }}
                   className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-md text-sm">
                   Annulla
                 </button>

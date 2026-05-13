@@ -139,7 +139,7 @@ async def load_company_for_tenant(tenant_id: str) -> dict:
     return doc or {}
 
 
-# ============== RESET OPERATIVO ==============
+# ============== EXPORT BACKUP ==============
 
 OPERATIONAL_COLLECTIONS = [
     "clienti", "ddt", "fatture", "offerte", "ordinativi",
@@ -150,6 +150,72 @@ OPERATIONAL_COLLECTIONS = [
 ]
 
 COUNTER_KEYS = ["ddt", "fattura", "ordinativi", "offerta", "ddt_fornitore", "fattura_fornitore"]
+
+
+def _serialize_doc(d: dict) -> dict:
+    """Convert datetime/ObjectId to ISO strings for JSON dump."""
+    import datetime as _dt
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, _dt.datetime):
+            out[k] = v.isoformat()
+        elif isinstance(v, list):
+            out[k] = [_serialize_doc(x) if isinstance(x, dict) else x for x in v]
+        elif isinstance(v, dict):
+            out[k] = _serialize_doc(v)
+        else:
+            out[k] = v
+    return out
+
+
+@router.get("/company/export-operativo")
+async def export_operativo(user: Dict = Depends(require_roles("admin"))):
+    """Esporta un dump JSON completo dei dati operativi del proprio tenant.
+
+    Include anche company, branding, articoli, listini, termini_templates per ripristino totale.
+    Il file è un download attachment.
+    """
+    import json
+    from datetime import datetime as _dt, timezone as _tz
+    from fastapi.responses import Response as _Response
+
+    tid = tenant_id_of(user)
+    company_doc = await db.company.find_one({"tenant_id": tid}, {"_id": 0})
+
+    dump = {
+        "exported_at": _dt.now(_tz.utc).isoformat(),
+        "tenant_id": tid,
+        "version": "1.0",
+        "collections": {},
+    }
+
+    # Dati operativi
+    for c in OPERATIONAL_COLLECTIONS:
+        docs = await db[c].find({"tenant_id": tid}, {"_id": 0}).to_list(100000)
+        dump["collections"][c] = [_serialize_doc(d) for d in docs]
+
+    # Catalog & config (utili per ripristino totale)
+    for c in ["articoli", "listini", "listini_prezzi", "termini_templates", "branding"]:
+        docs = await db[c].find({"tenant_id": tid}, {"_id": 0}).to_list(100000)
+        dump["collections"][c] = [_serialize_doc(d) for d in docs]
+
+    dump["company"] = _serialize_doc(company_doc) if company_doc else None
+
+    await log_audit(user, "EXPORT", "tenant_backup", tid,
+                    {"total": sum(len(v) for v in dump["collections"].values())})
+
+    payload = json.dumps(dump, indent=2, ensure_ascii=False).encode("utf-8")
+    azienda = (company_doc or {}).get("nome") or "tenant"
+    ts = _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"backup-{azienda.replace(' ', '_')}-{ts}.json"
+    return _Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ============== RESET OPERATIVO ==============
 
 
 class ResetOperativoIn(BaseModel):
