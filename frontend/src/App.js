@@ -23,6 +23,7 @@ import SuperAdmin from "./pages/SuperAdmin";
 import SuperadminUsers from "./pages/SuperadminUsers";
 import Branding from "./pages/Branding";
 import Azienda from "./pages/Azienda";
+import BackupDati from "./pages/BackupDati";
 import Offerte from "./pages/Offerte";
 import Ordinativi from "./pages/Ordinativi";
 import PortalePublic from "./pages/PortalePublic";
@@ -88,6 +89,7 @@ export default function App() {
               <Route path="/automezzi" element={<WithLayout roles={["admin","contabilita"]}><Automezzi /></WithLayout>} />
               <Route path="/utenti" element={<WithLayout roles={["admin"]}><Utenti /></WithLayout>} />
               <Route path="/azienda" element={<WithLayout roles={["admin"]}><Azienda /></WithLayout>} />
+              <Route path="/backup-dati" element={<WithLayout roles={["admin"]}><BackupDati /></WithLayout>} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </BrowserRouter>

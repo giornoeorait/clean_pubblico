@@ -7,7 +7,7 @@ import TrialBanner from "./TrialBanner";
 import AlertsBanner from "./AlertsBanner";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
-  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet,
+  SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet, Database,
 } from "@phosphor-icons/react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -31,6 +31,7 @@ const ALL_ITEMS = [
   { to: "/report", label: "Report & BI", icon: ChartBar, roles: ["admin", "contabilita"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
+  { to: "/backup-dati", label: "Backup & Dati", icon: Database, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
   { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
   { to: "/admin/superadmins", label: "Superadmin", icon: Crown, roles: ["superadmin"] },

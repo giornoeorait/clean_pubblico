@@ -1,0 +1,36 @@
+{
+  "summary": "Iter-26 frontend-only restructure validation: new /backup-dati dedicated page + sidebar entry + Azienda.jsx cleanup. 32/33 e2e Playwright assertions passed on the public preview URL. The new page renders cleanly with PageHeader, 4-card status strip, and all 4 sections (cloud snapshots, notifications, manual JSON backup, danger zone) with correct data-testids. Create→Restore-dialog→Delete cycle works; restore dialog is inline within CloudSnapshotsCard as required; notification chips add via Plus and Enter, remove via X, Salva persists (verified by reloading and chip count), Invia test returns the expected SMTP-stub toast 'Email registrate nel log (SMTP non configurato): 2'. Manual backup elements present; danger zone RESET gating + counters checkbox work. /azienda no longer contains danger-zone / cloud-snapshots-card / notification-settings testids — only the company anagrafica form + logo card. Sidebar gating works: logistica and contabilita see NO 'Backup & Dati' entry, and direct navigation to /backup-dati for non-admins is redirected to /dashboard (page not rendered). One bug found: the status strip 'Snapshot attivi' counter does NOT update after creating/deleting a snapshot — the cards stay at 0 even when rows appear in the table. Reason: StatusStrip useEffect has [] dependency and is a sibling of CloudSnapshotsCard so it never re-fetches. Mitigation: lift snapshot state to BackupDati, or pass a refresh signal/event to StatusStrip, or use a shared SWR/store. Cleanup performed: test notification chips removed, all created snapshots deleted, db.company.notifications back to {recipients: [], include_admin: true}.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BackupDati > StatusStrip",
+        "issue": "'Snapshot attivi', 'Ultimo backup', 'Spazio occupato' KPIs do NOT refresh after creating or deleting a snapshot. The StatusStrip component fetches /company/backup/cloud/list only once on mount (useEffect with []) and never re-fetches when CloudSnapshotsCard mutates the list. Verified by capturing strip text before (count=0) and after (count=0) a create that did add a row to the table. This violates the review-request line 'Status strip Snapshot attivi updates correctly after creating/deleting a snapshot'.",
+        "selector": "[data-testid='backup-status-strip']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix StatusStrip to re-fetch (or receive snapshots via props) so the 4 KPI cards refresh after Crea snapshot / Trash. Simplest fix: lift `snapshots` state to BackupDati() and pass it down to both StatusStrip and CloudSnapshotsCard, OR expose a `reload` callback via context/ref."
+  ],
+  "critical_code_review_comments": [
+    "BackupDati.jsx StatusStrip uses local fetch on mount only — duplicate API call with CloudSnapshotsCard (two GET /company/backup/cloud/list on first render). Consolidate into a single fetch and share state.",
+    "BackupDati.jsx imports many Phosphor icons that are unused on first scan (e.g., FloppyDisk imported then only used in NotificationCard — fine; but verify with eslint --no-unused). Not a blocker.",
+    "doRestore() (cloud and manual) both call window.location.reload() after 1.2s — acceptable but loses any toast follow-up; consider router refresh.",
+    "Manual restore reads file twice (once for preview, once on submit). For large JSON backups this duplicates parsing cost; could cache the parsed object in state when preview is built.",
+    "fmtRelative shows 'adesso' under 60s — works as advertised ('adesso' or '0 min fa').",
+    "All interactive elements have data-testid — testability is excellent."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped", "frontend": "97%"},
+  "test_credentials": "admin@cleantec.it/admin123 (admin), logistica@cleantec.it/logistica123 (non-admin), contabilita@cleantec.it/contabilita123 (non-admin) — all verified.",
+  "seed_data_creation": "None persisted. Created 1 cloud snapshot and 1 notification chip during testing, both removed at end. db.company.notifications restored to {recipients: [], include_admin: true} for the demo tenant.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend was not re-tested this iteration (iter-25 + iter-24 covered all endpoints; review request explicitly said 'frontend only'). Test environment runs SMTP in stub mode — Invia email di test shows toast 'Email registrate nel log (SMTP non configurato): N'. The single bug (StatusStrip not refreshing) is the only thing to retest after fix. Use viewport 1920x1080 to ensure desktop sidebar is visible at the xl breakpoint. RBAC routing is correctly enforced by WithLayout roles=['admin'] in App.js line 92 — non-admins land on /dashboard.",
+  "rca of the issue": "StatusStrip and CloudSnapshotsCard are SIBLING components in BackupDati(). Each fetches /company/backup/cloud/list independently. CloudSnapshotsCard re-fetches after createNow/deleteSnap via its own load() callback, but StatusStrip is unaware of those mutations because its useEffect dependency array is [] (run-once). Reproduce: 1) login admin 2) open /backup-dati (strip shows count=0) 3) click 'Crea snapshot' 4) wait — a row appears in the table but the strip still shows 0 (Snapshot attivi), 'mai' (Ultimo backup), '0 B' (Spazio). Fix options (recommended order): (A) Lift snapshots state to BackupDati and pass snapshots+retention as props to both components — simplest, single source of truth, removes the duplicate GET on mount. (B) Add a context/event-emitter so CloudSnapshotsCard can ping StatusStrip after mutations. (C) Use SWR/React Query with key '/company/backup/cloud/list' and call mutate() after createNow/deleteSnap. Option A is ~15 lines of refactor."
+}
