@@ -183,3 +183,80 @@ async def smtp_test(body: SmtpTestIn, user: Dict = Depends(get_current_user)):
 async def list_email_events(user: Dict = Depends(get_current_user), limit: int = 100):
     _require_super(user)
     return await db.email_events.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+
+
+# ============== GESTIONE SUPERADMIN (cross-tenant) ==============
+
+class SuperadminCreateIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str = Field(min_length=2)
+
+
+class SuperadminPatchIn(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    attivo: Optional[bool] = None
+
+
+@router.get("/superadmins")
+async def list_superadmins(user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    items = await db.users.find({"role": "superadmin"}, {"_id": 0, "password_hash": 0}).to_list(500)
+    return items
+
+
+@router.post("/superadmins")
+async def create_superadmin(body: SuperadminCreateIn, user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    from core import new_id, hash_password
+    email = body.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(400, "Email già registrata")
+    doc = {
+        "id": new_id(),
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": body.name,
+        "role": "superadmin",
+        "tenant_id": None,
+        "attivo": True,
+        "created_at": now_utc(),
+    }
+    await db.users.insert_one(doc)
+    doc.pop("password_hash", None)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.patch("/superadmins/{uid}")
+async def update_superadmin(uid: str, body: SuperadminPatchIn, user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    from core import hash_password
+    target = await db.users.find_one({"id": uid, "role": "superadmin"}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "Superadmin non trovato")
+    data = body.model_dump(exclude_unset=True)
+    if "password" in data and data["password"]:
+        data["password_hash"] = hash_password(data.pop("password"))
+    else:
+        data.pop("password", None)
+    if not data:
+        return {"ok": True}
+    await db.users.update_one({"id": uid}, {"$set": data})
+    return {"ok": True}
+
+
+@router.delete("/superadmins/{uid}")
+async def delete_superadmin(uid: str, user: Dict = Depends(get_current_user)):
+    _require_super(user)
+    if uid == user["id"]:
+        raise HTTPException(400, "Non puoi eliminare il tuo stesso account")
+    # Mantieni almeno 1 superadmin
+    n_active = await db.users.count_documents({"role": "superadmin", "attivo": True, "id": {"$ne": uid}})
+    if n_active == 0:
+        raise HTTPException(400, "Impossibile rimuovere l'ultimo superadmin attivo")
+    res = await db.users.delete_one({"id": uid, "role": "superadmin"})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Superadmin non trovato")
+    return {"ok": True}

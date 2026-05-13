@@ -33,6 +33,7 @@ const ALL_ITEMS = [
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
   { to: "/billing", label: "Abbonamento", icon: CreditCard, roles: ["admin"] },
   { to: "/admin", label: "Pannello SaaS", icon: Crown, roles: ["superadmin"] },
+  { to: "/admin/superadmins", label: "Superadmin", icon: Crown, roles: ["superadmin"] },
   { to: "/admin/branding", label: "Branding", icon: Palette, roles: ["superadmin"] },
 ];
 

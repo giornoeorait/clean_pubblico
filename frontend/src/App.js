@@ -20,6 +20,7 @@ import Pricing from "./pages/Pricing";
 import Register from "./pages/Register";
 import Billing from "./pages/Billing";
 import SuperAdmin from "./pages/SuperAdmin";
+import SuperadminUsers from "./pages/SuperadminUsers";
 import Branding from "./pages/Branding";
 import Azienda from "./pages/Azienda";
 import Offerte from "./pages/Offerte";
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="/portale" element={<PortaleAccesso />} />
               <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
               <Route path="/admin" element={<WithLayout roles={["superadmin"]}><SuperAdmin /></WithLayout>} />
+              <Route path="/admin/superadmins" element={<WithLayout roles={["superadmin"]}><SuperadminUsers /></WithLayout>} />
               <Route path="/admin/branding" element={<WithLayout roles={["superadmin"]}><Branding /></WithLayout>} />
               <Route path="/dashboard" element={<WithLayout><Dashboard /></WithLayout>} />
               <Route path="/clienti" element={<WithLayout roles={["admin","contabilita","logistica"]}><Clienti /></WithLayout>} />
