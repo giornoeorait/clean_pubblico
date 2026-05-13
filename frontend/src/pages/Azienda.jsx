@@ -228,6 +228,7 @@ export default function Azienda() {
 
       {/* DANGER ZONE */}
       <DangerZone />
+      <CloudBackups />
     </div>
   );
 }
@@ -520,6 +521,210 @@ function RestoreBackup() {
                 className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm">
                 Ricarica pagina
               </button>
+            </div>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+
+function CloudBackups() {
+  const [snapshots, setSnapshots] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [creating, setCreating] = React.useState(false);
+  const [retentionDays, setRetentionDays] = React.useState(7);
+  const [restoreState, setRestoreState] = React.useState({ open: false, snapshotId: null, mode: "merge", confirmText: "", running: false });
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/company/backup/cloud/list");
+      setSnapshots(data.snapshots || []);
+      setRetentionDays(data.retention_days || 7);
+    } catch (e) {
+      toast.error("Errore caricamento snapshot cloud");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const createNow = async () => {
+    setCreating(true);
+    try {
+      const { data } = await api.post("/company/backup/cloud");
+      toast.success(`Snapshot creato (${(data.snapshot.size_bytes / 1024).toFixed(0)} KB · ${data.snapshot.total_records} record)`);
+      if (data.pruned > 0) toast.info(`${data.pruned} snapshot più vecchi rimossi per retention`);
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore creazione snapshot");
+    } finally { setCreating(false); }
+  };
+
+  const askRestore = (snapshotId) => {
+    setRestoreState({ open: true, snapshotId, mode: "merge", confirmText: "", running: false });
+  };
+
+  const doRestore = async () => {
+    const { snapshotId, mode, confirmText } = restoreState;
+    if (confirmText !== "RESTORE" || !snapshotId) return;
+    setRestoreState(s => ({ ...s, running: true }));
+    try {
+      const { data } = await api.post(`/company/backup/cloud/${snapshotId}/restore`, { confirm: "RESTORE", mode });
+      toast.success(`${data.total_inserted + data.total_updated} record ripristinati`);
+      setRestoreState({ open: false, snapshotId: null, mode: "merge", confirmText: "", running: false });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore ripristino");
+      setRestoreState(s => ({ ...s, running: false }));
+    }
+  };
+
+  const deleteSnapshot = async (snapshotId) => {
+    if (!window.confirm("Eliminare definitivamente questo snapshot?")) return;
+    try {
+      await api.delete(`/company/backup/cloud/${snapshotId}`);
+      toast.success("Snapshot eliminato");
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore");
+    }
+  };
+
+  const fmtDate = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const fmtSize = (bytes) => {
+    if (!bytes && bytes !== 0) return "—";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  return (
+    <div className="mt-6 max-w-4xl mx-auto" data-testid="cloud-backups">
+      <details className="rounded-lg border-2 border-celeste/40 bg-celeste/5 overflow-hidden" open>
+        <summary className="px-5 py-3 cursor-pointer font-display font-bold text-indaco hover:bg-celeste/10 select-none flex items-center justify-between">
+          <span>☁️ Snapshot Cloud — backup automatici giornalieri</span>
+          <span className="text-xs font-mono text-slate-500">retention: {retentionDays} snapshot</span>
+        </summary>
+        <div className="p-5 border-t border-celeste/40 bg-white space-y-4">
+          <div className="text-sm text-slate-700 space-y-1">
+            <p>I tuoi dati vengono salvati ogni giorno alle <b>03:00 UTC</b> su archiviazione cloud sicura.</p>
+            <p className="text-xs text-slate-500">
+              Vengono conservati gli ultimi <b>{retentionDays} snapshot</b> per tenant; i più vecchi vengono rimossi automaticamente.
+              Puoi anche creare uno snapshot manuale in qualunque momento.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={createNow}
+            disabled={creating}
+            className="px-4 py-2 bg-indaco hover:bg-indaco-dark disabled:opacity-40 text-white rounded-md text-sm font-medium"
+            data-testid="cloud-backup-create-btn">
+            {creating ? "Creazione in corso…" : "📸 Crea snapshot ora"}
+          </button>
+
+          <div className="rounded-md border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="text-left px-3 py-2">Data</th>
+                  <th className="text-left px-3 py-2">Origine</th>
+                  <th className="text-right px-3 py-2">Record</th>
+                  <th className="text-right px-3 py-2">Dimensione</th>
+                  <th className="text-right px-3 py-2">Azioni</th>
+                </tr>
+              </thead>
+              <tbody data-testid="cloud-backup-list">
+                {loading ? (
+                  <tr><td colSpan={5} className="text-center py-4 text-slate-400 font-mono text-xs">Caricamento…</td></tr>
+                ) : snapshots.length === 0 ? (
+                  <tr><td colSpan={5} className="text-center py-6 text-slate-400 text-sm">Nessuno snapshot disponibile. Creane uno manualmente o attendi il run automatico delle 03:00 UTC.</td></tr>
+                ) : (
+                  snapshots.map(s => (
+                    <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/60" data-testid={`cloud-backup-row-${s.id}`}>
+                      <td className="px-3 py-2 font-mono text-xs">{fmtDate(s.created_at)}</td>
+                      <td className="px-3 py-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${s.source === "auto" ? "bg-celeste/15 text-indaco" : "bg-amber-100 text-amber-700"}`}>
+                          {s.source === "auto" ? "🤖 auto" : "👤 manuale"}
+                        </span>
+                        {s.created_by && s.source !== "auto" && (
+                          <span className="ml-2 text-slate-400 font-mono">{s.created_by}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-xs">{s.total_records}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs">{fmtSize(s.size_bytes)}</td>
+                      <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => askRestore(s.id)}
+                          className="px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded"
+                          data-testid={`cloud-backup-restore-btn-${s.id}`}>
+                          Ripristina
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSnapshot(s.id)}
+                          className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                          data-testid={`cloud-backup-delete-btn-${s.id}`}>
+                          Elimina
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {restoreState.open && (
+            <div className="mt-2 border-2 border-emerald-300 rounded-lg p-4 bg-emerald-50 space-y-3" data-testid="cloud-backup-restore-dialog">
+              <p className="text-sm font-bold text-emerald-800">Ripristino da snapshot cloud</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setRestoreState(s => ({ ...s, mode: "merge" }))}
+                  className={`flex-1 border-2 rounded-md p-2 text-xs text-left ${restoreState.mode === "merge" ? "border-indaco bg-white" : "border-slate-200 bg-white/60"}`}
+                  data-testid="cloud-restore-mode-merge">
+                  <p className="font-bold">🔀 Merge (consigliato)</p>
+                  <p className="text-slate-500 mt-0.5">Sovrascrive i record per ID. I record nuovi non vengono toccati.</p>
+                </button>
+                <button type="button" onClick={() => setRestoreState(s => ({ ...s, mode: "replace" }))}
+                  className={`flex-1 border-2 rounded-md p-2 text-xs text-left ${restoreState.mode === "replace" ? "border-red-500 bg-white" : "border-slate-200 bg-white/60"}`}
+                  data-testid="cloud-restore-mode-replace">
+                  <p className="font-bold">🗑️ Replace</p>
+                  <p className="text-slate-500 mt-0.5">Cancella TUTTI i dati operativi del tenant, poi importa lo snapshot.</p>
+                </button>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-emerald-800">
+                  Digita <code className="bg-white px-2 py-0.5 rounded border border-emerald-300">RESTORE</code> per confermare:
+                </p>
+                <input type="text" value={restoreState.confirmText}
+                  onChange={e => setRestoreState(s => ({ ...s, confirmText: e.target.value }))}
+                  placeholder="Digita RESTORE"
+                  className="mt-1 w-full px-3 py-2 border-2 border-emerald-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  data-testid="cloud-restore-confirm-input" />
+              </div>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => setRestoreState({ open: false, snapshotId: null, mode: "merge", confirmText: "", running: false })}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-md text-sm">
+                  Annulla
+                </button>
+                <button type="button"
+                  onClick={doRestore}
+                  disabled={restoreState.confirmText !== "RESTORE" || restoreState.running}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium"
+                  data-testid="cloud-restore-execute-btn">
+                  {restoreState.running ? "Ripristino in corso…" : "RIPRISTINA"}
+                </button>
+              </div>
             </div>
           )}
         </div>

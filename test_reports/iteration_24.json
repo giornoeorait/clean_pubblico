@@ -1,0 +1,34 @@
+{
+  "summary": "Full E2E coverage of Iter-24 Cloud Backups feature. Backend: 12/12 pytest cases passed including happy paths, retention (9 created -> 7 kept, oldest 2 pruned), multi-tenant isolation (cross-tenant fake snapshot is invisible/404 for list/restore/delete), auth guards (401), restore confirm=RESTORE validation (400), invalid snapshot_id (404), restore merge & replace modes (replace reports total_wiped > 0). Frontend: 'Snapshot Cloud' section renders under Danger Zone with retention badge; manual 'Crea snapshot ora' creates a row, Ripristina opens dialog requiring typed RESTORE, executes successfully with merge mode, and Elimina with browser confirm removes the row showing 'Snapshot eliminato' toast.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_cloud_backups.py",
+    "/app/test_reports/pytest/iter24_cloud_backups.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backup_service.delete_snapshot leaves storage object orphaned (acknowledged in comment) — consider exposing a delete primitive in storage.py or scheduling lifecycle cleanup; minor cost concern at scale.",
+    "apply_restore only restores docs with an 'id' field; collections like email_events sometimes use composite keys — verify dump shape vs restore is symmetric for those.",
+    "run_daily_snapshots iterates db.tenants but a tenant.stato in {'suspended','canceled'} is skipped. Soft-deleted tenants still keep their cloud_backups history forever — consider pruning on tenant deletion.",
+    "Frontend doRestore performs window.location.reload() after success; full reload is heavy and loses any other unsaved state — using react state refresh + load() would be cleaner.",
+    "CloudRestoreIn uses confirm/mode as strings without enum validator; current 400 check is in route. Could move to Pydantic Literal for stricter schema."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_cloud_backups.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 (tenant admin, demo-tenant-0000-0000-0000-000000000001)",
+  "seed_data_creation": "None persisted — all snapshots created during retention test are pruned to 7 by the feature itself; after-test cleanup deletes remaining demo-tenant cloud_backups + TEST_OTHER_TENANT injected doc. Final DB: 0 cloud_backups docs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Cloud Backups feature is solid. Test suite file: /app/backend/tests/test_iter24_cloud_backups.py — uses pymongo to (a) reset cloud_backups before retention test and (b) inject a cross-tenant fake doc for isolation test. Both admin and superadmin in this environment share the SAME tenant_id (demo-tenant-0000-0000-0000-000000000001), so true multi-tenant testing relies on direct Mongo injection. The /api/company/backup/cloud/run-now superadmin endpoint was NOT tested (deemed redundant since create_snapshot path is exercised via manual POST).",
+  "rca of the issue": "N/A — no defects found"
+}

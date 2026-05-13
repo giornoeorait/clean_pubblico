@@ -10,6 +10,15 @@ from PIL import Image
 
 from core import db, now_utc, require_roles, tenant_scope, tenant_id_of, log_audit
 from storage import put_object, get_object, APP_NAME
+from backup_service import (
+    create_snapshot as _create_snapshot,
+    list_snapshots as _list_snapshots,
+    restore_snapshot as _restore_snapshot,
+    delete_snapshot as _delete_snapshot,
+    apply_retention as _apply_retention,
+    run_daily_snapshots as _run_daily_snapshots,
+    RETENTION_KEEP,
+)
 
 router = APIRouter(tags=["company"])
 
@@ -357,3 +366,78 @@ async def reset_operativo(body: ResetOperativoIn, user: Dict = Depends(require_r
         "counters_reset": counters_reset,
         "message": f"{total} record cancellati dal tuo tenant. Catalogo, anagrafica azienda e utenti sono stati preservati.",
     }
+
+
+# ============== CLOUD BACKUPS (Emergent Object Storage) ==============
+
+
+class CloudRestoreIn(BaseModel):
+    confirm: str             # must be "RESTORE"
+    mode: str = "merge"      # "merge" | "replace"
+
+
+@router.post("/company/backup/cloud")
+async def create_cloud_backup(user: Dict = Depends(require_roles("admin"))):
+    """Crea ora uno snapshot del tenant e lo carica su Emergent Object Storage."""
+    tid = tenant_id_of(user)
+    try:
+        meta = await _create_snapshot(tid, source="manual", created_by_email=user.get("email"))
+        pruned = await _apply_retention(tid, RETENTION_KEEP)
+    except Exception as e:
+        raise HTTPException(500, f"Errore creazione snapshot: {e}")
+    await log_audit(user, "CREATE", "cloud_backup", meta["id"],
+                    {"size_bytes": meta["size_bytes"], "total_records": meta["total_records"], "pruned": pruned})
+    return {"ok": True, "snapshot": meta, "pruned": pruned, "retention": RETENTION_KEEP}
+
+
+@router.get("/company/backup/cloud/list")
+async def list_cloud_backups(user: Dict = Depends(require_roles("admin"))):
+    """Elenca gli snapshot cloud disponibili per il proprio tenant (più recenti prima)."""
+    tid = tenant_id_of(user)
+    snapshots = await _list_snapshots(tid)
+    return {"snapshots": snapshots, "retention_days": RETENTION_KEEP}
+
+
+@router.post("/company/backup/cloud/{snapshot_id}/restore")
+async def restore_cloud_backup(snapshot_id: str, body: CloudRestoreIn,
+                               user: Dict = Depends(require_roles("admin"))):
+    """Ripristina i dati del tenant da uno snapshot cloud."""
+    if body.confirm != "RESTORE":
+        raise HTTPException(400, "Confirm string non valida — atteso 'RESTORE'")
+    if body.mode not in ("merge", "replace"):
+        raise HTTPException(400, "mode deve essere 'merge' o 'replace'")
+    tid = tenant_id_of(user)
+    try:
+        summary = await _restore_snapshot(tid, snapshot_id, mode=body.mode)
+    except FileNotFoundError:
+        raise HTTPException(404, "Snapshot non trovato")
+    except Exception as e:
+        raise HTTPException(500, f"Errore ripristino snapshot: {e}")
+    await log_audit(user, "RESTORE", "cloud_backup", snapshot_id,
+                    {"mode": body.mode, "total_inserted": summary["total_inserted"],
+                     "total_updated": summary["total_updated"], "total_wiped": summary["total_wiped"]})
+    return {
+        "ok": True,
+        **summary,
+        "message": (f"Ripristinati {summary['total_inserted'] + summary['total_updated']} record "
+                    f"({summary['total_inserted']} nuovi, {summary['total_updated']} aggiornati). "
+                    f"Wipe pre-restore: {summary['total_wiped']} record."),
+    }
+
+
+@router.delete("/company/backup/cloud/{snapshot_id}")
+async def delete_cloud_backup(snapshot_id: str, user: Dict = Depends(require_roles("admin"))):
+    """Elimina uno snapshot cloud (solo metadata; l'oggetto fisico viene scartato per retention)."""
+    tid = tenant_id_of(user)
+    ok = await _delete_snapshot(tid, snapshot_id)
+    if not ok:
+        raise HTTPException(404, "Snapshot non trovato")
+    await log_audit(user, "DELETE", "cloud_backup", snapshot_id, {})
+    return {"ok": True}
+
+
+@router.post("/company/backup/cloud/run-now")
+async def run_scheduler_now(user: Dict = Depends(require_roles("superadmin"))):
+    """Trigger manuale del run quotidiano per TUTTI i tenant (riservato a superadmin)."""
+    result = await _run_daily_snapshots()
+    return result

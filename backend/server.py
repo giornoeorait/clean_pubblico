@@ -8,6 +8,7 @@ from core import client
 from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts
 from seed import run_all as run_seed
 from storage import init_storage
+from backup_service import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("cleantec")
@@ -57,10 +58,14 @@ async def on_startup():
         from core import db as _db
         await _db.portale_sessions.create_index("expires_at", expireAfterSeconds=0)
         await _db.portale_lookup_failed.create_index("at", expireAfterSeconds=300)  # 5 min cleanup
+        await _db.cloud_backups.create_index([("tenant_id", 1), ("created_at", -1)])
     except Exception:
         pass
+    # Avvia scheduler backup giornalieri (03:00 UTC)
+    start_scheduler()
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    stop_scheduler()
     client.close()
