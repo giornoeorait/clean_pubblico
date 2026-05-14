@@ -88,7 +88,15 @@ export default function DDT() {
 
   const delDDT = async (d) => {
     if (!window.confirm(`Eliminare DDT ${d.numero}?`)) return;
-    try { await api.delete(`/ddt/${d.id}`); toast.success("Eliminato"); fetchAll(); }
+    try {
+      const { data } = await api.delete(`/ddt/${d.id}`);
+      if (data?.reverted_ordinativo) {
+        toast.success(`DDT eliminato · ${data.reverted_ordinativo} torna editabile`);
+      } else {
+        toast.success("Eliminato");
+      }
+      fetchAll();
+    }
     catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 

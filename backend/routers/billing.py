@@ -50,7 +50,9 @@ async def list_fatture(
         query["stato_incasso"] = stato_incasso
     if user["role"] == "cliente" and user.get("cliente_id"):
         query["cliente_id"] = user["cliente_id"]
-    return await db.fatture.find(query, {"_id": 0}).sort("data", -1).to_list(limit)
+    docs = await db.fatture.find(query, {"_id": 0}).sort("data", -1).to_list(limit)
+    from routers.ddt import _enrich_cliente_denominazione
+    return await _enrich_cliente_denominazione(docs, user)
 
 
 @router.get("/fatturabili")
@@ -392,6 +394,8 @@ async def list_sospesi(
     if user["role"] == "cliente" and user.get("cliente_id"):
         q["cliente_id"] = user["cliente_id"]
     fatture = await db.fatture.find(q, {"_id": 0}).sort("data", 1).to_list(limit)
+    from routers.ddt import _enrich_cliente_denominazione
+    fatture = await _enrich_cliente_denominazione(fatture, user)
     totale = round(sum(f.get("totale", 0) for f in fatture), 2)
     return {
         "fatture": fatture,

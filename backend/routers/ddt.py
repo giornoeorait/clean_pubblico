@@ -70,7 +70,27 @@ async def list_ddt(
     if stato_fatturazione: q["stato_fatturazione"] = stato_fatturazione
     if user["role"] == "cliente" and user.get("cliente_id"):
         q["cliente_id"] = user["cliente_id"]
-    return await db.ddt.find(q, {"_id": 0}).sort("data", -1).to_list(limit)
+    docs = await db.ddt.find(q, {"_id": 0}).sort("data", -1).to_list(limit)
+    return await _enrich_cliente_denominazione(docs, user)
+
+
+async def _enrich_cliente_denominazione(docs: list, user: Dict) -> list:
+    """Add `cliente_denominazione` on each doc by joining with db.clienti (legacy data fix)."""
+    missing_ids = list({d.get("cliente_id") for d in docs
+                       if d.get("cliente_id") and not d.get("cliente_denominazione")})
+    if not missing_ids:
+        return docs
+    cur = db.clienti.find(
+        {"tenant_id": user["tenant_id"], "id": {"$in": missing_ids}},
+        {"_id": 0, "id": 1, "denominazione_struttura": 1},
+    )
+    by_id: Dict[str, str] = {}
+    async for c in cur:
+        by_id[c["id"]] = c.get("denominazione_struttura") or ""
+    for d in docs:
+        if not d.get("cliente_denominazione"):
+            d["cliente_denominazione"] = by_id.get(d.get("cliente_id"), "")
+    return docs
 
 
 @router.post("")
@@ -166,5 +186,17 @@ async def delete_ddt(did: str, user: Dict = Depends(require_roles(*_WRITE))):
     if existing.get("stato_fatturazione") == "fatturato":
         raise HTTPException(409, "DDT fatturato non può essere eliminato")
     await db.ddt.delete_one(merge_scope(user, {"id": did}))
-    await log_audit(user, "DELETE", "ddt", did)
-    return {"ok": True}
+
+    # Se questo DDT è stato generato da un ordinativo, riportiamo l'ordinativo a "nuovo"
+    # in modo che torni editabile dall'utente.
+    linked_ord = await db.ordinativi.find_one(
+        merge_scope(user, {"ddt_id": did}), {"_id": 0, "id": 1, "numero": 1}
+    )
+    if linked_ord:
+        await db.ordinativi.update_one(
+            {"id": linked_ord["id"], "tenant_id": existing.get("tenant_id")},
+            {"$set": {"stato": "nuovo", "ddt_id": None, "ddt_numero": None, "updated_at": now_utc()}},
+        )
+
+    await log_audit(user, "DELETE", "ddt", did, {"reverted_ordinativo": (linked_ord or {}).get("numero")})
+    return {"ok": True, "reverted_ordinativo": (linked_ord or {}).get("numero")}
