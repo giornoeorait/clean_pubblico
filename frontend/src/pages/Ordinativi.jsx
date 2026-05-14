@@ -221,7 +221,12 @@ export default function Ordinativi() {
                   <Label>Cliente *</Label>
                   <Select value={form.cliente_id} onValueChange={v => setForm({...form, cliente_id: v})} disabled={!!editing}>
                     <SelectTrigger data-testid="ord-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
-                    <SelectContent>{clienti.map(c => <SelectItem key={c.id} value={c.id}>{c.ragione_sociale}</SelectItem>)}</SelectContent>
+                    <SelectContent>{clienti.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="font-medium">{clientePrimary(c)}</span>
+                        {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
+                      </SelectItem>
+                    ))}</SelectContent>
                   </Select>
                 </div>
                 <div>

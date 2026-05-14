@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import {
   Plus, FilePdf, Trash, PencilSimple, HandHeart, FileText, FloppyDisk,
   CheckCircle, XCircle, Eye, Handshake, Copy, ArrowRight, Warning,
@@ -284,7 +285,13 @@ export default function Offerte() {
                   <Select value={form.cliente_id} onValueChange={v => setForm({...form, cliente_id: v})} disabled={!!editing}>
                     <SelectTrigger data-testid="offerta-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
                     <SelectContent>
-                      {clienti.map(c => <SelectItem key={c.id} value={c.id}>{c.ragione_sociale}{c.listino_id && " · ⚡"}</SelectItem>)}
+                      {clienti.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="font-medium">{clientePrimary(c)}</span>
+                          {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
+                          {c.listino_id && " · ⚡"}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   {selectedCliente && (

@@ -126,7 +126,9 @@ export default function DDT() {
                     <SelectContent>
                       {clienti.filter(c => c.attivo !== false).map(c => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.ragione_sociale} {c.listino_id ? "• listino ✓" : "• no listino"}
+                          <span className="font-medium">{clientePrimary(c)}</span>
+                          {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
+                          {c.listino_id ? " • listino ✓" : " • no listino"}
                         </SelectItem>
                       ))}
                     </SelectContent>
