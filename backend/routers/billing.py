@@ -158,12 +158,12 @@ async def fattura_pdf(fid: str, user: Dict = Depends(get_current_user)):
     )
 
 
-@router.get("/{fid}/xml-pa")
-async def fattura_xml_pa(fid: str, user: Dict = Depends(get_current_user)):
-    """Export XML FatturaPA (v1.2.2 FPR12) della fattura, scaricabile per upload allo SdI."""
+@router.get("/{fid}/xml")
+async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_user)):
+    """Export XML Fattura Elettronica (v1.2.2 FPR12 — privati B2B/B2C) per upload allo SdI."""
     from fastapi import Response
     from routers.company import load_company_for_tenant
-    from services.fatturapa import build_fattura_pa_xml
+    from services.fattura_elettronica import build_fattura_elettronica_xml
 
     fatt = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
     if not fatt:
@@ -175,7 +175,7 @@ async def fattura_xml_pa(fid: str, user: Dict = Depends(get_current_user)):
     ).to_list(500)
     company = await load_company_for_tenant(user["tenant_id"])
     try:
-        xml_bytes, filename = build_fattura_pa_xml(fatt, company, cliente, ddt_list)
+        xml_bytes, filename = build_fattura_elettronica_xml(fatt, company, cliente, ddt_list)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return Response(

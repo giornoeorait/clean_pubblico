@@ -22,7 +22,7 @@ const FIELDS = [
   { k: "codice_sdi",       label: "Codice destinatario SDI", required: false, placeholder: "0000000 oppure ABC1234" },
   { k: "telefono",         label: "Telefono",                required: true,  placeholder: "+39 02 1234567" },
   { k: "sito_web",         label: "Sito internet",           required: false, placeholder: "https://tuaazienda.it" },
-  { k: "regime_fiscale",   label: "Regime fiscale (FatturaPA)", required: false, placeholder: "RF01", options: ["RF01","RF02","RF04","RF05","RF06","RF07","RF08","RF09","RF10","RF11","RF12","RF13","RF14","RF15","RF16","RF17","RF18","RF19"] },
+  { k: "regime_fiscale",   label: "Regime fiscale (Fattura elettronica)", required: false, placeholder: "RF01", options: ["RF01","RF02","RF04","RF05","RF06","RF07","RF08","RF09","RF10","RF11","RF12","RF13","RF14","RF15","RF16","RF17","RF18","RF19"] },
   { k: "iva_default_pct",  label: "Aliquota IVA di default (%)", required: false, placeholder: "22", type: "number" },
 ];
 

@@ -1,10 +1,11 @@
-"""FatturaPA XML generator (v1.2.2 FPR12 — fattura privata B2B).
+"""Fattura Elettronica XML generator (v1.2.2 FPR12 — fattura privata B2B/B2C).
 
 Builds a SDI-compliant XML invoice from a CleanTec fattura document.
+Note: FPR12 = formato per privati (B2B/B2C). FPA12 = formato per PA.
 
 Usage:
-    from services.fatturapa import build_fattura_pa_xml
-    xml_bytes, filename = await build_fattura_pa_xml(fattura, company, cliente, ddts)
+    from services.fattura_elettronica import build_fattura_elettronica_xml
+    xml_bytes, filename = build_fattura_elettronica_xml(fattura, company, cliente, ddts)
 """
 from __future__ import annotations
 
@@ -148,13 +149,13 @@ def _tag(name: str, value: Any) -> str:
 
 # --------------------------------------------------------------- Main builder
 
-def build_fattura_pa_xml(
+def build_fattura_elettronica_xml(
     fattura: Dict[str, Any],
     company: Dict[str, Any],
     cliente: Dict[str, Any],
     ddts: List[Dict[str, Any]],
 ) -> Tuple[bytes, str]:
-    """Generate the full FatturaPA XML for a fattura.
+    """Generate the full Fattura Elettronica XML (FPR12 — privati) for a fattura.
 
     Returns (xml_bytes, filename).
     Filename convention: ITxxxxxxxxxxx_NNNNN.xml

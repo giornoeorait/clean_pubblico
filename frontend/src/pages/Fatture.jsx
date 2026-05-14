@@ -96,7 +96,7 @@ export default function Fatture() {
 
   const downloadXmlPa = async (f) => {
     try {
-      const res = await api.get(`/fatture/${f.id}/xml-pa`, { responseType: "blob" });
+      const res = await api.get(`/fatture/${f.id}/xml`, { responseType: "blob" });
       const disp = res.headers["content-disposition"] || "";
       const m = disp.match(/filename="?([^";]+)"?/);
       const filename = m ? m[1] : `${f.numero}.xml`;
@@ -104,7 +104,7 @@ export default function Fatture() {
       const a = document.createElement("a");
       a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
-      toast.success("XML FatturaPA scaricato");
+      toast.success("XML Fattura Elettronica scaricato");
     } catch (e) {
       // Try to extract error message from blob
       let msg = "Errore generazione XML";
@@ -166,7 +166,7 @@ export default function Fatture() {
                 </td>
                 <td className="py-2 px-4 text-right space-x-1">
                   <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML FatturaPA" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML Fattura Elettronica" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)}><Eye size={14} /></Button>
                   {f.stato_incasso !== "incassata" && (
                     <Button size="sm" onClick={() => incassa(f)} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`fatt-incassa-${f.id}`}>
