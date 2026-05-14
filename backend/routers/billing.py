@@ -8,7 +8,7 @@ Flusso:
 """
 from datetime import datetime
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import (
@@ -133,6 +133,119 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
     doc.pop("_id", None)
     await log_audit(user, "CREATE", "fattura", fid, {"ddt_count": len(ddts), "totale": totale})
     return doc
+
+
+@router.get("/xml-bulk")
+async def fatture_xml_bulk(
+    user: Dict = Depends(get_current_user),
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+    month: Optional[str] = Query(None),  # "YYYY-MM"
+):
+    """Esporta in un singolo ZIP tutti gli XML Fattura Elettronica del periodo.
+
+    Specifica:
+      - `month=YYYY-MM` per esportare un singolo mese, oppure
+      - `from=YYYY-MM-DD&to=YYYY-MM-DD` per un intervallo arbitrario.
+    """
+    import io
+    import zipfile
+    from datetime import date
+    from calendar import monthrange
+    from fastapi import Response
+    from routers.company import load_company_for_tenant
+    from services.fattura_elettronica import build_fattura_elettronica_xml
+
+    # ----- Risolvi from/to -----
+    if month:
+        try:
+            y, m = month.split("-")
+            y, m = int(y), int(m)
+            d_from = date(y, m, 1).isoformat()
+            d_to = date(y, m, monthrange(y, m)[1]).isoformat()
+            zip_name = f"Fatture_Elettroniche_{y:04d}-{m:02d}.zip"
+        except Exception:
+            raise HTTPException(400, "Parametro 'month' non valido (atteso YYYY-MM)")
+    else:
+        if not from_ or not to:
+            raise HTTPException(400, "Specifica 'month' oppure 'from' e 'to'")
+        try:
+            date.fromisoformat(from_); date.fromisoformat(to)
+        except Exception:
+            raise HTTPException(400, "Date non valide (atteso YYYY-MM-DD)")
+        if from_ > to:
+            raise HTTPException(400, "'from' deve essere ≤ 'to'")
+        d_from, d_to = from_, to
+        zip_name = f"Fatture_Elettroniche_{d_from}_{d_to}.zip"
+
+    # ----- Query fatture del periodo -----
+    fatture = await db.fatture.find(
+        merge_scope(user, {"data": {"$gte": d_from, "$lte": d_to}}),
+        {"_id": 0},
+    ).sort("data", 1).to_list(5000)
+
+    if not fatture:
+        raise HTTPException(404, f"Nessuna fattura trovata nel periodo {d_from} → {d_to}")
+
+    company = await load_company_for_tenant(user["tenant_id"])
+
+    # ----- Costruisci ZIP in memoria -----
+    skipped: List[Dict[str, str]] = []
+    included = 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fatt in fatture:
+            cliente = await db.clienti.find_one(
+                merge_scope(user, {"id": fatt["cliente_id"]}), {"_id": 0}
+            ) or {}
+            ddt_list = await db.ddt.find(
+                merge_scope(user, {"id": {"$in": fatt.get("ddt_ids", [])}}),
+                {"_id": 0},
+            ).to_list(500)
+            try:
+                xml_bytes, filename = build_fattura_elettronica_xml(fatt, company, cliente, ddt_list)
+                # Evita collisioni di nome (raro ma possibile su progressivi cross-anno)
+                base_name = filename
+                seq = 2
+                while base_name in zf.namelist():
+                    base_name = filename.replace(".xml", f"_{seq}.xml")
+                    seq += 1
+                zf.writestr(base_name, xml_bytes)
+                included += 1
+            except ValueError as e:
+                skipped.append({"numero": fatt.get("numero", "?"), "reason": str(e)})
+
+        # Manifest sommario (utile in caso di skip)
+        manifest = (
+            f"Export Fatture Elettroniche\n"
+            f"Periodo: {d_from} → {d_to}\n"
+            f"Generato: {now_utc().isoformat()}\n"
+            f"Totale fatture nel periodo: {len(fatture)}\n"
+            f"XML generati: {included}\n"
+            f"Saltate per errore: {len(skipped)}\n"
+        )
+        if skipped:
+            manifest += "\nFatture saltate:\n"
+            for s in skipped:
+                manifest += f"  · {s['numero']}: {s['reason']}\n"
+        zf.writestr("_MANIFEST.txt", manifest.encode("utf-8"))
+
+    if included == 0:
+        raise HTTPException(
+            400,
+            f"Nessuna fattura del periodo è esportabile. {len(skipped)} fatture saltate per dati mancanti."
+        )
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_name}"',
+            "X-Export-Total": str(len(fatture)),
+            "X-Export-Included": str(included),
+            "X-Export-Skipped": str(len(skipped)),
+        },
+    )
 
 
 @router.get("/{fid}/pdf")

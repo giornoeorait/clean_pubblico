@@ -6,7 +6,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank } from "@phosphor-icons/react";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { toast } from "sonner";
 
 export default function Fatture() {
@@ -122,9 +123,12 @@ export default function Fatture() {
         title="Fatturazione"
         subtitle="Genera fatture riepilogative da DDT non fatturati. Gestisci incassi e sospesi."
         actions={
-          <Button onClick={() => setGenOpen(true)} className="bg-indaco hover:bg-indaco-dark" data-testid="new-fattura-btn">
-            <Plus size={16} className="mr-1" />Nuova fattura
-          </Button>
+          <div className="flex gap-2">
+            <BulkXmlExport />
+            <Button onClick={() => setGenOpen(true)} className="bg-indaco hover:bg-indaco-dark" data-testid="new-fattura-btn">
+              <Plus size={16} className="mr-1" />Nuova fattura
+            </Button>
+          </div>
         }
       />
 
@@ -281,5 +285,184 @@ export default function Fatture() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  Bulk XML export — mese o intervallo                                */
+/* ------------------------------------------------------------------ */
+
+const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
+              "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+
+function BulkXmlExport() {
+  const today = new Date();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState("month"); // "month" | "range"
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [count, setCount] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  // Date range for the current selection
+  const computeRange = useCallback(() => {
+    if (mode === "month") {
+      const m = String(month).padStart(2, "0");
+      const last = new Date(year, month, 0).getDate();
+      return { from: `${year}-${m}-01`, to: `${year}-${m}-${String(last).padStart(2, "0")}` };
+    }
+    return { from: fromDate, to: toDate };
+  }, [mode, year, month, fromDate, toDate]);
+
+  // Refresh count whenever selection changes
+  useEffect(() => {
+    if (!open) return;
+    const { from, to } = computeRange();
+    if (!from || !to) { setCount(null); return; }
+    let cancelled = false;
+    api.get("/fatture", { params: { stato_incasso: undefined } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const c = (data || []).filter(f => {
+          const d = (f.data || "").slice(0, 10);
+          return d >= from && d <= to;
+        }).length;
+        setCount(c);
+      })
+      .catch(() => { if (!cancelled) setCount(null); });
+    return () => { cancelled = true; };
+  }, [open, computeRange]);
+
+  const download = async () => {
+    const { from, to } = computeRange();
+    if (mode === "range" && (!from || !to)) { toast.error("Seleziona Da e A"); return; }
+    if (from > to) { toast.error("La data 'Da' deve essere precedente a 'A'"); return; }
+    setDownloading(true);
+    try {
+      const params = mode === "month"
+        ? { month: `${year}-${String(month).padStart(2, "0")}` }
+        : { from, to };
+      const res = await api.get("/fatture/xml-bulk", { params, responseType: "blob" });
+      const disp = res.headers["content-disposition"] || "";
+      const m = disp.match(/filename="?([^";]+)"?/);
+      const filename = m ? m[1] : "Fatture_Elettroniche.zip";
+      const total = res.headers["x-export-total"];
+      const included = res.headers["x-export-included"];
+      const skipped = res.headers["x-export-skipped"];
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`ZIP scaricato · ${included}/${total} XML${skipped > 0 ? ` (${skipped} saltate)` : ""}`);
+      setOpen(false);
+    } catch (e) {
+      let msg = "Errore generazione ZIP";
+      if (e.response?.data instanceof Blob) {
+        try { const t = await e.response.data.text(); msg = JSON.parse(t).detail || msg; } catch { /* ignore */ }
+      } else if (e.response?.data?.detail) { msg = e.response.data.detail; }
+      toast.error(msg);
+    } finally { setDownloading(false); }
+  };
+
+  const years = [];
+  for (let y = today.getFullYear(); y >= today.getFullYear() - 4; y--) years.push(y);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="border-indaco/30 text-indaco hover:bg-indaco/5" data-testid="bulk-xml-btn">
+          <Package size={16} weight="duotone" className="mr-1.5" />
+          Esporta XML del periodo
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-96 p-4" align="end" data-testid="bulk-xml-popover">
+        <div className="space-y-3">
+          <div>
+            <div className="overline text-slate-400">Esportazione massiva</div>
+            <h3 className="font-display font-bold text-base text-slate-900">XML Fatture Elettroniche</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Scarica un ZIP con tutti gli XML del periodo (uno per fattura) pronti per l'invio allo SdI.</p>
+          </div>
+
+          {/* Mode tabs */}
+          <div className="flex bg-slate-100 rounded-md p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode("month")}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${mode === "month" ? "bg-white text-indaco shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              data-testid="bulk-mode-month">
+              Mese
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("range")}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${mode === "range" ? "bg-white text-indaco shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              data-testid="bulk-mode-range">
+              Intervallo date
+            </button>
+          </div>
+
+          {mode === "month" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Mese</Label>
+                <select
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  data-testid="bulk-month-select"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-indaco">
+                  {MESI.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Anno</Label>
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  data-testid="bulk-year-select"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-indaco">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Da</Label>
+                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-9 text-xs" data-testid="bulk-from-date" />
+              </div>
+              <div>
+                <Label className="text-xs">A</Label>
+                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-9 text-xs" data-testid="bulk-to-date" />
+              </div>
+            </div>
+          )}
+
+          {/* Live count */}
+          <div className="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-sm flex items-center gap-2" data-testid="bulk-count-pill">
+            <CalendarBlank size={14} weight="duotone" className="text-indaco" />
+            {count === null ? (
+              <span className="text-slate-400 font-mono text-xs">caricamento…</span>
+            ) : (
+              <span>
+                <b className="text-indaco">{count}</b>{" "}
+                <span className="text-slate-600">{count === 1 ? "fattura" : "fatture"} nel periodo</span>
+              </span>
+            )}
+          </div>
+
+          <Button
+            onClick={download}
+            disabled={downloading || count === 0}
+            className="w-full bg-indaco hover:bg-indaco-dark"
+            data-testid="bulk-xml-download-btn">
+            <Package size={14} weight="bold" className="mr-1.5" />
+            {downloading ? "Generazione ZIP…" : "Scarica ZIP"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
