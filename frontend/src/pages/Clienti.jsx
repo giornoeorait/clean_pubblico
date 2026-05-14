@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
+import ImportClientiDialog from "../components/ImportClientiDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -131,6 +132,8 @@ export default function Clienti() {
         title="Clienti"
         subtitle="Hotel, ospedali, ristoranti, industrie. Identificazione fiscale e denominazione struttura operativa."
         actions={
+          <div className="flex gap-2">
+          <ImportClientiDialog onImported={fetchList} />
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(EMPTY); } }}>
             <DialogTrigger asChild>
               <Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-cliente-btn"><Plus size={16} weight="bold" className="mr-1" /> Nuovo Cliente</Button>
@@ -209,6 +212,7 @@ export default function Clienti() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

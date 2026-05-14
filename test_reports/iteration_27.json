@@ -1,0 +1,53 @@
+{
+  "summary": "Tested Excel import wizard for Clienti (preview + commit endpoints + UI dialog). 13/13 backend tests pass; frontend E2E pass with full 50-row preview, mapping pills, import, list refresh. Cleaned up 50 imported clienti from DB.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ImportClientiDialog", "issues": ["Radix DialogContent emits a11y warning: 'Missing Description or aria-describedby={undefined}'. Add <DialogDescription> or aria-describedby to silence and improve a11y."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_imports.py",
+    "/app/test_reports/pytest/iter27_imports.xml"
+  ],
+  "action_items": [
+    "Optional: add <DialogDescription> to ImportClientiDialog for a11y compliance.",
+    "Optional improvement: duplicate check key uses lowercased denominazione + numeric-only partita_iva — works well but soft-deleted/deactivated clienti are still flagged as duplicates on re-import. Document or add an 'attivo:true' filter on the duplicate lookup if desired.",
+    "Optional: filter mapping/header lookup is currently case-sensitive on file-side text; works for the provided file (Italian headers). If user uploads files with all-caps or accented chars, may miss mapping — already handled via _norm() (lowercase + collapsed spaces). Confirmed working for this file."
+  ],
+  "critical_code_review_comments": [
+    "imports.py is 371 lines — within acceptable size. Good separation: parsing helpers / _build_cliente / endpoints.",
+    "Duplicate check correctly uses partita_iva + denominazione_struttura key, applied both at preview and commit (defense in depth).",
+    "Tenant scoping correct: tenant_id_of(user) used in existing lookup and in inserted doc.",
+    "Audit logging present (log_audit) on commit.",
+    "5MB / 2000-row / extension validation all enforced before parsing — good.",
+    "MongoDB _id excluded via projection in existing lookup; inserted docs avoid _id leak. OK.",
+    "Frontend dialog cleanly resets on close and on 'Cambia file' button. onImported callback wired to fetchList — verified list refreshed from 1 → 76 rows after committing 50."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter27_imports.py (new — 13 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (all flows verified)"},
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123 — all working as expected.",
+  "seed_data_creation": "Test downloaded /tmp/crm.xlsx (12,362 bytes) from public asset URL. 50 clienti inserted during E2E test then ALL 50 deleted via mongo cleanup. db.clienti.count(import_source='excel')=0 verified.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter27 = Excel import wizard for Clienti. Backend endpoints POST /api/imports/clienti/preview + /commit (admin/contabilita only). Test file /tmp/crm.xlsx must be re-downloaded with: curl -o /tmp/crm.xlsx 'https://customer-assets.emergentagent.com/job_wash-ops-central/artifacts/q8uenvrk_CRM_Clienti_1778743694.xlsx'. Expected preview counts for this fixture: total=50, ok=24, warning=26, duplicate=0, skip=0. Always cleanup after: db.clienti.delete_many({'tenant_id': tid, 'import_source': 'excel'}). Multi-tenant isolation was code-reviewed (uses tenant_id_of() in both existing-lookup and inserted doc) but not E2E-tested due to only one tenant in seed.",
+  "verified_features": [
+    "Auth: 401 without token, 403 for logistica, 200 for admin/contabilita on both endpoints",
+    "Preview returns counts {total:50, ok:24, warning:26, duplicate:0, skip:0}",
+    "Header auto-detection finds row 3 (after 2 title rows)",
+    "Column mapping: Name→denominazione_struttura, P IVA→partita_iva, Contact Email→email, Company Phone→telefono, PEC→pec, COD SDI→codice_sdi all confirmed",
+    "Warning rows expose 'placeholders' array (email/telefono/indirizzo) — 26 such rows in fixture",
+    "Commit inserts with import_source='excel' and imported_at timestamp (verified via GET /api/clienti)",
+    "Re-preview after commit correctly flags duplicates (3 became 'duplicate' after committing 3 ok rows)",
+    "File validation: .txt → 400, >5MB → 400, empty → 400",
+    "Frontend dialog: dropzone, file picker upload, 4 summary chips, mapping pills (12 chips visible), 50-row preview table with status badges, 'Cambia file' reset, 'Importa N clienti' button, success card with message, onImported refreshes list (1→76 rows)",
+    "Cleanup: 50 imported clienti deleted; final import_source='excel' count = 0"
+  ]
+}
