@@ -224,7 +224,10 @@ def require_roles(*allowed: str):
             if user["role"] != "superadmin":
                 raise HTTPException(status_code=403, detail="Permessi insufficienti")
             return user
-        if user["role"] not in allowed and user["role"] != "admin":
+        # Admin (tenant admin) e superadmin (cross-tenant) bypassano qualsiasi RBAC
+        if user["role"] in ("admin", "superadmin"):
+            return user
+        if user["role"] not in allowed:
             raise HTTPException(status_code=403, detail="Permessi insufficienti")
         return user
     return checker

@@ -17,7 +17,7 @@ _WRITE = ("admin", "logistica", "contabilita")
 
 class DDTRigaIn(BaseModel):
     articolo_id: str
-    quantita: float = Field(..., gt=0)
+    quantita: int = Field(..., gt=0)
     prezzo_unitario: Optional[float] = None  # se None: auto da listino
 
 
@@ -91,6 +91,7 @@ async def create_ddt(body: DDTIn, user: Dict = Depends(require_roles(*_WRITE))):
         "numero": await format_numero("ddt", "DDT", seq),
         "cliente_id": body.cliente_id,
         "cliente_nome": cliente.get("ragione_sociale", ""),
+        "cliente_denominazione": cliente.get("denominazione_struttura", ""),
         "listino_id": listino_id,
         "data": to_dt(body.data) or now_utc(),
         "note": body.note or "",

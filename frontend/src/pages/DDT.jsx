@@ -67,13 +67,13 @@ export default function DDT() {
     e.preventDefault();
     if (!cliId) { toast.error("Seleziona un cliente"); return; }
     if (rows.length === 0) { toast.error("Aggiungi almeno una riga"); return; }
-    const bad = rows.find(r => !r.articolo_id || !r.quantita || parseFloat(r.quantita) <= 0);
+    const bad = rows.find(r => !r.articolo_id || !r.quantita || parseInt(r.quantita) <= 0);
     if (bad) { toast.error("Ogni riga deve avere articolo e quantità > 0"); return; }
     try {
       const payload = {
         cliente_id: cliId,
         note,
-        righe: rows.map(r => ({ articolo_id: r.articolo_id, quantita: parseFloat(r.quantita) })),
+        righe: rows.map(r => ({ articolo_id: r.articolo_id, quantita: parseInt(r.quantita) || 0 })),
       };
       if (editingId) {
         await api.patch(`/ddt/${editingId}`, { note: payload.note, righe: payload.righe });
@@ -142,7 +142,7 @@ export default function DDT() {
                             {articoli.map(a => <SelectItem key={a.id} value={a.id}>{a.codice} — {a.descrizione}</SelectItem>)}
                           </SelectContent>
                         </Select>
-                        <Input type="number" step="1" min="0.01" className="w-24" placeholder="Qta" value={r.quantita} onChange={e => updateRow(i, "quantita", e.target.value)} />
+                        <Input type="number" step="1" min="1" className="w-24" placeholder="Qta" value={r.quantita} onChange={e => updateRow(i, "quantita", parseInt(e.target.value) || 0)} />
                         <Button type="button" variant="outline" size="icon" onClick={() => removeRow(i)}><Trash size={14} /></Button>
                       </div>
                     ))}
@@ -208,7 +208,10 @@ export default function DDT() {
               <tr key={d.id} className="border-b border-slate-100" data-testid={`ddt-${d.id}`}>
                 <td className="py-2 px-4 font-mono font-bold">{d.numero}</td>
                 <td className="py-2 px-4">{new Date(d.data).toLocaleDateString("it-IT")}</td>
-                <td className="py-2 px-4">{d.cliente_nome}</td>
+                <td className="py-2 px-4">
+                  <div>{d.cliente_nome}</div>
+                  {d.cliente_denominazione && <div className="text-xs text-slate-500">{d.cliente_denominazione}</div>}
+                </td>
                 <td className="py-2 px-4 text-center font-mono">{d.righe?.length || 0}</td>
                 <td className="py-2 px-4 text-right font-mono font-bold">€ {d.imponibile.toFixed(2)}</td>
                 <td className="py-2 px-4 text-center">

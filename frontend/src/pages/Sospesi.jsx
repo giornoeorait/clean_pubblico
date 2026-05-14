@@ -131,7 +131,10 @@ export default function Sospesi() {
                       </span>
                     ) : "—"}
                   </td>
-                  <td className="py-2 px-4">{f.cliente_nome}</td>
+                  <td className="py-2 px-4">
+                    <div>{f.cliente_nome}</div>
+                    {f.cliente_denominazione && <div className="text-xs text-slate-500">{f.cliente_denominazione}</div>}
+                  </td>
                   <td className="py-2 px-4 text-center text-xs text-slate-500">{f.ddt_numeri?.length || 0}</td>
                   <td className="py-2 px-4 text-right font-mono font-bold">€ {f.totale.toFixed(2)}</td>
                   <td className="py-2 px-4 text-right space-x-1">
@@ -155,7 +158,10 @@ export default function Sospesi() {
           {detail && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <div><div className="overline">Cliente</div><div className="font-semibold">{detail.cliente_nome}</div></div>
+                <div><div className="overline">Cliente</div>
+                  <div className="font-semibold">{detail.cliente_nome}</div>
+                  {detail.cliente_denominazione && <div className="text-xs text-slate-500">{detail.cliente_denominazione}</div>}
+                </div>
                 <div><div className="overline">Data</div><div>{new Date(detail.data).toLocaleDateString("it-IT")}</div></div>
               </div>
               <div>

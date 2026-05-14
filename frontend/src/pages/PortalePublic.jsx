@@ -34,7 +34,7 @@ export default function PortalePublic() {
   useEffect(() => { load(); }, [load]);
 
   const setQty = (aid, qty) => {
-    const q = Math.max(0, parseFloat(qty) || 0);
+    const q = Math.max(0, parseInt(qty) || 0);
     if (q === 0) { const nc = { ...cart }; delete nc[aid]; setCart(nc); }
     else setCart({ ...cart, [aid]: q });
   };
@@ -53,7 +53,7 @@ export default function PortalePublic() {
     try {
       const payload = {
         data_consegna_richiesta: dataConsegna,
-        righe: Object.entries(cart).map(([articolo_id, quantita]) => ({ articolo_id, quantita })),
+        righe: Object.entries(cart).map(([articolo_id, quantita]) => ({ articolo_id, quantita: parseInt(quantita) || 0 })),
         note_cliente: note,
       };
       const { data } = await axios.post(`${BACKEND}/api/public/portale/${token}/ordinativo`, payload);

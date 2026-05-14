@@ -101,6 +101,7 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         "numero": numero,
         "cliente_id": body.cliente_id,
         "cliente_nome": cliente.get("ragione_sociale", ""),
+        "cliente_denominazione": cliente.get("denominazione_struttura", ""),
         "data": to_dt(body.data) or now_utc(),
         "scadenza": to_dt(body.scadenza) if body.scadenza else None,
         "iva_pct": iva_pct,

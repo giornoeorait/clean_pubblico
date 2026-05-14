@@ -157,7 +157,10 @@ export default function Fatture() {
               <tr key={f.id} className="border-b border-slate-100" data-testid={`fatt-${f.id}`}>
                 <td className="py-2 px-4 font-mono font-bold">{f.numero}</td>
                 <td className="py-2 px-4">{new Date(f.data).toLocaleDateString("it-IT")}</td>
-                <td className="py-2 px-4">{f.cliente_nome}</td>
+                <td className="py-2 px-4">
+                  <div>{f.cliente_nome}</div>
+                  {f.cliente_denominazione && <div className="text-xs text-slate-500">{f.cliente_denominazione}</div>}
+                </td>
                 <td className="py-2 px-4 text-center text-xs text-slate-500">{f.ddt_numeri?.length || 0}</td>
                 <td className="py-2 px-4 text-right font-mono">€ {f.imponibile.toFixed(2)}</td>
                 <td className="py-2 px-4 text-right font-mono font-bold">€ {f.totale.toFixed(2)}</td>
@@ -261,7 +264,10 @@ export default function Fatture() {
           {detail && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <div><div className="overline">Cliente</div><div className="font-semibold">{detail.cliente_nome}</div></div>
+                <div><div className="overline">Cliente</div>
+                  <div className="font-semibold">{detail.cliente_nome}</div>
+                  {detail.cliente_denominazione && <div className="text-xs text-slate-500">{detail.cliente_denominazione}</div>}
+                </div>
                 <div><div className="overline">Stato</div><div className={`font-semibold ${detail.stato_incasso === "incassata" ? "text-emerald-600" : "text-amber-600"}`}>{detail.stato_incasso}</div></div>
               </div>
               <div>

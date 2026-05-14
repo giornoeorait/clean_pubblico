@@ -71,7 +71,7 @@ export default function Ordinativi() {
       const payload = {
         cliente_id: form.cliente_id,
         data_consegna_richiesta: form.data_consegna_richiesta,
-        righe: form.righe.map(r => ({ articolo_id: r.articolo_id, quantita: parseFloat(r.quantita) })),
+        righe: form.righe.map(r => ({ articolo_id: r.articolo_id, quantita: parseInt(r.quantita) || 0 })),
         note_interne: form.note_interne,
       };
       if (editing) {
@@ -163,7 +163,12 @@ export default function Ordinativi() {
                       <div className="font-mono font-bold">{o.numero}</div>
                       {o.ddt_numero && <div className="text-[11px] text-emerald-700 font-mono">→ {o.ddt_numero}</div>}
                     </td>
-                    <td className="text-sm">{cli?.ragione_sociale || o.cliente_snapshot?.ragione_sociale || "—"}</td>
+                    <td className="text-sm">
+                      <div>{cli?.ragione_sociale || o.cliente_snapshot?.ragione_sociale || "—"}</div>
+                      {(cli?.denominazione_struttura || o.cliente_snapshot?.denominazione_struttura) && (
+                        <div className="text-xs text-slate-500">{cli?.denominazione_struttura || o.cliente_snapshot?.denominazione_struttura}</div>
+                      )}
+                    </td>
                     <td>
                       <span className={`text-[11px] px-2 py-0.5 rounded ${o.origine === "portale" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                         {o.origine === "portale" ? "Portale cliente" : "Interno"}
@@ -258,7 +263,7 @@ export default function Ordinativi() {
                               value={r.quantita}
                               onChange={e => {
                                 const step = Math.max(1, parseInt(a?.multiplo_quantita) || 1);
-                                const v = parseFloat(e.target.value) || 0;
+                                const v = parseInt(e.target.value) || 0;
                                 const snapped = step > 1 ? Math.floor(v / step) * step : v;
                                 updRiga(i, "quantita", snapped);
                               }}

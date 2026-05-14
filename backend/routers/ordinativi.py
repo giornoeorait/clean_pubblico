@@ -33,7 +33,7 @@ public_router = APIRouter(prefix="/public", tags=["portale-pubblico"])
 # ---------- Schemas ----------
 class RigaOrd(BaseModel):
     articolo_id: str
-    quantita: float = Field(gt=0)
+    quantita: int = Field(gt=0)
 
 
 class OrdinativoIn(BaseModel):

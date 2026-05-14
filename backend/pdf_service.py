@@ -78,6 +78,8 @@ def _cliente_block(cliente: Dict, st: Dict) -> List:
     lines = []
     if cliente.get("ragione_sociale"):
         lines.append(f"<b>{cliente['ragione_sociale']}</b>")
+    if cliente.get("denominazione_struttura"):
+        lines.append(f"<font size=8>{cliente['denominazione_struttura']}</font>")
     if cliente.get("indirizzo"):
         lines.append(cliente["indirizzo"])
     piva = cliente.get("partita_iva", "")
