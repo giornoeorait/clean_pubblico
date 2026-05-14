@@ -152,7 +152,8 @@ async def create_offerta(body: OffertaIn, user: Dict = Depends(require_roles("ad
 
     seq = await next_seq("offerta")
     oid = new_id()
-    numero = f"OF-{datetime.now(timezone.utc).year}-{seq:05d}"
+    from core import format_numero
+    numero = await format_numero("offerta", "OF", seq)
     doc = {
         "id": oid,
         "tenant_id": tenant_id_of(user),
@@ -217,7 +218,8 @@ async def converti_contratto(oid: str, user: Dict = Depends(require_roles("admin
     if current["stato"] == "rifiutata":
         raise HTTPException(400, "Offerta rifiutata — impossibile convertire")
     seq = await next_seq("contratto")
-    cn = f"CT-{datetime.now(timezone.utc).year}-{seq:05d}"
+    from core import format_numero
+    cn = await format_numero("contratto", "CT", seq)
     await db.offerte.update_one(merge_scope(user, {"id": oid}), {"$set": {
         "stato": "contratto",
         "contratto_numero": cn,

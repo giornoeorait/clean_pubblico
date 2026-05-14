@@ -85,9 +85,10 @@ async def create_ddt(body: DDTIn, user: Dict = Depends(require_roles(*_WRITE))):
     righe, imponibile = await _compute_righe(user["tenant_id"], listino_id, body.righe)
 
     seq = await next_seq("ddt")
+    from core import format_numero
     doc = {
         "id": new_id(),
-        "numero": f"DDT-{datetime.now().year}-{seq:05d}",
+        "numero": await format_numero("ddt", "DDT", seq),
         "cliente_id": body.cliente_id,
         "cliente_nome": cliente.get("ragione_sociale", ""),
         "listino_id": listino_id,

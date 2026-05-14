@@ -38,6 +38,8 @@ class CompanyIn(BaseModel):
     codice_sdi: Optional[str] = ""
     telefono: Optional[str] = ""
     sito_web: Optional[str] = ""
+    regime_fiscale: Optional[str] = "RF01"   # FatturaPA RegimeFiscale (RF01..RF19)
+    iva_default_pct: Optional[float] = 22.0  # Aliquota IVA di default per nuove fatture
 
 
 REQUIRED_FIELDS = ["nome", "ragione_sociale", "partita_iva", "indirizzo", "email", "telefono"]
@@ -520,3 +522,90 @@ async def test_notification(user: Dict = Depends(require_roles("admin"))):
         sent.append({"to": r, "status": ev.get("status")})
     await log_audit(user, "TEST", "company_notifications", tid, {"count": len(sent)})
     return {"ok": True, "sent": sent}
+
+
+# ============== NUMERAZIONE DOCUMENTI ==============
+
+NUMERAZIONE_KINDS = [
+    {"key": "fattura",            "prefix": "FT",        "label": "Fatture clienti"},
+    {"key": "ddt",                "prefix": "DDT",       "label": "DDT clienti"},
+    {"key": "offerta",            "prefix": "OF",        "label": "Offerte / Preventivi"},
+    {"key": "contratto",          "prefix": "CT",        "label": "Contratti"},
+    {"key": "ordinativo",         "prefix": "ORD",       "label": "Ordinativi"},
+    {"key": "ddt_fornitore",      "prefix": "FORN-DDT",  "label": "DDT fornitori"},
+    {"key": "fattura_fornitore",  "prefix": "FORN-FT",   "label": "Fatture fornitori"},
+]
+
+
+class NumerazioneEntry(BaseModel):
+    key: str
+    seq: int = Field(ge=0)
+    suffix: Optional[str] = ""
+
+
+class NumerazioneIn(BaseModel):
+    entries: list[NumerazioneEntry]
+
+
+@router.get("/company/numerazione")
+async def get_numerazione(user: Dict = Depends(require_roles("admin"))):
+    """Restituisce per ogni kind: seq attuale, suffix configurato, prefisso e label umano."""
+    cfg_doc = await db.app_settings.find_one({"_id": "numerazione"}) or {}
+    out = []
+    for k in NUMERAZIONE_KINDS:
+        counter = await db.counters.find_one({"_id": k["key"]}) or {}
+        cfg = (cfg_doc.get(k["key"]) or {}) if isinstance(cfg_doc.get(k["key"]), dict) else {}
+        out.append({
+            "key": k["key"],
+            "prefix": k["prefix"],
+            "label": k["label"],
+            "current_seq": int(counter.get("seq", 0)),
+            "suffix": (cfg.get("suffix") or ""),
+        })
+    return {"entries": out}
+
+
+@router.put("/company/numerazione")
+async def update_numerazione(body: NumerazioneIn, user: Dict = Depends(require_roles("admin"))):
+    """Aggiorna seq + suffix per i kind specificati.
+
+    Regola di sicurezza: il nuovo seq deve essere >= seq corrente (no riduzioni → eviterebbe duplicati).
+    Per `seq=N`, la prossima emissione sarà numero N+1.
+    """
+    valid_keys = {k["key"] for k in NUMERAZIONE_KINDS}
+    errors: list[str] = []
+    updates: dict[str, dict] = {}
+    for e in body.entries:
+        if e.key not in valid_keys:
+            errors.append(f"Kind '{e.key}' non riconosciuto")
+            continue
+        current = await db.counters.find_one({"_id": e.key}) or {}
+        current_seq = int(current.get("seq", 0))
+        if e.seq < current_seq:
+            errors.append(f"{e.key}: nuovo seq ({e.seq}) inferiore al corrente ({current_seq}). "
+                          f"Per evitare duplicati il numero di partenza non può essere abbassato.")
+            continue
+        updates[e.key] = {"seq": e.seq, "suffix": (e.suffix or "").strip()}
+
+    if errors:
+        raise HTTPException(400, "; ".join(errors))
+
+    # Apply updates atomically
+    for kind, vals in updates.items():
+        await db.counters.update_one(
+            {"_id": kind}, {"$set": {"seq": vals["seq"]}}, upsert=True,
+        )
+
+    # Persist suffix in app_settings._id=numerazione
+    suffix_set = {f"{kind}.suffix": vals["suffix"] for kind, vals in updates.items()}
+    if suffix_set:
+        await db.app_settings.update_one(
+            {"_id": "numerazione"},
+            {"$set": suffix_set},
+            upsert=True,
+        )
+
+    await log_audit(user, "UPDATE", "numerazione", tenant_id_of(user),
+                    {"updated": list(updates.keys())})
+    # Return refreshed state
+    return await get_numerazione(user)  # type: ignore[arg-type]

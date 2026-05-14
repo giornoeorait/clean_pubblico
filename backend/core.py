@@ -159,6 +159,26 @@ async def next_seq(name: str) -> int:
     return int(doc["seq"])
 
 
+async def get_numero_config() -> Dict[str, Any]:
+    """Read the per-document-kind suffix config (singleton in app_settings)."""
+    doc = await db.app_settings.find_one({"_id": "numerazione"}) or {}
+    doc.pop("_id", None)
+    return doc
+
+
+async def format_numero(kind: str, prefix: str, seq: int) -> str:
+    """Build the progressive doc number string with optional suffix from settings.
+
+    Reads the suffix from db.app_settings._id='numerazione'.{kind}.suffix.
+    Returns a string like "FT-2026-00046" or "FT-2026-00046/L".
+    Caller must obtain `seq` via `await next_seq(kind)`.
+    """
+    cfg = await get_numero_config()
+    suffix = ((cfg.get(kind) or {}).get("suffix") or "").strip()
+    year = now_utc().year
+    return f"{prefix}-{year}-{seq:05d}{suffix}"
+
+
 async def log_audit(user: Dict[str, Any], azione: str, entita: str,
                     entita_id: str, dettagli: Optional[Dict[str, Any]] = None):
     await db.audit_log.insert_one({

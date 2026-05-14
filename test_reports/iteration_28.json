@@ -1,0 +1,68 @@
+{
+  "summary": "Iter28: Tested Numerazione documenti + FatturaPA XML export. 11/13 pytest cases pass; 1 SKIP (no fatturabili DDTs available for testing IVA-default fallback path); 1 FAILURE — CRITICAL BACKEND BUG in PUT /api/company crashes with 500 on the new float field iva_default_pct. Frontend renders correctly: 7 numerazione rows, regime_fiscale + iva_default_pct inputs in Azienda, XML buttons on every fattura row, save button toggles correctly on edit. XML PA generation works end-to-end and is structurally valid.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/company",
+        "issue": "Returns 500 AttributeError: 'float' object has no attribute 'strip'. Root cause: routers/company.py line 70 — `payload = {k: (v or \"\").strip() for k, v in body.model_dump(...).items()}` is applied to ALL fields including the new numeric iva_default_pct (float). This breaks the entire company-save flow whenever iva_default_pct is sent as a number (which is what the frontend does). The field is also stored as a stringified value if it ever made it through — type-inconsistent.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "GET /api/company",
+        "issue": "_public_view() in routers/company.py returns empty string '' for missing fields via `{k: doc.get(k, '') for k in CompanyIn.model_fields.keys()}` — for the new fields iva_default_pct (float, default 22.0) and regime_fiscale (str, default 'RF01'), it should fall back to the Pydantic default values, not empty string. Otherwise legacy company docs created before this iteration return iva_default_pct='' to the frontend, which then breaks the form (number input) and breaks the billing.py fallback `comp.get('iva_default_pct') or 22` (works due to truthiness but inconsistent).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "PUT /api/company/numerazione",
+        "issue": "By design, seq cannot be lowered below current_seq (correctly enforced). Means cleanup tests cannot restore the original counter values — only the suffix is restored. Document this limitation."
+      },
+      {
+        "endpoint": "/api/company/numerazione",
+        "issue": "Counters (db.counters) and numerazione settings (db.app_settings._id='numerazione') are GLOBAL across tenants by design — acceptable for current single-tenant deployment but should be tenant-scoped in a real multi-tenant scenario."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Salva anagrafica azienda (Azienda page)",
+        "issue": "If user opens Azienda and clicks Save, the PUT /api/company will 500 because the frontend sends iva_default_pct as a number. This blocks all anagrafica updates until the backend bug above is fixed.",
+        "affected_selectors": ["[data-testid='azienda-save-btn']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_numerazione_xmlpa.py",
+    "/app/test_reports/pytest/iter28_numerazione_xmlpa.xml"
+  ],
+  "action_items": [
+    "URGENT: Fix /app/backend/routers/company.py upsert_company (line 70). Only apply .strip() to string fields. Suggested fix: `payload = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump(exclude_unset=False).items()}`",
+    "Fix _public_view in /app/backend/routers/company.py to use Pydantic field defaults for missing values (especially iva_default_pct and regime_fiscale), not empty string. Suggested: pull defaults from CompanyIn.model_fields[k].default.",
+    "Consider tenant-scoping db.counters and db.app_settings._id='numerazione' for true multi-tenant safety (acceptable for now per problem statement)."
+  ],
+  "critical_code_review_comments": [
+    "fatturapa.py is clean and modular (352 lines). Good separation: parse_address / progressivo_invio / build_fattura_pa_xml. XML built as a single big format-string — works but a future PR could switch to xml.etree.ElementTree.SubElement for safer construction.",
+    "progressivo_invio() correctly extracts NNNNN from PREFIX-YYYY-NNNNN with regex r'-\\d{4}-(\\d{1,8})' — previous YYYY/NNNNN confusion bug is FIXED. Verified: ProgressivoInvio=00050 != year 2026 for numero FT-2026-00050.",
+    "fatturapa.py raises ValueError on missing company P.IVA / cliente identifier; billing.py correctly translates to HTTP 400. Good.",
+    "billing.py line 88-90: IVA fallback (body.iva_pct → company.iva_default_pct → 22) is correct.",
+    "core.format_numero() correctly reads suffix from app_settings._id='numerazione'.{kind}.suffix. Returns FT-YYYY-NNNNN[suffix]. Good.",
+    "company.py upsert_company has the .strip()-on-all-fields BUG (see backend_issues.critical). Same pattern in upload/logo paths uses targeted updates so they're fine.",
+    "RBAC on numerazione endpoints (require_roles('admin')) correctly rejects contabilita (403) and unauthenticated (401). Verified.",
+    "XML response Content-Type=application/xml + Content-Disposition attachment + filename pattern IT{piva}_NNNNN.xml verified.",
+    "Numerazione PUT validates: rejects seq lowering with Italian message containing 'inferiore al corrente', rejects unknown kind with 'non riconosciuto'. Verified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_numerazione_xmlpa.py (new — 14 pytest cases)"
+  ],
+  "success_rate": {"backend": "85% (11/13 passed, 1 skipped, 1 failed — single critical bug)", "frontend": "100% (UI renders all expected elements; no broken interactions outside the upstream backend bug)"},
+  "test_credentials": "admin@cleantec.it/admin123, contabilita@cleantec.it/contabilita123, logistica@cleantec.it/logistica123 — all login working.",
+  "seed_data_creation": "None. Mutated state during testing: bumped db.counters._id='fattura' seq by +5 (per design cannot lower it back); set+restored suffix to ''. db.app_settings._id='numerazione'.fattura.suffix='/X' was applied via UI test but the original ('') was restored by the cleanup test. Note: counter seq for 'fattura' is now ~+5 higher than at test start (irreversible by design). Same for 'ddt' (+3). No fatture were created (test_create_fattura SKIPPED due to no fatturabili DDTs).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter28 = Numerazione documenti config + FatturaPA XML export. Backend has 1 critical bug in PUT /api/company (line 70 of company.py — strip() on float). After main agent fixes this, re-run: REACT_APP_BACKEND_URL=... pytest /app/backend/tests/test_iter28_numerazione_xmlpa.py -v. The test test_create_fattura_uses_suffix_and_iva_default SKIPs if no client has fatturabili DDTs — to actually exercise the iva_default_pct fallback, create a DDT first (or check existing seed data). XML export endpoint /api/fatture/{id}/xml-pa is fully working and validated against XML well-formedness + 11 required FatturaPA elements (ProgressivoInvio, FormatoTrasmissione=FPR12, IdPaese=IT, RegimeFiscale, TipoDocumento=TD01, Divisa=EUR, DettaglioLinee, DatiRiepilogo etc).",
+  "rca_of_the_issue": "PUT /api/company 500 BUG: file /app/backend/routers/company.py line 70 — `payload = {k: (v or \"\").strip() for k, v in body.model_dump(exclude_unset=False).items()}`. This used to work when CompanyIn fields were all strings. The new field iva_default_pct (float, default 22.0) cannot be .strip()'d → AttributeError. REPRODUCE: send any PUT /api/company body with iva_default_pct as a number (e.g. {\"iva_default_pct\":10}). FIX: replace with `{k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump(exclude_unset=False).items()}`. SECONDARY BUG: _public_view returns '' for missing fields → legacy company docs return iva_default_pct='' which then re-trips the same .strip() bug when the user clicks Save (the frontend form receives '' but probably sends back a number/empty depending on input behaviour)."
+}

@@ -162,7 +162,8 @@ async def create_ddt_forn(body: DdtFornitoreIn,
         raise HTTPException(400, "Almeno una riga obbligatoria")
     f = await _fornitore_or_404(tenant_id, body.fornitore_id)
     seq = await next_seq("ddt_fornitore")
-    numero = f"FORN-DDT-{datetime.now(timezone.utc).year}-{seq:05d}"
+    from core import format_numero
+    numero = await format_numero("ddt_fornitore", "FORN-DDT", seq)
     righe = _righe_to_docs(body.righe)
     tot = round(sum(r["totale"] for r in righe), 2)
     doc = {
@@ -277,7 +278,8 @@ async def create_ft_forn(body: FatturaFornitoreIn,
     totale = round(imponibile + iva, 2)
 
     seq = await next_seq("fattura_fornitore")
-    numero = f"FORN-FT-{datetime.now(timezone.utc).year}-{seq:05d}"
+    from core import format_numero
+    numero = await format_numero("fattura_fornitore", "FORN-FT", seq)
 
     doc = {
         "id": new_id(),

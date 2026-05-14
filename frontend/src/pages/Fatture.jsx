@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 export default function Fatture() {
@@ -94,6 +94,27 @@ export default function Fatture() {
     }
   };
 
+  const downloadXmlPa = async (f) => {
+    try {
+      const res = await api.get(`/fatture/${f.id}/xml-pa`, { responseType: "blob" });
+      const disp = res.headers["content-disposition"] || "";
+      const m = disp.match(/filename="?([^";]+)"?/);
+      const filename = m ? m[1] : `${f.numero}.xml`;
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      toast.success("XML FatturaPA scaricato");
+    } catch (e) {
+      // Try to extract error message from blob
+      let msg = "Errore generazione XML";
+      if (e.response?.data instanceof Blob) {
+        try { const text = await e.response.data.text(); msg = JSON.parse(text).detail || msg; } catch {}
+      } else if (e.response?.data?.detail) { msg = e.response.data.detail; }
+      toast.error(msg);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -145,6 +166,7 @@ export default function Fatture() {
                 </td>
                 <td className="py-2 px-4 text-right space-x-1">
                   <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML FatturaPA" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)}><Eye size={14} /></Button>
                   {f.stato_incasso !== "incassata" && (
                     <Button size="sm" onClick={() => incassa(f)} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`fatt-incassa-${f.id}`}>

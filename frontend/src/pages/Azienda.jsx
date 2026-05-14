@@ -22,6 +22,8 @@ const FIELDS = [
   { k: "codice_sdi",       label: "Codice destinatario SDI", required: false, placeholder: "0000000 oppure ABC1234" },
   { k: "telefono",         label: "Telefono",                required: true,  placeholder: "+39 02 1234567" },
   { k: "sito_web",         label: "Sito internet",           required: false, placeholder: "https://tuaazienda.it" },
+  { k: "regime_fiscale",   label: "Regime fiscale (FatturaPA)", required: false, placeholder: "RF01", options: ["RF01","RF02","RF04","RF05","RF06","RF07","RF08","RF09","RF10","RF11","RF12","RF13","RF14","RF15","RF16","RF17","RF18","RF19"] },
+  { k: "iva_default_pct",  label: "Aliquota IVA di default (%)", required: false, placeholder: "22", type: "number" },
 ];
 
 export default function Azienda() {
@@ -143,7 +145,7 @@ export default function Azienda() {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {FIELDS.map(f => {
-              const val = form[f.k] || "";
+              const val = form[f.k] != null ? String(form[f.k]) : "";
               const missing = f.required && !val.trim();
               return (
                 <div key={f.k}>
@@ -151,13 +153,24 @@ export default function Azienda() {
                     {f.label}
                     {f.required && <span className="text-red-500 ml-0.5">*</span>}
                   </Label>
-                  <Input
-                    value={val}
-                    onChange={e => update(f.k, e.target.value)}
-                    placeholder={f.placeholder}
-                    data-testid={`azienda-${f.k}`}
-                    className={missing ? "border-amber-300" : ""}
-                  />
+                  {f.options ? (
+                    <select
+                      value={val || (f.options[0] || "")}
+                      onChange={e => update(f.k, e.target.value)}
+                      data-testid={`azienda-${f.k}`}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indaco">
+                      {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <Input
+                      type={f.type || "text"}
+                      value={val}
+                      onChange={e => update(f.k, e.target.value)}
+                      placeholder={f.placeholder}
+                      data-testid={`azienda-${f.k}`}
+                      className={missing ? "border-amber-300" : ""}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -226,6 +239,143 @@ export default function Azienda() {
         </div>
       </div>
 
+      <NumerazioneSection />
+
+    </div>
+  );
+}
+
+function NumerazioneSection() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [edited, setEdited] = useState({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/company/numerazione");
+      setEntries(data.entries || []);
+      setEdited({});
+    } catch (e) { toast.error("Errore caricamento numerazione"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateField = (key, field, value) => {
+    setEdited(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }));
+  };
+
+  const valueFor = (key, field) => {
+    if (edited[key] && field in edited[key]) return edited[key][field];
+    const e = entries.find(x => x.key === key);
+    if (!e) return field === "seq" ? 0 : "";
+    return field === "seq" ? e.current_seq : (e.suffix || "");
+  };
+
+  const hasChanges = Object.keys(edited).length > 0;
+
+  const save = async () => {
+    if (!hasChanges) return;
+    setSaving(true);
+    try {
+      const payload = {
+        entries: entries.map(e => ({
+          key: e.key,
+          seq: Number(valueFor(e.key, "seq")),
+          suffix: String(valueFor(e.key, "suffix") || ""),
+        })),
+      };
+      const { data } = await api.put("/company/numerazione", payload);
+      setEntries(data.entries || []);
+      setEdited({});
+      toast.success("Numerazione aggiornata");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore salvataggio");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="kpi-card" data-testid="numerazione-section">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="overline text-slate-400">Documenti · numerazione</div>
+          <h3 className="font-display text-lg font-bold flex items-center gap-2 mt-0.5">
+            Numerazione documenti
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Imposta il numero di partenza (utile se hai già emesso documenti quest'anno) e un eventuale suffisso (es. <code className="font-mono bg-slate-100 px-1">/L</code>).
+            La prossima emissione sarà <code className="font-mono bg-slate-100 px-1">N+1</code>.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={save}
+          disabled={!hasChanges || saving}
+          className="px-4 py-2 bg-indaco hover:bg-indaco-dark disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md text-sm font-medium whitespace-nowrap"
+          data-testid="numerazione-save-btn">
+          {saving ? "Salvataggio…" : "Salva numerazione"}
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-400 font-mono">Caricamento…</p>
+      ) : (
+        <div className="rounded-md border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Documento</th>
+                <th className="text-left px-3 py-2 font-medium">Prefisso</th>
+                <th className="text-right px-3 py-2 font-medium">Ultimo numero emesso</th>
+                <th className="text-left px-3 py-2 font-medium">Suffisso</th>
+                <th className="text-left px-3 py-2 font-medium">Anteprima prossimo</th>
+              </tr>
+            </thead>
+            <tbody data-testid="numerazione-table">
+              {entries.map(e => {
+                const seqVal = valueFor(e.key, "seq");
+                const suffixVal = valueFor(e.key, "suffix");
+                const nextSeq = Number(seqVal) + 1;
+                const year = new Date().getFullYear();
+                const preview = `${e.prefix}-${year}-${String(nextSeq).padStart(5, "0")}${suffixVal || ""}`;
+                const changed = !!edited[e.key];
+                return (
+                  <tr key={e.key} className={`border-t border-slate-100 ${changed ? "bg-amber-50/40" : ""}`}>
+                    <td className="px-3 py-2 font-medium text-slate-900">{e.label}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{e.prefix}-</td>
+                    <td className="px-3 py-2">
+                      <Input
+                        type="number"
+                        min={e.current_seq}
+                        value={seqVal}
+                        onChange={ev => updateField(e.key, "seq", ev.target.value)}
+                        className="h-8 text-right font-mono w-24 ml-auto"
+                        data-testid={`numerazione-seq-${e.key}`}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Input
+                        value={suffixVal}
+                        onChange={ev => updateField(e.key, "suffix", ev.target.value)}
+                        placeholder="(nessuno)"
+                        maxLength={8}
+                        className="h-8 font-mono w-24"
+                        data-testid={`numerazione-suffix-${e.key}`}
+                      />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-indaco">{preview}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-slate-500 mt-2">
+        ℹ️ Il numero di partenza non può essere abbassato (per evitare duplicati). Per ripartire da 1 usa il reset operativo in <b>Backup &amp; Dati</b>.
+      </p>
     </div>
   );
 }

@@ -111,7 +111,8 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
     tot = round(sum(r["totale"] for r in rows), 2)
     seq = await next_seq("ordinativo")
     oid = new_id()
-    numero = f"ORD-{datetime.now(timezone.utc).year}-{seq:05d}"
+    from core import format_numero
+    numero = await format_numero("ordinativo", "ORD", seq)
     doc = {
         "id": oid, "tenant_id": tenant_id, "numero": numero,
         "cliente_id": cli_id, "cliente_snapshot": _cli_snapshot(cli),
@@ -203,7 +204,8 @@ async def converti_ddt(oid: str, user: Dict = Depends(require_roles("admin", "lo
     # Crea DDT
     ddt_seq = await next_seq("ddt")
     did = new_id()
-    numero_ddt = f"DDT-{datetime.now(timezone.utc).year}-{ddt_seq:05d}"
+    from core import format_numero
+    numero_ddt = await format_numero("ddt", "DDT", ddt_seq)
     ddt_doc = {
         "id": did, "tenant_id": tenant_id_of(user), "numero": numero_ddt,
         "cliente_id": cur["cliente_id"], "cliente_nome": cli.get("ragione_sociale", ""),

@@ -26,7 +26,7 @@ class FatturaFromDDT(BaseModel):
     ddt_ids: List[str] = Field(..., min_length=1)
     data: Optional[str] = None
     scadenza: Optional[str] = None
-    iva_pct: float = 22
+    iva_pct: Optional[float] = None  # None → usa company.iva_default_pct (fallback 22)
     note: Optional[str] = ""
 
 
@@ -83,12 +83,18 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         raise HTTPException(400, "Uno o più DDT non validi o già fatturati")
 
     imponibile = round(sum(d.get("imponibile", 0) for d in ddts), 2)
-    iva = round(imponibile * body.iva_pct / 100, 2)
+    # Resolve IVA: explicit body value > company default > 22
+    iva_pct = body.iva_pct
+    if iva_pct is None:
+        comp = await db.company.find_one(tenant_scope(user), {"_id": 0}) or {}
+        iva_pct = float(comp.get("iva_default_pct") or 22)
+    iva = round(imponibile * iva_pct / 100, 2)
     totale = round(imponibile + iva, 2)
 
     seq = await next_seq("fattura")
     fid = new_id()
-    numero = f"FT-{datetime.now().year}-{seq:05d}"
+    from core import format_numero
+    numero = await format_numero("fattura", "FT", seq)
 
     doc = {
         "id": fid,
@@ -97,7 +103,7 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         "cliente_nome": cliente.get("ragione_sociale", ""),
         "data": to_dt(body.data) or now_utc(),
         "scadenza": to_dt(body.scadenza) if body.scadenza else None,
-        "iva_pct": body.iva_pct,
+        "iva_pct": iva_pct,
         "imponibile": imponibile,
         "iva": iva,
         "totale": totale,
@@ -149,6 +155,33 @@ async def fattura_pdf(fid: str, user: Dict = Depends(get_current_user)):
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/{fid}/xml-pa")
+async def fattura_xml_pa(fid: str, user: Dict = Depends(get_current_user)):
+    """Export XML FatturaPA (v1.2.2 FPR12) della fattura, scaricabile per upload allo SdI."""
+    from fastapi import Response
+    from routers.company import load_company_for_tenant
+    from services.fatturapa import build_fattura_pa_xml
+
+    fatt = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fatt:
+        raise HTTPException(404, "Fattura non trovata")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": fatt["cliente_id"]}), {"_id": 0}) or {}
+    ddt_list = await db.ddt.find(
+        merge_scope(user, {"id": {"$in": fatt.get("ddt_ids", [])}}),
+        {"_id": 0},
+    ).to_list(500)
+    company = await load_company_for_tenant(user["tenant_id"])
+    try:
+        xml_bytes, filename = build_fattura_pa_xml(fatt, company, cliente, ddt_list)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
