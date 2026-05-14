@@ -1,4 +1,10 @@
-# CleanTec - PRD (updated 24 Apr 2026 · P3 batch)
+# CleanTec - PRD (updated 14 May 2026 · Label Swap validation)
+
+## Latest changes (14 May 2026)
+- Fix JSX syntax in `Clienti.jsx` and `DDT.jsx` (mismatched div/trailing `v>`)
+- Swap label priority globally: **Denominazione struttura** primary, **Ragione sociale** secondary
+- UI validato con screenshot tool su /clienti, /ddt e dashboard — nessun crash, etichette corrette
+
 
 ## Problem
 Industrial laundry **commercial SaaS** — ERP focalizzato sul flusso commerciale: Clienti → Articoli → Listini → Offerte → D.D.T. → Fatture → Sospesi. Ciclo acquisti: Fornitori → DDT ricevuti → Fatture passive. Portale cliente pubblico per ordinativi self-service.
