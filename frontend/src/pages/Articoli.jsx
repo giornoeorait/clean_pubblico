@@ -41,13 +41,13 @@ export default function Articoli() {
         actions={
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(EMPTY); }}}>
             <DialogTrigger asChild><Button className="bg-indaco hover:bg-indaco-dark" data-testid="new-articolo-btn"><Plus size={16} weight="bold" className="mr-1" />Nuovo Articolo</Button></DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editing ? "Modifica articolo" : "Nuovo articolo"}</DialogTitle></DialogHeader>
-              <form onSubmit={save} className="grid grid-cols-2 gap-4">
+              <form onSubmit={save} className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
                 <div><Label>Codice *</Label><Input required value={form.codice} onChange={e => setForm({...form, codice: e.target.value})} /></div>
                 <div><Label>Barcode</Label><Input value={form.barcode} onChange={e => setForm({...form, barcode: e.target.value})} /></div>
-                <div className="col-span-2"><Label>Descrizione *</Label><Input required value={form.descrizione} onChange={e => setForm({...form, descrizione: e.target.value})} /></div>
                 <div><Label>Categoria</Label><Input value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} /></div>
+                <div className="col-span-2 md:col-span-3"><Label>Descrizione *</Label><Input required value={form.descrizione} onChange={e => setForm({...form, descrizione: e.target.value})} /></div>
                 <div>
                   <Label>Tipo</Label>
                   <Select value={form.tipo} onValueChange={v => setForm({...form, tipo: v})}>
@@ -63,10 +63,11 @@ export default function Articoli() {
                 <div><Label>Lavaggio</Label><Input value={form.lavaggio} onChange={e => setForm({...form, lavaggio: e.target.value})} /></div>
                 <div><Label>Temperatura (°C)</Label><Input type="number" value={form.temperatura} onChange={e => setForm({...form, temperatura: parseInt(e.target.value)})} /></div>
                 <div><Label>Peso medio (kg)</Label><Input type="number" step="0.1" value={form.peso_medio} onChange={e => setForm({...form, peso_medio: parseFloat(e.target.value)})} /></div>
-                <div className="col-span-2 border-t border-slate-200 pt-3 mt-1">
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Valori economici</div>
+                <div className="hidden md:block" />
+                <div className="col-span-2 md:col-span-3 border-t border-slate-200 pt-2 mt-1">
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Valori economici</div>
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-2 md:col-span-3">
                   <Label>Valore convenzionale singolo prodotto (IVA esclusa) €</Label>
                   <Input type="number" step="0.01" value={form.prezzo} onChange={e => setForm({...form, prezzo: parseFloat(e.target.value) || 0})} />
                   <div className="text-[10px] text-slate-400 mt-0.5">Valore di riferimento per assicurazione/smarrimento</div>
@@ -94,7 +95,7 @@ export default function Articoli() {
                   <Label>Giacenza prodotto (pz)</Label>
                   <Input type="number" step="1" value={form.giacenza} onChange={e => setForm({...form, giacenza: parseInt(e.target.value) || 0})} data-testid="art-giacenza" />
                 </div>
-                <div>
+                <div className="col-span-2 md:col-span-2">
                   <Label>Multiplo quantità ordine</Label>
                   <Input
                     type="number" min="1" step="1"
@@ -104,7 +105,7 @@ export default function Articoli() {
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Es. 5 → ordini accettati solo a multipli di 5 (5, 10, 15…). Lascia 1 per quantità libere.</p>
                 </div>
-                <div className="col-span-2 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-articolo-btn">Salva</Button></div>
+                <div className="col-span-2 md:col-span-3 flex justify-end gap-2 pt-2 border-t border-slate-100 mt-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-articolo-btn">Salva</Button></div>
               </form>
             </DialogContent>
           </Dialog>
