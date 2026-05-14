@@ -45,13 +45,24 @@ class CompanyIn(BaseModel):
 REQUIRED_FIELDS = ["nome", "ragione_sociale", "partita_iva", "indirizzo", "email", "telefono"]
 
 
+def _field_default(name: str):
+    """Return the Pydantic-declared default for a CompanyIn field (or empty string)."""
+    f = CompanyIn.model_fields.get(name)
+    if f is None:
+        return ""
+    d = f.default
+    return "" if d is None else d
+
+
 def _public_view(doc: Optional[dict]) -> dict:
     if not doc:
-        return {**{k: "" for k in CompanyIn.model_fields.keys()}, "logo_url": None, "setup_complete": False}
-    setup_complete = all((doc.get(k) or "").strip() for k in REQUIRED_FIELDS)
+        return {**{k: _field_default(k) for k in CompanyIn.model_fields.keys()},
+                "logo_url": None, "setup_complete": False}
+    setup_complete = all((str(doc.get(k) or "")).strip() for k in REQUIRED_FIELDS)
     tid = doc.get("tenant_id") or ""
     out = {
-        **{k: doc.get(k, "") for k in CompanyIn.model_fields.keys()},
+        **{k: (doc[k] if doc.get(k) not in (None, "") else _field_default(k))
+           for k in CompanyIn.model_fields.keys()},
         "logo_url": f"/api/company/logo/{tid}" if doc.get("logo_path") and tid else None,
         "setup_complete": setup_complete,
         "updated_at": doc.get("updated_at"),
@@ -67,7 +78,10 @@ async def get_company(user: Dict = Depends(require_roles("admin"))):
 
 @router.put("/company")
 async def upsert_company(body: CompanyIn, user: Dict = Depends(require_roles("admin"))):
-    payload = {k: (v or "").strip() for k, v in body.model_dump(exclude_unset=False).items()}
+    payload = {
+        k: (v.strip() if isinstance(v, str) else v)
+        for k, v in body.model_dump(exclude_unset=False).items()
+    }
     payload["tenant_id"] = tenant_id_of(user)
     payload["updated_at"] = now_utc()
     await db.company.update_one(
