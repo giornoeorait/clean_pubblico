@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import api from "../lib/api";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
@@ -110,6 +110,9 @@ export default function ImportClientiDialog({ onImported }) {
             <FileXls size={22} weight="duotone" className="text-indaco" />
             Importa clienti da Excel
           </DialogTitle>
+          <DialogDescription>
+            Carica un file <code className="font-mono text-xs">.xlsx</code>, <code className="font-mono text-xs">.xls</code> o <code className="font-mono text-xs">.csv</code> esportato dal tuo vecchio gestionale. Le intestazioni vengono mappate automaticamente sui campi dell'anagrafica clienti.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Step 1: upload */}
