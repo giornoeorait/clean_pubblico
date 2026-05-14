@@ -8,6 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple } from "@phosphor-icons/react";
+import { clientePrimary, clienteSecondary, docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
 
 export default function DDT() {
@@ -177,7 +178,7 @@ export default function DDT() {
             <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tutti</SelectItem>
-              {clienti.map(c => <SelectItem key={c.id} value={c.id}>{c.ragione_sociale}</SelectItem>)}
+              {clienti.map(c => <SelectItem key={c.id} value={c.id}>{clientePrimary(c)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -217,8 +218,8 @@ export default function DDT() {
                 <td className="py-2 px-4 font-mono font-bold">{d.numero}</td>
                 <td className="py-2 px-4">{new Date(d.data).toLocaleDateString("it-IT")}</td>
                 <td className="py-2 px-4">
-                  <div>{d.cliente_nome}</div>
-                  {d.cliente_denominazione && <div className="text-xs text-slate-500">{d.cliente_denominazione}</div>}
+                  <div>{docPrimary(d)}</div>
+                  {docSecondary(d) && <div className="text-xs text-slate-500">{docSecondary(d)}</div>}
                 </td>
                 <td className="py-2 px-4 text-center font-mono">{d.righe?.length || 0}</td>
                 <td className="py-2 px-4 text-right font-mono font-bold">€ {d.imponibile.toFixed(2)}</td>

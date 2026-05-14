@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { CurrencyEur, CheckCircle, Eye, MagnifyingGlass, Warning } from "@phosphor-icons/react";
+import { clientePrimary, docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
 
 export default function Sospesi() {
@@ -90,7 +91,7 @@ export default function Sospesi() {
               <SelectTrigger data-testid="sosp-f-cliente"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tutti</SelectItem>
-                {clienti.map(c => <SelectItem key={c.id} value={c.id}>{c.ragione_sociale}</SelectItem>)}
+                {clienti.map(c => <SelectItem key={c.id} value={c.id}>{clientePrimary(c)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -132,8 +133,8 @@ export default function Sospesi() {
                     ) : "—"}
                   </td>
                   <td className="py-2 px-4">
-                    <div>{f.cliente_nome}</div>
-                    {f.cliente_denominazione && <div className="text-xs text-slate-500">{f.cliente_denominazione}</div>}
+                    <div>{docPrimary(f)}</div>
+                    {docSecondary(f) && <div className="text-xs text-slate-500">{docSecondary(f)}</div>}
                   </td>
                   <td className="py-2 px-4 text-center text-xs text-slate-500">{f.ddt_numeri?.length || 0}</td>
                   <td className="py-2 px-4 text-right font-mono font-bold">€ {f.totale.toFixed(2)}</td>
@@ -159,8 +160,8 @@ export default function Sospesi() {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 <div><div className="overline">Cliente</div>
-                  <div className="font-semibold">{detail.cliente_nome}</div>
-                  {detail.cliente_denominazione && <div className="text-xs text-slate-500">{detail.cliente_denominazione}</div>}
+                  <div className="font-semibold">{docPrimary(detail)}</div>
+                  {docSecondary(detail) && <div className="text-xs text-slate-500">{docSecondary(detail)}</div>}
                 </div>
                 <div><div className="overline">Data</div><div>{new Date(detail.data).toLocaleDateString("it-IT")}</div></div>
               </div>

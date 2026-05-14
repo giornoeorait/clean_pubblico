@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import {
   Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
   Note, CheckCircle, XCircle,
@@ -164,9 +165,9 @@ export default function Ordinativi() {
                       {o.ddt_numero && <div className="text-[11px] text-emerald-700 font-mono">→ {o.ddt_numero}</div>}
                     </td>
                     <td className="text-sm">
-                      <div>{cli?.ragione_sociale || o.cliente_snapshot?.ragione_sociale || "—"}</div>
-                      {(cli?.denominazione_struttura || o.cliente_snapshot?.denominazione_struttura) && (
-                        <div className="text-xs text-slate-500">{cli?.denominazione_struttura || o.cliente_snapshot?.denominazione_struttura}</div>
+                      <div>{clientePrimary(cli || o.cliente_snapshot)}</div>
+                      {clienteSecondary(cli || o.cliente_snapshot) && (
+                        <div className="text-xs text-slate-500">{clienteSecondary(cli || o.cliente_snapshot)}</div>
                       )}
                     </td>
                     <td>

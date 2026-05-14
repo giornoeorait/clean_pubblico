@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { clientePrimary, docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
 
 export default function Fatture() {
@@ -158,8 +159,8 @@ export default function Fatture() {
                 <td className="py-2 px-4 font-mono font-bold">{f.numero}</td>
                 <td className="py-2 px-4">{new Date(f.data).toLocaleDateString("it-IT")}</td>
                 <td className="py-2 px-4">
-                  <div>{f.cliente_nome}</div>
-                  {f.cliente_denominazione && <div className="text-xs text-slate-500">{f.cliente_denominazione}</div>}
+                  <div>{docPrimary(f)}</div>
+                  {docSecondary(f) && <div className="text-xs text-slate-500">{docSecondary(f)}</div>}
                 </td>
                 <td className="py-2 px-4 text-center text-xs text-slate-500">{f.ddt_numeri?.length || 0}</td>
                 <td className="py-2 px-4 text-right font-mono">€ {f.imponibile.toFixed(2)}</td>
@@ -202,7 +203,7 @@ export default function Fatture() {
                 <Select value={genCli} onValueChange={setGenCli}>
                   <SelectTrigger data-testid="fatt-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
                   <SelectContent>
-                    {clienti.filter(c => c.attivo !== false).map(c => <SelectItem key={c.id} value={c.id}>{c.ragione_sociale}</SelectItem>)}
+                    {clienti.filter(c => c.attivo !== false).map(c => <SelectItem key={c.id} value={c.id}>{clientePrimary(c)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

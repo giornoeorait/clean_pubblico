@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import ImportClientiDialog from "../components/ImportClientiDialog";
+import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -233,8 +234,8 @@ export default function Clienti() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Ragione sociale</th>
-                <th>Struttura</th>
+                <th>Struttura · Ragione sociale</th>
+                <th>Indirizzo scarico</th>
                 <th>P.IVA / SDI</th>
                 <th>Listino</th>
                 <th>Azioni</th>
@@ -249,17 +250,17 @@ export default function Clienti() {
                         <Buildings size={16} className="text-indaco" weight="duotone" />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-medium text-slate-900 truncate">{c.ragione_sociale}</div>
+                        <div className="font-medium text-slate-900 truncate">{clientePrimary(c)}</div>
+                        {clienteSecondary(c) && (
+                          <div className="text-[11px] text-slate-400 truncate">{clienteSecondary(c)}</div>
+                        )}
                         <div className="text-xs text-slate-500 font-mono truncate">{c.indirizzo}</div>
                       </div>
                     </div>
                   </td>
                   <td>
-                    {c.denominazione_struttura ? (
-                      <div>
-                        <div className="text-sm">{c.denominazione_struttura}</div>
-                        {c.indirizzo_scarico && <div className="text-[11px] text-slate-500 truncate max-w-xs">{c.indirizzo_scarico}</div>}
-                      </div>
+                    {c.indirizzo_scarico ? (
+                      <div className="text-xs text-slate-500 truncate max-w-xs">{c.indirizzo_scarico}</div>
                     ) : (
                       <span className="text-xs text-slate-400 italic">= sede legale</span>
                     )}
