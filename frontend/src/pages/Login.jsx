@@ -12,8 +12,8 @@ export default function Login() {
   const { login, error } = useAuth();
   const { branding } = useBranding();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@cleantec.it");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e) => {
@@ -25,10 +25,6 @@ export default function Login() {
       toast.success("Accesso effettuato");
       navigate("/dashboard");
     }
-  };
-
-  const quickLogin = (e, pw) => {
-    setEmail(e); setPassword(pw);
   };
 
   return (
@@ -139,29 +135,10 @@ export default function Login() {
           </form>
 
           <div className="mt-10 pt-6 border-t border-slate-200">
-            <div className="text-center mb-4">
+            <div className="text-center">
               <Link to="/pricing" className="text-sm text-indaco hover:underline font-semibold" data-testid="login-to-pricing">
                 Non hai ancora un account? Inizia 14 giorni gratis →
               </Link>
-            </div>
-            <div className="overline text-slate-400 mb-3">Account demo</div>
-            <div className="grid grid-cols-1 gap-2">
-              {[
-                { e: "admin@cleantec.it", p: "admin123", r: "Admin" },
-                { e: "logistica@cleantec.it", p: "logistica123", r: "Logistica" },
-                { e: "contabilita@cleantec.it", p: "contabilita123", r: "Contabilità" },
-              ].map((d) => (
-                <button
-                  key={d.e}
-                  type="button"
-                  onClick={() => quickLogin(d.e, d.p)}
-                  data-testid={`demo-${d.r.toLowerCase()}`}
-                  className="flex items-center justify-between text-xs font-mono text-slate-500 hover:text-indaco bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-3 py-2 transition-colors"
-                >
-                  <span>{d.e}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400">{d.r}</span>
-                </button>
-              ))}
             </div>
           </div>
         </div>
