@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Plus, Package, Barcode, PencilSimple, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const EMPTY = { codice: "", descrizione: "", categoria: "biancheria", tipo: "capo", materiale: "", lavaggio: "standard", temperatura: 60, barcode: "", peso_medio: 0.5, prezzo: 0, prezzo_tipo: "capo", prezzo_noleggio: 0, prezzo_lavaggio: 0, giacenza: 0 };
+const EMPTY = { codice: "", descrizione: "", categoria: "biancheria", tipo: "capo", materiale: "", lavaggio: "standard", temperatura: 60, barcode: "", peso_medio: 0.5, prezzo: 0, prezzo_tipo: "capo", prezzo_noleggio: 0, prezzo_lavaggio: 0, giacenza: 0, multiplo_quantita: 1 };
 
 export default function Articoli() {
   const [list, setList] = useState([]);
@@ -93,6 +93,16 @@ export default function Articoli() {
                 <div>
                   <Label>Giacenza prodotto (pz)</Label>
                   <Input type="number" step="1" value={form.giacenza} onChange={e => setForm({...form, giacenza: parseInt(e.target.value) || 0})} data-testid="art-giacenza" />
+                </div>
+                <div>
+                  <Label>Multiplo quantità ordine</Label>
+                  <Input
+                    type="number" min="1" step="1"
+                    value={form.multiplo_quantita}
+                    onChange={e => setForm({...form, multiplo_quantita: Math.max(1, parseInt(e.target.value) || 1)})}
+                    data-testid="art-multiplo"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Es. 5 → ordini accettati solo a multipli di 5 (5, 10, 15…). Lascia 1 per quantità libere.</p>
                 </div>
                 <div className="col-span-2 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark" data-testid="save-articolo-btn">Salva</Button></div>
               </form>

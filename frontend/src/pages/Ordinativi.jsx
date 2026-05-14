@@ -249,7 +249,24 @@ export default function Ordinativi() {
                               <SelectContent>{articoli.map(x => <SelectItem key={x.id} value={x.id}>{x.codice} · {x.descrizione}</SelectItem>)}</SelectContent>
                             </Select>
                           </td>
-                          <td><Input type="number" step="0.01" className="h-8 w-20 text-right font-mono" value={r.quantita} onChange={e => updRiga(i, "quantita", parseFloat(e.target.value) || 0)} /></td>
+                          <td>
+                            <Input
+                              type="number"
+                              step={Math.max(1, parseInt(a?.multiplo_quantita) || 1)}
+                              min={0}
+                              className="h-8 w-20 text-right font-mono"
+                              value={r.quantita}
+                              onChange={e => {
+                                const step = Math.max(1, parseInt(a?.multiplo_quantita) || 1);
+                                const v = parseFloat(e.target.value) || 0;
+                                const snapped = step > 1 ? Math.floor(v / step) * step : v;
+                                updRiga(i, "quantita", snapped);
+                              }}
+                            />
+                            {a?.multiplo_quantita > 1 && (
+                              <div className="text-[10px] text-amber-600 font-mono mt-0.5">multipli di {a.multiplo_quantita}</div>
+                            )}
+                          </td>
                           <td className="text-right text-xs font-mono">
                             <div className="text-slate-600">€ {p.toFixed(2)}/{a?.unita_misura || "pz"}</div>
                             <div className="text-indaco font-bold">€ {(p * (r.quantita || 0)).toFixed(2)}</div>

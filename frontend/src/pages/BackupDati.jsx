@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   Database, CloudArrowUp, CloudCheck, Camera, ArrowsClockwise, Trash, FloppyDisk,
   Warning, Bell, EnvelopeSimple, User, Robot, DownloadSimple, UploadSimple,
-  CheckCircle, Clock, ShieldWarning, X, Plus, PaperPlaneTilt,
+  CheckCircle, Clock, ShieldWarning, X, Plus, PaperPlaneTilt, ShoppingCart,
 } from "@phosphor-icons/react";
 
 /* -------------------------------------------------------------------------- */
@@ -111,6 +111,8 @@ export default function BackupDati() {
       />
 
       <NotificationCard />
+
+      <OrderNotificationCard />
 
       <ManualBackupCard />
 
@@ -477,6 +479,155 @@ function NotificationCard() {
     </SectionCard>
   );
 }
+
+
+/* -------------------------------------------------------------------------- */
+/*  Card: Order notifications                                                  */
+/* -------------------------------------------------------------------------- */
+
+function OrderNotificationCard() {
+  const [recipients, setRecipients] = useState([]);
+  const [enabled, setEnabled] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/company/order-notifications");
+      setRecipients(data.recipients || []);
+      setEnabled(data.enabled !== false);
+    } catch (e) { toast.error("Errore caricamento notifiche ordini"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || "").trim());
+
+  const addEmail = () => {
+    const e = draft.trim().toLowerCase();
+    if (!e) return;
+    if (!isValidEmail(e)) { toast.error("Email non valida"); return; }
+    if (recipients.includes(e)) { toast.info("Email già presente"); setDraft(""); return; }
+    if (recipients.length >= 20) { toast.error("Massimo 20 destinatari"); return; }
+    setRecipients([...recipients, e]);
+    setDraft("");
+  };
+
+  const removeEmail = (e) => setRecipients(recipients.filter((x) => x !== e));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.put("/company/order-notifications", { recipients, enabled });
+      setRecipients(data.recipients || []);
+      setEnabled(data.enabled !== false);
+      toast.success("Notifiche ordini salvate");
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore salvataggio"); }
+    finally { setSaving(false); }
+  };
+
+  const sendTest = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post("/company/order-notifications/test");
+      const ok = data.sent.filter((s) => s.status === "sent").length;
+      const stub = data.sent.filter((s) => s.status === "logged").length;
+      const failed = data.sent.filter((s) => s.status === "failed").length;
+      if (failed > 0) toast.error(`${failed} email fallite`);
+      else if (stub > 0) toast.info(`Email registrate nel log (SMTP non configurato): ${stub}`);
+      else toast.success(`${ok} email di test inviate`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore invio test"); }
+    finally { setTesting(false); }
+  };
+
+  return (
+    <SectionCard
+      data-testid="order-notification-settings"
+      icon={ShoppingCart}
+      eyebrow="Avvisi · ordini ricevuti"
+      title="Notifiche email ordini"
+      subtitle="Chi viene avvisato quando arriva un nuovo ordine (interno o dal portale cliente)."
+      accent="indaco"
+    >
+      <label className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/60 transition-colors">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="mt-1 accent-indaco"
+          data-testid="order-notif-enabled"
+        />
+        <span className="flex-1">
+          <span className="font-medium text-slate-900 text-sm">Notifiche ordini attive</span>
+          <span className="block text-xs text-slate-500 mt-0.5">
+            Disattiva qui per sospendere temporaneamente l'invio delle email senza perdere la lista dei destinatari.
+          </span>
+        </span>
+      </label>
+
+      <div>
+        <Label className="flex items-center gap-1.5">
+          <EnvelopeSimple size={14} weight="duotone" /> Destinatari
+          <span className="text-slate-400 font-normal">· max 20</span>
+        </Label>
+        <div className="flex gap-2 mt-1.5">
+          <Input
+            type="email"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEmail(); } }}
+            placeholder="es. ordini@tuaazienda.it"
+            data-testid="order-notif-email-input"
+          />
+          <Button onClick={addEmail} variant="outline" data-testid="order-notif-add-btn">
+            <Plus size={14} weight="bold" className="mr-1" /> Aggiungi
+          </Button>
+        </div>
+
+        {loading ? (
+          <p className="mt-3 text-xs text-slate-400 font-mono">Caricamento…</p>
+        ) : recipients.length === 0 ? (
+          <p className="mt-3 text-xs text-slate-400 italic">Nessun destinatario configurato. Le notifiche email per i nuovi ordini sono disattivate.</p>
+        ) : (
+          <ul className="mt-3 flex flex-wrap gap-2" data-testid="order-notif-recipients-list">
+            {recipients.map((e) => (
+              <li key={e}
+                className="inline-flex items-center gap-2 bg-indaco/10 text-indaco border border-indaco/30 rounded-full pl-3 pr-1 py-1 text-xs font-mono group hover:bg-indaco/15 transition-colors"
+                data-testid={`order-notif-chip-${e}`}>
+                <EnvelopeSimple size={12} weight="duotone" />
+                {e}
+                <button
+                  type="button"
+                  onClick={() => removeEmail(e)}
+                  className="w-5 h-5 rounded-full hover:bg-red-500 hover:text-white text-indaco/60 flex items-center justify-center transition-colors"
+                  aria-label={`Rimuovi ${e}`}
+                  data-testid={`order-notif-remove-${e}`}>
+                  <X size={11} weight="bold" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
+        <Button onClick={save} disabled={saving} className="bg-indaco hover:bg-indaco-dark" data-testid="order-notif-save-btn">
+          <FloppyDisk size={14} weight="duotone" className="mr-1.5" />
+          {saving ? "Salvataggio…" : "Salva"}
+        </Button>
+        <Button onClick={sendTest} variant="outline" disabled={testing || recipients.length === 0} data-testid="order-notif-test-btn">
+          <PaperPlaneTilt size={14} weight="duotone" className="mr-1.5" />
+          {testing ? "Invio…" : "Invia email di test"}
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
 
 /* -------------------------------------------------------------------------- */
 /*  Card: Manual backup (export/import JSON)                                   */

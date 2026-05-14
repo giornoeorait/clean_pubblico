@@ -468,6 +468,11 @@ class NotificationSettingsIn(BaseModel):
     include_admin: bool = True   # also include current tenant admin emails
 
 
+class OrderNotificationsIn(BaseModel):
+    recipients: list[str] = []   # emails notified on every new ordinativo
+    enabled: bool = True
+
+
 def _validate_email(e: str) -> str:
     e = (e or "").strip().lower()
     if not e or "@" not in e or "." not in e.split("@", 1)[1]:
@@ -535,6 +540,72 @@ async def test_notification(user: Dict = Depends(require_roles("admin"))):
         )
         sent.append({"to": r, "status": ev.get("status")})
     await log_audit(user, "TEST", "company_notifications", tid, {"count": len(sent)})
+    return {"ok": True, "sent": sent}
+
+
+# ============== NOTIFICHE ORDINI RICEVUTI ==============
+
+
+@router.get("/company/order-notifications")
+async def get_order_notifications(user: Dict = Depends(require_roles("admin"))):
+    """Restituisce {recipients, enabled} per le notifiche email sui nuovi ordini."""
+    doc = await db.company.find_one(tenant_scope(user), {"_id": 0}) or {}
+    n = doc.get("order_notifications") or {}
+    return {
+        "recipients": list(n.get("recipients") or []),
+        "enabled": bool(n.get("enabled", True)),
+    }
+
+
+@router.put("/company/order-notifications")
+async def update_order_notifications(body: OrderNotificationsIn,
+                                     user: Dict = Depends(require_roles("admin"))):
+    """Aggiorna la lista dei destinatari per le notifiche di nuovi ordini ricevuti."""
+    seen = set()
+    cleaned: list[str] = []
+    for raw in (body.recipients or []):
+        e = _validate_email(raw)
+        if e in seen:
+            continue
+        seen.add(e)
+        cleaned.append(e)
+    if len(cleaned) > 20:
+        raise HTTPException(400, "Massimo 20 destinatari")
+    n = {"recipients": cleaned, "enabled": bool(body.enabled)}
+    await db.company.update_one(
+        tenant_scope(user),
+        {"$set": {"order_notifications": n, "tenant_id": tenant_id_of(user), "updated_at": now_utc()},
+         "$setOnInsert": {"created_at": now_utc()}},
+        upsert=True,
+    )
+    await log_audit(user, "UPDATE", "order_notifications", tenant_id_of(user),
+                    {"count": len(cleaned), "enabled": n["enabled"]})
+    return n
+
+
+@router.post("/company/order-notifications/test")
+async def test_order_notification(user: Dict = Depends(require_roles("admin"))):
+    """Invia un'email di test ai destinatari delle notifiche ordini."""
+    tid = tenant_id_of(user)
+    doc = await db.company.find_one({"tenant_id": tid}, {"_id": 0}) or {}
+    n = doc.get("order_notifications") or {}
+    recipients = list(n.get("recipients") or [])
+    if not recipients:
+        raise HTTPException(400, "Nessun destinatario configurato")
+    azienda = doc.get("nome") or doc.get("ragione_sociale") or "Il tuo tenant"
+    sent = []
+    for r in recipients:
+        ev = await send_email(
+            to=r,
+            subject=f"[CleanTec] Test notifica ordini · {azienda}",
+            body_text=(f"Ciao,\n\nquesto è un test delle notifiche email sui nuovi ordini ricevuti "
+                       f"per il tenant \"{azienda}\".\n\nSe ricevi questa email, riceverai automaticamente "
+                       f"un avviso ogni volta che un cliente invierà un nuovo ordine.\n\n— CleanTec"),
+            tenant_id=tid,
+            context={"type": "order_notification_test"},
+        )
+        sent.append({"to": r, "status": ev.get("status")})
+    await log_audit(user, "TEST", "order_notifications", tid, {"count": len(sent)})
     return {"ok": True, "sent": sent}
 
 

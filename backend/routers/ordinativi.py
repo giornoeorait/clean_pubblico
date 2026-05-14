@@ -74,6 +74,18 @@ async def _resolve_righe(tenant_id: str, cliente_id: str, righe: List[RigaOrd]) 
         a = await db.articoli.find_one({"tenant_id": tenant_id, "id": r.articolo_id}, {"_id": 0})
         if not a:
             raise HTTPException(400, f"Articolo {r.articolo_id} non disponibile")
+
+        # Validazione vincolo multiplo
+        multiplo = int(a.get("multiplo_quantita") or 1)
+        if multiplo > 1:
+            q = float(r.quantita)
+            if q != int(q) or int(q) % multiplo != 0:
+                raise HTTPException(
+                    400,
+                    f"'{a.get('descrizione') or a.get('codice') or 'articolo'}': "
+                    f"la quantità deve essere un multiplo di {multiplo} (richiesti: {int(q) if q == int(q) else q})."
+                )
+
         prezzo = None
         if listino_id:
             p_doc = await db.listini_prezzi.find_one({
@@ -129,7 +141,59 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
     }
     await db.ordinativi.insert_one(doc)
     doc.pop("_id", None)
+
+    # Notifica email a destinatari configurati (best-effort, non blocca creazione)
+    try:
+        await _notify_new_order(tenant_id, doc, cli)
+    except Exception:
+        pass
     return doc
+
+
+async def _notify_new_order(tenant_id: str, ord_doc: Dict, cliente: Dict) -> None:
+    """Best-effort: invia email a tutti i destinatari configurati per le notifiche ordini."""
+    company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
+    n = company.get("order_notifications") or {}
+    if not n.get("enabled", True):
+        return
+    recipients = [r for r in (n.get("recipients") or []) if r]
+    if not recipients:
+        return
+    from smtp_service import send_email
+    azienda = company.get("nome") or company.get("ragione_sociale") or tenant_id
+    cli_label = (cliente.get("denominazione_struttura")
+                 or cliente.get("ragione_sociale") or "Cliente sconosciuto")
+    righe = ord_doc.get("righe") or []
+    righe_text = "\n".join(
+        f"  · {r.get('descrizione') or r.get('codice') or '—'} × {int(r['quantita']) if r['quantita'] == int(r['quantita']) else r['quantita']}"
+        for r in righe
+    ) or "  (nessuna riga)"
+    data_consegna = ord_doc.get("data_consegna_richiesta") or "non specificata"
+    totale = ord_doc.get("totale", 0)
+    origine_label = "Portale Self-Service" if ord_doc.get("origine") == "portale" else "Inserimento interno"
+    subject = f"[CleanTec] Nuovo ordine {ord_doc.get('numero')} · {cli_label}"
+    text = (
+        f"Nuovo ordine ricevuto per il tenant \"{azienda}\".\n\n"
+        f"Numero      : {ord_doc.get('numero')}\n"
+        f"Cliente     : {cli_label}\n"
+        f"Origine     : {origine_label}\n"
+        f"Consegna    : {data_consegna}\n"
+        f"Totale      : € {totale:.2f}\n\n"
+        f"Articoli:\n{righe_text}\n\n"
+    )
+    note_c = (ord_doc.get("note_cliente") or "").strip()
+    if note_c:
+        text += f"Note cliente:\n{note_c}\n\n"
+    text += "— CleanTec (notifica automatica)"
+    for r in recipients:
+        try:
+            await send_email(
+                to=r, subject=subject, body_text=text,
+                tenant_id=tenant_id, context={"type": "new_order", "numero": ord_doc.get("numero")},
+            )
+        except Exception:
+            # Skip individual failures
+            pass
 
 
 # ---------- Internal endpoints ----------
@@ -367,6 +431,7 @@ async def portale_info(token: str):
             "descrizione": a.get("descrizione", ""),
             "unita_misura": a.get("unita_misura", "pz"),
             "prezzo": round(float(prezzo), 2),
+            "multiplo_quantita": int(a.get("multiplo_quantita") or 1),
         })
     return {
         "cliente": {

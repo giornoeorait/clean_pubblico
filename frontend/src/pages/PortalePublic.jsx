@@ -83,7 +83,6 @@ export default function PortalePublic() {
           <CheckCircle size={64} weight="fill" className="mx-auto text-emerald-500 mb-4" />
           <h1 className="font-display font-bold text-2xl text-slate-800">Ordinativo inviato!</h1>
           <p className="font-mono text-indaco text-lg font-bold mt-2">{success.numero}</p>
-          <p className="text-slate-600 mt-3">Ti contatteremo a breve per confermare la data di consegna.</p>
           <div className="mt-6 p-4 bg-slate-50 rounded-lg text-left">
             <div className="flex justify-between text-sm"><span className="text-slate-500">Righe:</span><span className="font-mono font-bold">{success.righe.length}</span></div>
             <div className="flex justify-between text-sm mt-1"><span className="text-slate-500">Consegna richiesta:</span><span className="font-mono font-bold">{new Date(success.data_consegna_richiesta).toLocaleDateString("it-IT")}</span></div>
@@ -135,6 +134,7 @@ export default function PortalePublic() {
               <div className="divide-y divide-slate-100">
                 {info.articoli.map(a => {
                   const q = cart[a.id] || 0;
+                  const step = Math.max(1, parseInt(a.multiplo_quantita) || 1);
                   return (
                     <div key={a.id} className="flex items-center gap-4 p-4" data-testid={`portale-art-${a.codice}`}>
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-celeste/20 to-indaco/20 flex items-center justify-center flex-shrink-0">
@@ -142,17 +142,25 @@ export default function PortalePublic() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-slate-900 truncate">{a.descrizione}</div>
-                        <div className="text-xs text-slate-500 font-mono">{a.codice} · € {a.prezzo.toFixed(2)}/{a.unita_misura}</div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          {a.codice} · € {a.prezzo.toFixed(2)}/{a.unita_misura}
+                          {step > 1 && <span className="ml-2 text-amber-600">· solo multipli di {step}</span>}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => setQty(a.id, Math.max(0, q - 1))} className="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50 flex items-center justify-center"><Minus size={14} /></button>
+                        <button onClick={() => setQty(a.id, Math.max(0, q - step))} className="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50 flex items-center justify-center"><Minus size={14} /></button>
                         <Input
-                          type="number" min={0} step={1} value={q}
-                          onChange={(e) => setQty(a.id, e.target.value)}
+                          type="number" min={0} step={step} value={q}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value) || 0;
+                            // snap to nearest multiple (round down to be safe)
+                            const snapped = step > 1 ? Math.floor(v / step) * step : v;
+                            setQty(a.id, Math.max(0, snapped));
+                          }}
                           className="w-16 h-8 text-center font-mono"
                           data-testid={`portale-qty-${a.codice}`}
                         />
-                        <button onClick={() => setQty(a.id, q + 1)} className="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50 flex items-center justify-center"><Plus size={14} /></button>
+                        <button onClick={() => setQty(a.id, q + step)} className="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50 flex items-center justify-center"><Plus size={14} /></button>
                       </div>
                       <div className="text-right w-24 font-mono text-sm">
                         {q > 0 ? <span className="font-bold text-indaco">€ {(q * a.prezzo).toFixed(2)}</span> : <span className="text-slate-300">—</span>}
