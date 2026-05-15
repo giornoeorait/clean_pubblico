@@ -105,7 +105,7 @@ export default function Login() {
                 required
                 data-testid="login-email-input"
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-md text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indaco focus:border-transparent transition-all font-mono text-sm"
-                placeholder="admin@cleantec.it"
+                placeholder="Email"
               />
             </div>
             <div>
