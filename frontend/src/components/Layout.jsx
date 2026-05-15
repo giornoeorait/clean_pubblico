@@ -150,6 +150,7 @@ export default function Layout({ children }) {
             <NavLink
               key={it.to}
               to={it.to}
+              end
               data-testid={`nav-${it.to.replace("/", "")}`}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
