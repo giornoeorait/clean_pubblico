@@ -20,7 +20,7 @@ const STATO_CLASS = {
   convertito_ddt: "bg-emerald-100 text-emerald-700",
   annullato: "bg-red-100 text-red-700",
 };
-const STATO_LBL = { nuovo: "Nuovo", in_lavorazione: "In lavorazione", convertito_ddt: "DDT generato", annullato: "Annullato" };
+const STATO_LBL = { nuovo: "Nuovo", in_lavorazione: "In lavorazione", convertito_ddt: "Trasformato in DDT", annullato: "Annullato" };
 
 function inDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
@@ -31,14 +31,18 @@ export default function Ordinativi() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
-  const [filterStato, setFilterStato] = useState("all");
+  const [filterStato, setFilterStato] = useState("da_lavorare");
 
   const fetchAll = useCallback(async () => {
-    const q = filterStato === "all" ? "" : `?stato=${filterStato}`;
+    // "da_lavorare" e "all" non passano filtro backend (filtriamo client-side)
+    const q = (filterStato === "all" || filterStato === "da_lavorare") ? "" : `?stato=${filterStato}`;
     const [o, c, a] = await Promise.all([
       api.get(`/ordinativi${q}`), api.get("/clienti"), api.get("/articoli"),
     ]);
-    setList(o.data); setClienti(c.data); setArticoli(a.data);
+    const data = filterStato === "da_lavorare"
+      ? o.data.filter(x => x.stato === "nuovo" || x.stato === "in_lavorazione")
+      : o.data;
+    setList(data); setClienti(c.data); setArticoli(a.data);
   }, [filterStato]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -132,10 +136,11 @@ export default function Ordinativi() {
         <Select value={filterStato} onValueChange={setFilterStato}>
           <SelectTrigger className="w-60 h-9" data-testid="ord-filter-stato"><SelectValue /></SelectTrigger>
           <SelectContent>
+            <SelectItem value="da_lavorare">Da lavorare (Nuovi + In lavorazione)</SelectItem>
             <SelectItem value="all">Tutti</SelectItem>
             <SelectItem value="nuovo">Nuovi</SelectItem>
             <SelectItem value="in_lavorazione">In lavorazione</SelectItem>
-            <SelectItem value="convertito_ddt">DDT generato</SelectItem>
+            <SelectItem value="convertito_ddt">Trasformati in DDT</SelectItem>
             <SelectItem value="annullato">Annullati</SelectItem>
           </SelectContent>
         </Select>
