@@ -134,10 +134,10 @@ function StatusStrip({ snapshots, retention }) {
   };
 
   const cards = [
-    { label: "Snapshot attivi", value: stats.count, sub: `max ${stats.retention}`, icon: Database, accent: "text-indaco" },
+    { label: "Snapshot attivi", value: stats.count, sub: `max ${stats.retention} · ~15 giorni`, icon: Database, accent: "text-indaco" },
     { label: "Ultimo backup", value: fmtRelative(stats.latest), sub: fmtDate(stats.latest), icon: Clock, accent: "text-emerald-600" },
     { label: "Spazio occupato", value: fmtSize(stats.size), sub: "in cloud", icon: CloudCheck, accent: "text-celeste" },
-    { label: "Scheduler", value: "03:00 UTC", sub: "giornaliero", icon: ArrowsClockwise, accent: "text-amber-600" },
+    { label: "Scheduler", value: "03:00 / 15:00 UTC", sub: "ogni 12 ore", icon: ArrowsClockwise, accent: "text-amber-600" },
   ];
 
   return (

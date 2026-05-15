@@ -29,10 +29,11 @@ CATALOG_COLLECTIONS = ["articoli", "listini", "listini_prezzi", "termini_templat
 ALL_RESTORABLE = OPERATIONAL_COLLECTIONS + CATALOG_COLLECTIONS
 
 # Retention policy: keep the last N snapshots per tenant
-RETENTION_KEEP = 7
+# 30 snapshot × 2 al giorno = 15 giorni di copertura
+RETENTION_KEEP = 30
 
-# Daily snapshot window (UTC hour). Scheduler triggers when the hour rolls over to this value.
-DAILY_HOUR_UTC = 3
+# Snapshot windows (UTC hours). Scheduler triggers when the hour rolls over to these values.
+SNAPSHOT_HOURS_UTC = [3, 15]
 
 
 def _serialize_doc(d: dict) -> dict:
@@ -207,7 +208,7 @@ async def apply_retention(tenant_id: str, keep: int = RETENTION_KEEP) -> int:
 # ---------------- Scheduler ----------------
 
 _scheduler_task: Optional[asyncio.Task] = None
-_last_run_date: Optional[str] = None  # 'YYYY-MM-DD' (UTC) of the last successful run
+_last_run_slot: Optional[str] = None  # 'YYYY-MM-DD-HH' (UTC) of the last successful run
 
 
 async def resolve_alert_recipients(tenant_id: str) -> list:
@@ -294,29 +295,27 @@ async def run_daily_snapshots() -> dict:
 
 
 async def _scheduler_loop():
-    """Background loop: every 60s checks if it's time for the daily snapshot."""
-    global _last_run_date
-    logger.info(f"Backup scheduler started (target hour: {DAILY_HOUR_UTC:02d}:00 UTC)")
-    # On startup, set _last_run_date so we don't fire immediately on restart
-    today_utc = now_utc().strftime("%Y-%m-%d")
-    if now_utc().hour < DAILY_HOUR_UTC:
-        # The 03:00 hour today hasn't happened yet, leave _last_run_date unset
-        _last_run_date = None
+    """Background loop: every 60s checks if it's time for a snapshot window."""
+    global _last_run_slot
+    logger.info(f"Backup scheduler started (target hours UTC: {SNAPSHOT_HOURS_UTC})")
+    # On startup, mark the current slot (if we're inside one) as done to avoid firing immediately on restart
+    now = now_utc()
+    if now.hour in SNAPSHOT_HOURS_UTC:
+        _last_run_slot = now.strftime("%Y-%m-%d-%H")
     else:
-        # Hour has passed today; consider today already done
-        _last_run_date = today_utc
+        _last_run_slot = None
 
     while True:
         try:
             now = now_utc()
-            today = now.strftime("%Y-%m-%d")
-            if now.hour == DAILY_HOUR_UTC and _last_run_date != today:
-                logger.info("Triggering daily snapshot run")
+            slot = now.strftime("%Y-%m-%d-%H")
+            if now.hour in SNAPSHOT_HOURS_UTC and _last_run_slot != slot:
+                logger.info(f"Triggering snapshot run for slot {slot}")
                 try:
                     await run_daily_snapshots()
-                    _last_run_date = today
+                    _last_run_slot = slot
                 except Exception as e:
-                    logger.error(f"Daily snapshot run failed: {e}")
+                    logger.error(f"Snapshot run failed: {e}")
             await asyncio.sleep(60)
         except asyncio.CancelledError:
             logger.info("Backup scheduler cancelled")
