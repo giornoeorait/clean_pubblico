@@ -3,7 +3,12 @@ import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Truck, TrendUp, FileArrowDown } from "@phosphor-icons/react";
+import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Truck, TrendUp, FileArrowDown, Archive, UploadSimple, FloppyDisk, Trash, MagnifyingGlass } from "@phosphor-icons/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { toast } from "sonner";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, CartesianGrid,
@@ -20,6 +25,7 @@ const TABS = [
   { v: "marginalita", l: "Marginalità", icon: TrendUp },
   { v: "aging", l: "Aging sospesi", icon: Clock },
   { v: "km", l: "Km automezzi", icon: Truck },
+  { v: "storico", l: "Storico (pre-app)", icon: Archive },
 ];
 
 export default function Report() {
@@ -29,6 +35,7 @@ export default function Report() {
   const [loading, setLoading] = useState(false);
 
   const fetchReport = async () => {
+    if (tab === "storico") { setLoading(false); return; }
     setLoading(true); setData(null);
     try {
       const path = tab === "aging" ? "/reports/aging-sospesi" :
@@ -51,22 +58,24 @@ export default function Report() {
         subtitle="Fatturato, produzione, costi, marginalità e aging aggregati per mese, cliente, articolo e automezzo."
         actions={
           <div className="flex gap-2 items-center">
-            <button
-              onClick={async () => {
-                try {
-                  const res = await api.get(`/reports/${tab}/pdf?anno=${anno}`, { responseType: "blob" });
-                  const url = URL.createObjectURL(res.data);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `report-${tab}-${anno}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } catch { /* ignore */ }
-              }}
-              className="px-3 py-2 text-sm rounded-md border border-slate-200 hover:border-indaco hover:text-indaco flex items-center gap-2"
-              data-testid="download-report-pdf">
-              <FileArrowDown size={16} /> Scarica PDF
-            </button>
+            {tab !== "storico" && (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await api.get(`/reports/${tab}/pdf?anno=${anno}`, { responseType: "blob" });
+                    const url = URL.createObjectURL(res.data);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `report-${tab}-${anno}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch { /* ignore */ }
+                }}
+                className="px-3 py-2 text-sm rounded-md border border-slate-200 hover:border-indaco hover:text-indaco flex items-center gap-2"
+                data-testid="download-report-pdf">
+                <FileArrowDown size={16} /> Scarica PDF
+              </button>
+            )}
             <Select value={String(anno)} onValueChange={v => { setData(null); setAnno(Number(v)); }}>
               <SelectTrigger className="w-28" data-testid="report-anno"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -99,6 +108,7 @@ export default function Report() {
         {!loading && data && tab === "marginalita" && <MarginalitaView d={data} />}
         {!loading && data && tab === "aging" && <AgingView d={data} />}
         {!loading && data && tab === "km" && <KmView d={data} />}
+        {tab === "storico" && <StoricoView anno={anno} />}
       </ErrorBoundary>
     </div>
   );
@@ -419,5 +429,335 @@ function KmView({ d }) {
         </table></div>
       </div>
     </div>
+  );
+}
+
+
+// ============== STORICO (PRE-APP) ==============
+const MESI_LABELS = ["", "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
+
+function StoricoView({ anno }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [annoSel, setAnnoSel] = useState(anno);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/fatturato-storico/summary?anno=${annoSel}`);
+      setSummary(data);
+    } catch (e) {
+      toast.error("Errore caricamento storico");
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { fetchData(); }, [annoSel]);
+
+  if (loading) return <div className="kpi-card p-8 text-center text-slate-400">Caricamento…</div>;
+
+  const empty = !summary || summary.per_cliente.length === 0;
+  const filtered = (summary?.per_cliente || []).filter(c =>
+    !search || (c.cliente_denominazione || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.cliente_ragione_sociale || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="kpi-card p-4 flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Archive size={20} className="text-indaco" weight="duotone" />
+          <div>
+            <h3 className="font-display font-bold">Storico fatturato pre-app</h3>
+            <p className="text-xs text-slate-500">Dati produzione importati da Excel (netto IVA, per cliente e mese).</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {(summary?.anni_disponibili || []).length > 0 && (
+            <Select value={String(annoSel)} onValueChange={v => setAnnoSel(Number(v))}>
+              <SelectTrigger className="w-28 h-9" data-testid="storico-anno"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {summary.anni_disponibili.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          <Button onClick={() => setImportOpen(true)} className="bg-indaco hover:bg-indaco-dark" data-testid="storico-import-btn">
+            <UploadSimple size={16} className="mr-1" />Importa Excel
+          </Button>
+        </div>
+      </div>
+
+      {empty ? (
+        <div className="kpi-card p-12 text-center">
+          <Archive size={48} className="mx-auto mb-3 text-slate-300" weight="duotone" />
+          <h4 className="font-display font-bold text-lg mb-1">Nessun dato storico</h4>
+          <p className="text-sm text-slate-500 mb-4">Importa il file Excel della contabilità per visualizzare lo storico per cliente e mese.</p>
+          <Button onClick={() => setImportOpen(true)} className="bg-indaco hover:bg-indaco-dark">
+            <UploadSimple size={16} className="mr-1" />Importa file Excel
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Kpi label="Totale storico" value={fmtE(summary.totale)} sub={`anno ${annoSel}`} />
+            <Kpi label="Clienti" value={summary.per_cliente.length} color="text-slate-900" />
+            <Kpi label="Mesi coperti" value={summary.per_mese.length} color="text-celeste" />
+          </div>
+
+          <div className="kpi-card p-4">
+            <h4 className="font-display font-bold mb-3">Andamento mensile</h4>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={summary.per_mese}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => fmtE(v)} />
+                <Bar dataKey="totale" fill="#4f46e5" name="Totale netto" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="kpi-card p-0 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-3">
+              <h4 className="font-display font-bold">Per cliente ({filtered.length})</h4>
+              <div className="ml-auto relative">
+                <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                <Input
+                  placeholder="Cerca cliente…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 h-9 w-64"
+                  data-testid="storico-search"
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    {[...Array(12)].map((_, i) => <th key={i} className="text-right">{MESI_LABELS[i + 1]}</th>)}
+                    <th className="text-right">Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(c => (
+                    <tr key={c.cliente_id}>
+                      <td>
+                        <div className="font-medium">{c.cliente_denominazione || "—"}</div>
+                        {c.cliente_ragione_sociale && c.cliente_ragione_sociale !== c.cliente_denominazione && (
+                          <div className="text-xs text-slate-500">{c.cliente_ragione_sociale}</div>
+                        )}
+                      </td>
+                      {[...Array(12)].map((_, i) => {
+                        const key = `${annoSel}-${String(i + 1).padStart(2, "0")}`;
+                        const v = c.per_mese[key];
+                        return <td key={i} className={`text-right font-mono text-xs ${v ? "" : "text-slate-300"}`}>{v ? fmtE(v) : "—"}</td>;
+                      })}
+                      <td className="text-right font-mono font-bold text-indaco">{fmtE(c.totale)}</td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && <tr><td colSpan={14} className="text-center py-8 text-slate-400">Nessun risultato</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      <ImportStoricoDialog open={importOpen} onOpenChange={setImportOpen} onDone={fetchData} />
+    </div>
+  );
+}
+
+function ImportStoricoDialog({ open, onOpenChange, onDone }) {
+  const [step, setStep] = useState(1);
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [overrides, setOverrides] = useState({});
+
+  const reset = () => { setStep(1); setFile(null); setPreview(null); setOverrides({}); };
+
+  const handleClose = (o) => {
+    onOpenChange(o);
+    if (!o) setTimeout(reset, 300);
+  };
+
+  const upload = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/imports/fatturato-storico/preview", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setPreview(data);
+      const init = {};
+      data.items.forEach(i => { if (i.cliente_id) init[i.struttura_excel] = i.cliente_id; });
+      setOverrides(init);
+      setStep(2);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore parsing file");
+    } finally { setUploading(false); }
+  };
+
+  const commit = async () => {
+    setCommitting(true);
+    try {
+      const items = preview.items.map(i => ({
+        cliente_id: overrides[i.struttura_excel] || null,
+        struttura_excel: i.struttura_excel,
+        mese: i.mese,
+        anno: i.anno,
+        totale: i.totale,
+      }));
+      const { data } = await api.post("/imports/fatturato-storico/commit", { items });
+      toast.success(`Importate ${data.upserted} righe · ${data.skipped} saltate`);
+      onDone?.();
+      handleClose(false);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore conferma");
+    } finally { setCommitting(false); }
+  };
+
+  const strutture = preview ? (() => {
+    const map = {};
+    preview.items.forEach(i => {
+      if (!map[i.struttura_excel]) {
+        map[i.struttura_excel] = {
+          struttura_excel: i.struttura_excel,
+          match_score: i.match_score,
+          match_reason: i.match_reason,
+          righe: [],
+        };
+      }
+      map[i.struttura_excel].righe.push(i);
+    });
+    return Object.values(map);
+  })() : [];
+
+  const totaleFinale = preview ? preview.items
+    .filter(i => overrides[i.struttura_excel])
+    .reduce((acc, i) => acc + i.totale, 0) : 0;
+  const matchedCount = strutture.filter(s => overrides[s.struttura_excel]).length;
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UploadSimple size={20} className="text-indaco" />
+            Importa storico fatturato da Excel
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+              <p className="font-semibold text-amber-900 mb-1">Formato atteso:</p>
+              <p className="text-amber-800 text-xs">
+                File Excel con un foglio &quot;contabilità&quot;. Per ogni struttura una sezione con header (nome) e righe mensili:<br />
+                <code className="font-mono text-[11px]">[A]=Nome struttura · [B]=Proforma Gennaio 26 · [D]=Importo netto IVA</code>
+              </p>
+            </div>
+            <div>
+              <Label>Seleziona file</Label>
+              <Input type="file" accept=".xlsx,.xls"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+                data-testid="storico-file-input" />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <Button variant="outline" onClick={() => handleClose(false)}>Annulla</Button>
+              <Button onClick={upload} disabled={!file || uploading} className="bg-indaco hover:bg-indaco-dark" data-testid="storico-upload-btn">
+                {uploading ? "Analisi…" : "Analizza file"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && preview && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-4 gap-3">
+              <Kpi label="Righe" value={preview.summary.total_rows} />
+              <Kpi label="Strutture" value={preview.summary.strutture_uniche} />
+              <Kpi label="Matchate" value={matchedCount} color="text-emerald-600" />
+              <Kpi label="Da abbinare" value={preview.summary.strutture_uniche - matchedCount} color="text-amber-600" />
+            </div>
+
+            <div className="text-xs text-slate-500">
+              Verifica l&apos;abbinamento di ogni struttura. Le righe senza cliente abbinato saranno saltate.
+            </div>
+
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="p-2 text-left">Struttura nel file</th>
+                    <th className="p-2 text-left">Cliente abbinato</th>
+                    <th className="p-2 text-right">Mesi</th>
+                    <th className="p-2 text-right">Totale netto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {strutture.map(s => {
+                    const total = s.righe.reduce((a, r) => a + r.totale, 0);
+                    const cli = overrides[s.struttura_excel];
+                    return (
+                      <tr key={s.struttura_excel} className="border-b border-slate-100">
+                        <td className="p-2">
+                          <div className="font-medium">{s.struttura_excel}</div>
+                          {s.match_reason !== "esatto" && (
+                            <div className="text-[10px] text-amber-600 font-mono">
+                              {s.match_reason} · score {s.match_score}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          <Select
+                            value={cli || "__none__"}
+                            onValueChange={v => setOverrides({ ...overrides, [s.struttura_excel]: v === "__none__" ? null : v })}>
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder="Seleziona…" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-64">
+                              <SelectItem value="__none__">— Salta —</SelectItem>
+                              {preview.clienti.map(c => (
+                                <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="p-2 text-right text-xs font-mono text-slate-500">
+                          {s.righe.map(r => `${MESI_LABELS[r.mese]}${String(r.anno).slice(2)}`).join(", ")}
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold text-indaco">{fmtE(total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-indaco/5 border-t-2 border-indaco">
+                  <tr>
+                    <td colSpan={3} className="p-2 text-right font-semibold">Totale da importare ({matchedCount} strutture):</td>
+                    <td className="text-right font-mono font-bold text-indaco">{fmtE(totaleFinale)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <Button variant="outline" onClick={() => setStep(1)}>Indietro</Button>
+              <Button onClick={commit} disabled={committing || matchedCount === 0}
+                className="bg-emerald-600 hover:bg-emerald-700" data-testid="storico-commit-btn">
+                <FloppyDisk size={14} className="mr-1" />
+                {committing ? "Salvataggio…" : `Importa ${matchedCount} strutture`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
