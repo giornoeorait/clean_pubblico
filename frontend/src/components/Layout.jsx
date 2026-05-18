@@ -5,6 +5,7 @@ import { useBranding } from "../context/BrandingContext";
 import api from "../lib/api";
 import TrialBanner from "./TrialBanner";
 import AlertsBanner from "./AlertsBanner";
+import { VersionBadge } from "./VersionWatcher";
 import {
   ChartBar, Users, Package, Receipt, Truck, UserList,
   SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet, Database,
@@ -175,6 +176,9 @@ export default function Layout({ children }) {
             <button onClick={handleLogout} className="text-slate-400 hover:text-white" data-testid="logout-btn" title="Esci">
               <SignOut size={18} />
             </button>
+          </div>
+          <div className="mt-2 text-center">
+            <VersionBadge />
           </div>
         </div>
       </aside>

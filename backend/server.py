@@ -1,6 +1,8 @@
 """CleanTec FastAPI entry point."""
 import logging
 import os
+import subprocess
+from datetime import datetime, timezone
 from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
@@ -15,7 +17,39 @@ logger = logging.getLogger("cleantec")
 
 app = FastAPI(title="CleanTec API", version="1.1.0")
 
+
+def _compute_app_version() -> str:
+    """Compute a build/deploy version string. Priority:
+    1) Env var APP_VERSION (set at deploy time)
+    2) Short git commit hash
+    3) Startup timestamp (changes on every restart)
+    """
+    env_v = os.environ.get("APP_VERSION")
+    if env_v:
+        return env_v
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd="/app", stderr=subprocess.DEVNULL
+        ).decode().strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+
+APP_VERSION = _compute_app_version()
+STARTED_AT = datetime.now(timezone.utc).isoformat()
+
 api = APIRouter(prefix="/api")
+
+
+@api.get("/version")
+async def get_version():
+    """Public endpoint used by the frontend to detect new deployments."""
+    return {"version": APP_VERSION, "started_at": STARTED_AT}
+
+
 api.include_router(auth.router)
 api.include_router(users.router)
 api.include_router(catalog.router)

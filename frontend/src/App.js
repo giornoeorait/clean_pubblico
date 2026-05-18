@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { BrandingProvider } from "./context/BrandingContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
+import { VersionProvider } from "./components/VersionWatcher";
 import { Toaster } from "sonner";
 
 import Login from "./pages/Login";
@@ -57,8 +58,9 @@ export default function App() {
     <div className="App">
       <AuthProvider>
         <BrandingProvider>
-          <Toaster position="top-right" richColors closeButton />
-          <BrowserRouter>
+          <VersionProvider>
+            <Toaster position="top-right" richColors closeButton />
+            <BrowserRouter>
             <Routes>
               <Route path="/" element={<RootRedirect />} />
               <Route path="/login" element={<Login />} />
@@ -93,6 +95,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </BrowserRouter>
+          </VersionProvider>
         </BrandingProvider>
       </AuthProvider>
     </div>
