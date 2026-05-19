@@ -29,18 +29,18 @@ router = APIRouter(tags=["fatturato_storico"])
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 MESI = {
-    "gennaio": 1, "gennnaio": 1, "genaio": 1,
-    "febbraio": 2, "febraio": 2,
-    "marzo": 3,
-    "aprile": 4,
-    "maggio": 5,
-    "giugno": 6,
-    "luglio": 7,
-    "agosto": 8,
-    "settembre": 9,
-    "ottobre": 10,
-    "novembre": 11,
-    "dicembre": 12,
+    "gennaio": 1, "gennnaio": 1, "genaio": 1, "genniao": 1, "gennaaio": 1, "genario": 1,
+    "febbraio": 2, "febraio": 2, "febbaio": 2, "febraaio": 2,
+    "marzo": 3, "marozo": 3,
+    "aprile": 4, "apprile": 4,
+    "maggio": 5, "magio": 5,
+    "giugno": 6, "giungo": 6,
+    "luglio": 7, "lugio": 7,
+    "agosto": 8, "agost": 8,
+    "settembre": 9, "setembre": 9, "settenbre": 9,
+    "ottobre": 10, "otobre": 10,
+    "novembre": 11, "novenbre": 11,
+    "dicembre": 12, "dicenbre": 12, "dicembr": 12,
 }
 MESI_LABEL = {1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile", 5: "Maggio", 6: "Giugno",
               7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"}
