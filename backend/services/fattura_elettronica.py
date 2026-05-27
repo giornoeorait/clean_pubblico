@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from xml.sax.saxutils import escape
@@ -18,6 +19,56 @@ from xml.sax.saxutils import escape
 NS = "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"
 NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
 SCHEMA = "http://www.fatturapa.gov.it/sdi/fatturapa/v1.2/Schema_del_file_xml_FatturaPA_versione_1.2.2.xsd"
+
+
+# --------------------------------------------------------------- Sanitizers
+
+# Caratteri di controllo Unicode (LTR, RTL, BOM, ZWSP, ZWJ, etc.) che spesso
+# vengono incollati da PDF/Word e che lo SDI rifiuta nei campi anagrafici.
+_INVISIBLE_CHARS = (
+    "\u200b\u200c\u200d\u200e\u200f"  # zero-width + LTR/RTL marks
+    "\u202a\u202b\u202c\u202d\u202e"  # directional embedding/override
+    "\u2060\u2061\u2062\u2063\u2064"  # word joiners
+    "\ufeff\u00a0"                       # BOM + nbsp
+)
+
+
+def _clean(s: Any) -> str:
+    """Remove invisible/control unicode chars and normalize whitespace.
+    Applied to every XML text value to avoid SDI rejection of pasted strings.
+    """
+    if s is None:
+        return ""
+    txt = str(s)
+    # Remove invisible/directional chars
+    for ch in _INVISIBLE_CHARS:
+        txt = txt.replace(ch, "")
+    # Remove other Unicode control category (Cf, Cc) except TAB/LF/CR
+    txt = "".join(
+        c for c in txt
+        if unicodedata.category(c)[0] != "C" or c in "\t\n\r"
+    )
+    # Normalize whitespace (LF/CR → space, collapse multiple spaces)
+    txt = re.sub(r"[\r\n]+", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    return txt
+
+
+def _clean_alnum(s: Any, max_len: int = 0) -> str:
+    """Keep only [A-Z0-9] (uppercase). Used for SDI codes (P.IVA, CF persona giuridica, codice SDI)."""
+    txt = _clean(s).upper()
+    txt = re.sub(r"[^A-Z0-9]", "", txt)
+    return txt[:max_len] if max_len else txt
+
+
+def _clean_cf(s: Any) -> str:
+    """Codice Fiscale italiano: 16 alfanumerici (persona fisica) o 11 cifre (persona giuridica)."""
+    cf = _clean_alnum(s)
+    if len(cf) == 11:
+        return cf  # P.IVA used as CF
+    if len(cf) == 16:
+        return cf
+    return cf[:16]  # accept partial, will be rejected by SDI if invalid
 
 
 # --------------------------------------------------------------- Address parser
@@ -29,63 +80,93 @@ CAP_RE = re.compile(r"\b(\d{5})\b")
 def parse_address(indirizzo: str, cap_field: str = "") -> Dict[str, str]:
     """Best-effort parse of a free-form Italian address string.
 
-    Expected formats include:
-      "Via Roma, 12, 20100 Milano (MI)"
-      "Via Roma 12, Milano MI 20100"
+    Examples handled:
+      "Via Roma, 12, 20100 Milano (MI)"            → split by comma
       "00054 Via Torre Clementina, 80, Fiumicino, RM, Italia"
-    Returns dict with keys: indirizzo, cap, comune, provincia, nazione (default IT).
+      "03100 Via degli Etruschi, 7, Frosinone, FR, Italia"
+      "Sede Legale: Via della Foce 12 — 00054 Fiumicino RM"
+
+    Strategy:
+      1. Clean preambles ('Sede Legale:', etc).
+      2. Split by comma and strip the trailing "Italia".
+      3. The CAP (5 digits) is extracted and removed from any token.
+      4. Provincia = last 2-letter uppercase token (not IT).
+      5. Comune = the non-numeric token that does NOT contain street keywords
+         ("via", "viale", "piazza", "corso", "vicolo", "largo", "str.", etc).
+      6. Indirizzo = the street tokens (those containing street keywords or numbers).
     """
-    s = (indirizzo or "").strip()
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    cap = (cap_field or "").strip()
+    raw = _clean(indirizzo)
+    raw = re.sub(r"(?i)^(sede legale|sede operativa)\s*:\s*", "", raw)
+    cap = _clean(cap_field)
     provincia = ""
-    comune = ""
     nazione = "IT"
 
-    # Look for CAP in the field first, then in any part
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if parts and parts[-1].upper() in {"ITALIA", "ITALY", "IT"}:
+        parts = parts[:-1]
+        nazione = "IT"
+
+    # CAP detection (field first, then any part — and strip it from the part)
     if not cap:
-        for p in parts:
+        for i, p in enumerate(parts):
             m = CAP_RE.search(p)
             if m:
                 cap = m.group(1)
+                parts[i] = CAP_RE.sub("", p).strip(" ,-")
                 break
+    else:
+        # CAP è già nel campo: rimuoviamolo dalle parti se compare
+        for i, p in enumerate(parts):
+            if cap in p:
+                parts[i] = p.replace(cap, "").strip(" ,-")
 
-    # Look for provincia (2-letter uppercase token)
-    for p in reversed(parts):
-        m = PROVINCIA_RE.search(p)
+    # Provincia detection (from the end)
+    for i in range(len(parts) - 1, -1, -1):
+        m = PROVINCIA_RE.search(parts[i])
         if m and m.group(1) not in {"IT", "ITALIA"}:
             provincia = m.group(1)
+            # rimuovi la sigla dalla parte (se è da sola la parte sparisce)
+            parts[i] = re.sub(rf"\b{provincia}\b", "", parts[i]).strip(" ,-")
+            if not parts[i]:
+                parts.pop(i)
             break
 
-    # Detect "Italia"/"IT" at the end → nazione
-    if parts and parts[-1].upper() in {"ITALIA", "ITALY", "IT"}:
-        parts = parts[:-1]
+    # Rimuovi parti vuote
+    parts = [p for p in parts if p]
 
-    # Heuristic: the part containing the provincia or CAP often also contains the comune
-    for p in parts:
-        # Strip provincia + CAP from the part to leave the comune
-        candidate = p
-        if cap:
-            candidate = CAP_RE.sub("", candidate)
-        if provincia:
-            candidate = re.sub(rf"\b{provincia}\b", "", candidate)
-        candidate = candidate.strip(" ,()-")
-        if candidate and not any(ch.isdigit() for ch in candidate) and len(candidate) > 1:
-            comune = candidate
-            break
+    # Classifica le parti rimanenti in "street" vs "comune"
+    STREET_KW = (
+        "via", "viale", "v.le", "piazza", "p.zza", "piazzale", "corso", "c.so",
+        "vicolo", "largo", "strada", "str.", "lungomare", "lungotevere",
+        "salita", "discesa", "circonvallazione", "borgo", "contrada"
+    )
 
-    # The first 1–2 parts make up the street
-    if comune:
-        street_parts = [p for p in parts if comune not in p]
-    else:
-        street_parts = parts[:2]
-    street = ", ".join(street_parts).strip(" ,") or s
+    def looks_like_street(p: str) -> bool:
+        low = p.lower()
+        if any(low.startswith(kw + " ") or low == kw or (" " + kw + " ") in (" " + low + " ") for kw in STREET_KW):
+            return True
+        # parts che contengono cifre (numero civico) → street
+        if re.search(r"\d", p):
+            return True
+        return False
 
-    # Fallbacks (mandatory in FatturaPA)
+    street_parts = [p for p in parts if looks_like_street(p)]
+    comune_parts = [p for p in parts if not looks_like_street(p)]
+
+    indirizzo_out = ", ".join(street_parts).strip(" ,-")
+    comune_out = (comune_parts[0] if comune_parts else "")
+
+    # Se non abbiamo capito niente, prendi la prima parte come indirizzo e
+    # l'ultima come comune.
+    if not indirizzo_out and parts:
+        indirizzo_out = parts[0]
+    if not comune_out and len(parts) > 1:
+        comune_out = parts[-1]
+
     return {
-        "indirizzo": street[:60] or "—",
+        "indirizzo": (indirizzo_out or "—")[:60],
         "cap":       cap or "00000",
-        "comune":    (comune or "Sconosciuto")[:60],
+        "comune":    (comune_out or "Sconosciuto")[:60],
         "provincia": provincia or "",
         "nazione":   nazione,
     }
@@ -129,14 +210,18 @@ def progressivo_invio(numero_fattura: str) -> str:
 
 
 def safe_partita_iva(piva: str) -> str:
-    return re.sub(r"\D+", "", piva or "")[:11]
+    return _clean_alnum(piva, max_len=11)
+
+
+def safe_numero(num: str) -> str:
+    """Sanitize document number: keep alphanumeric, '/', '-', '.'. Strip invisible chars."""
+    s = _clean(num).upper()
+    return re.sub(r"[^A-Z0-9/\-.]", "", s)[:20]
 
 
 def _e(v: Any) -> str:
-    """Escape XML text and strip newlines/control chars."""
-    s = "" if v is None else str(v)
-    s = s.replace("\r", " ").replace("\n", " ").strip()
-    return escape(s)
+    """Sanitize + XML-escape a text value."""
+    return escape(_clean(v))
 
 
 def _tag(name: str, value: Any) -> str:
@@ -172,22 +257,23 @@ def build_fattura_elettronica_xml(
         raise ValueError("Ragione sociale cliente mancante")
 
     cliente_piva = safe_partita_iva(cliente.get("partita_iva"))
-    cliente_cf = (cliente.get("codice_fiscale") or "").strip()
+    cliente_cf = _clean_cf(cliente.get("codice_fiscale"))
     if not cliente_piva and not cliente_cf:
         raise ValueError("Cliente senza P.IVA né Codice Fiscale: impossibile generare XML PA")
 
     # ----- Header components
     progressivo = progressivo_invio(fattura.get("numero", ""))
-    codice_dest = (cliente.get("codice_sdi") or "").strip().upper() or "0000000"
-    if len(codice_dest) not in (7,):
+    numero_doc = safe_numero(fattura.get("numero", ""))
+    codice_dest = _clean_alnum(cliente.get("codice_sdi"), max_len=7) or "0000000"
+    if len(codice_dest) != 7:
         codice_dest = "0000000"
-    pec_dest = (cliente.get("pec") or "").strip()
+    pec_dest = _clean(cliente.get("pec"))
 
     # ----- Addresses
     cedente_addr = parse_address(company.get("indirizzo", ""), company.get("cap", ""))
     cessionario_addr = parse_address(cliente.get("indirizzo", ""), cliente.get("cap", ""))
 
-    regime_fiscale = (company.get("regime_fiscale") or "RF01").strip().upper()
+    regime_fiscale = _clean_alnum(company.get("regime_fiscale") or "RF01")[:4] or "RF01"
     iva_pct = float(fattura.get("iva_pct") or 22.0)
     totale_doc = float(fattura.get("totale") or 0.0)
     imponibile = float(fattura.get("imponibile") or 0.0)
@@ -247,10 +333,17 @@ def build_fattura_elettronica_xml(
         cessionario_ident += f"<CodiceFiscale>{_e(cliente_cf)}</CodiceFiscale>"
 
     # ----- Build the XML
+    # IMPORTANT: dichiariamo il namespace SDI sia con prefisso `p:` sul root
+    # SIA come default namespace (`xmlns="..."`) così TUTTI i figli ricadono
+    # automaticamente nel namespace SDI come richiesto dallo schema XSD
+    # (elementFormDefault="qualified"). Senza il default namespace gli
+    # elementi senza prefisso risulterebbero in "no-namespace" e lo SDI
+    # rifiuterebbe il file.
     fname = f"IT{company_piva}_{progressivo}.xml"
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<p:FatturaElettronica versione="FPR12" '
+        f'xmlns="{NS}" '
         f'xmlns:p="{NS}" '
         f'xmlns:xsi="{NS_XSI}" '
         f'xsi:schemaLocation="{NS} {SCHEMA}">'
@@ -275,7 +368,7 @@ def build_fattura_elettronica_xml(
         "<IdPaese>IT</IdPaese>"
         f"<IdCodice>{_e(company_piva)}</IdCodice>"
         "</IdFiscaleIVA>"
-        + _tag("CodiceFiscale", company.get("codice_fiscale"))
+        + _tag("CodiceFiscale", _clean_cf(company.get("codice_fiscale")))
         + "<Anagrafica>"
         f"<Denominazione>{_e(company.get('ragione_sociale'))}</Denominazione>"
         "</Anagrafica>"
@@ -315,7 +408,7 @@ def build_fattura_elettronica_xml(
         "<TipoDocumento>TD01</TipoDocumento>"
         "<Divisa>EUR</Divisa>"
         f"<Data>{_e(fmt_date(fattura.get('data')))}</Data>"
-        f"<Numero>{_e(fattura.get('numero'))}</Numero>"
+        f"<Numero>{_e(numero_doc)}</Numero>"
         f"<ImportoTotaleDocumento>{fmt_money(totale_doc)}</ImportoTotaleDocumento>"
         + _tag("Causale", fattura.get("note"))
         + "</DatiGeneraliDocumento>"
@@ -341,7 +434,7 @@ def build_fattura_elettronica_xml(
             "<ModalitaPagamento>MP05</ModalitaPagamento>"
             + (f"<DataScadenzaPagamento>{_e(fmt_date(fattura.get('scadenza')))}</DataScadenzaPagamento>" if fattura.get('scadenza') else "")
             + f"<ImportoPagamento>{fmt_money(totale_doc)}</ImportoPagamento>"
-            + (f"<IBAN>{_e(company.get('iban'))}</IBAN>" if company.get("iban") else "")
+            + (f"<IBAN>{_e(_clean_alnum(company.get('iban')))}</IBAN>" if company.get("iban") else "")
             + "</DettaglioPagamento>"
             "</DatiPagamento>"
         )
