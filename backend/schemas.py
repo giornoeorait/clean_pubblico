@@ -21,7 +21,11 @@ class ClienteIn(BaseModel):
     ragione_sociale: str
     partita_iva: str
     codice_fiscale: Optional[str] = ""
-    indirizzo: str                       # sede legale
+    indirizzo: str                       # sede legale (riga via + civico)
+    cap: Optional[str] = ""
+    comune: Optional[str] = ""
+    provincia: Optional[str] = ""
+    nazione: Optional[str] = "IT"
     email: EmailStr
     telefono: str
     pec: Optional[str] = ""

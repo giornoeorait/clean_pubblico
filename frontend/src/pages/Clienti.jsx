@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 const EMPTY = {
   ragione_sociale: "", partita_iva: "", codice_fiscale: "", indirizzo: "",
+  cap: "", comune: "", provincia: "", nazione: "IT",
   email: "", telefono: "", pec: "", codice_sdi: "",
   denominazione_struttura: "", indirizzo_scarico: "",
   tipologia: "hotel", listino_id: "",
@@ -153,7 +154,10 @@ export default function Clienti() {
                     <div className="col-span-2"><Label>Ragione sociale{req("ragione_sociale")}</Label><Input value={form.ragione_sociale} onChange={e => setForm({...form, ragione_sociale: e.target.value})} data-testid="cliente-ragione-sociale" /></div>
                     <div><Label>Partita IVA{req("partita_iva")}</Label><Input value={form.partita_iva} onChange={e => setForm({...form, partita_iva: e.target.value})} placeholder="IT01234567890" data-testid="cliente-partita-iva" /></div>
                     <div><Label>Codice fiscale</Label><Input value={form.codice_fiscale} onChange={e => setForm({...form, codice_fiscale: e.target.value})} /></div>
-                    <div className="col-span-2"><Label>Indirizzo sede legale{req("indirizzo")}</Label><Input value={form.indirizzo} onChange={e => setForm({...form, indirizzo: e.target.value})} /></div>
+                    <div className="col-span-2"><Label>Indirizzo sede legale (via e civico){req("indirizzo")}</Label><Input value={form.indirizzo} onChange={e => setForm({...form, indirizzo: e.target.value})} placeholder="Via Roma 123" /></div>
+                    <div><Label>CAP</Label><Input value={form.cap || ""} onChange={e => setForm({...form, cap: e.target.value})} placeholder="20100" maxLength={5} data-testid="cliente-cap" /></div>
+                    <div><Label>Comune</Label><Input value={form.comune || ""} onChange={e => setForm({...form, comune: e.target.value})} placeholder="Milano" data-testid="cliente-comune" /></div>
+                    <div><Label>Provincia (sigla)</Label><Input value={form.provincia || ""} onChange={e => setForm({...form, provincia: e.target.value.toUpperCase()})} placeholder="MI" maxLength={2} data-testid="cliente-provincia" /></div>
                     <div><Label>Email{req("email")}</Label><Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
                     <div><Label>Telefono{req("telefono")}</Label><Input value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} /></div>
                     <div><Label>PEC</Label><Input value={form.pec} onChange={e => setForm({...form, pec: e.target.value})} placeholder="cliente@pec.it" data-testid="cliente-pec" /></div>

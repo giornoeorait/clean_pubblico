@@ -121,6 +121,24 @@ def test_safe_numero_keeps_slash_dash():
     assert safe_numero("\u202aFT-2026-00066/L\u202c") == "FT-2026-00066/L"
 
 
+def test_piva_strips_eu_prefix():
+    """Bug: P.IVA salvata come 'IT17400491001' veniva troncata a 'IT174004910'."""
+    from services.fattura_elettronica import safe_partita_iva
+    assert safe_partita_iva("IT17400491001") == "17400491001"
+    assert safe_partita_iva("it 17400491001") == "17400491001"
+    assert safe_partita_iva("17400491001") == "17400491001"
+    # Already clean
+    assert safe_partita_iva("12345678901") == "12345678901"
+
+
+def test_address_strips_company_name_prefix():
+    """Bug: 'WATERWELL SRL Sede Legale: Via della Foce' → 'Via della Foce'."""
+    addr = parse_address("WATERWELL FCO Cleaning Tech SRL Sede Legale: Via della Foce 12", "00054")
+    assert "WATERWELL" not in addr["indirizzo"]
+    assert "Sede Legale" not in addr["indirizzo"]
+    assert "Via della Foce" in addr["indirizzo"]
+
+
 def test_xml_includes_correct_cessionario_address():
     fattura, company, cliente, ddts = _make_inputs()
     xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts)

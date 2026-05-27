@@ -96,7 +96,20 @@ def parse_address(indirizzo: str, cap_field: str = "") -> Dict[str, str]:
       6. Indirizzo = the street tokens (those containing street keywords or numbers).
     """
     raw = _clean(indirizzo)
-    raw = re.sub(r"(?i)^(sede legale|sede operativa)\s*:\s*", "", raw)
+    # Rimuovi preamboli tipo "Sede Legale:", "Sede Operativa:"
+    raw = re.sub(r"(?i)\b(sede\s+legale|sede\s+operativa|sede)\s*:?\s*", "", raw)
+    # Se l'utente ha incollato ragione sociale prima dell'indirizzo, tronchiamo
+    # alla prima street keyword. Esempio: "WATERWELL FCO Cleaning Tech SRL Via della Foce"
+    # → tronca a "Via della Foce ...".
+    STREET_KW_RE = re.compile(
+        r"\b(via|viale|v\.le|piazza|p\.zza|piazzale|corso|c\.so|vicolo|"
+        r"largo|strada|str\.|lungomare|lungotevere|salita|discesa|"
+        r"circonvallazione|borgo|contrada|loc\.|località)\b",
+        re.IGNORECASE,
+    )
+    m = STREET_KW_RE.search(raw)
+    if m and m.start() > 0:
+        raw = raw[m.start():].strip()
     cap = _clean(cap_field)
     provincia = ""
     nazione = "IT"
@@ -210,7 +223,17 @@ def progressivo_invio(numero_fattura: str) -> str:
 
 
 def safe_partita_iva(piva: str) -> str:
-    return _clean_alnum(piva, max_len=11)
+    """Estrae la P.IVA italiana (11 cifre). Rimuove prefisso 'IT' eventualmente
+    presente quando l'utente la inserisce in formato VAT EU (es. 'IT17400491001').
+    """
+    raw = _clean(piva).upper()
+    # Rimuovi prefisso IT seguito da cifre
+    m = re.match(r"^IT\s*(\d.*)$", raw)
+    if m:
+        raw = m.group(1)
+    # Tieni solo cifre, max 11
+    digits = re.sub(r"\D+", "", raw)
+    return digits[:11]
 
 
 def safe_numero(num: str) -> str:
@@ -270,8 +293,45 @@ def build_fattura_elettronica_xml(
     pec_dest = _clean(cliente.get("pec"))
 
     # ----- Addresses
-    cedente_addr = parse_address(company.get("indirizzo", ""), company.get("cap", ""))
-    cessionario_addr = parse_address(cliente.get("indirizzo", ""), cliente.get("cap", ""))
+    # Se sono valorizzati i campi separati (cap/comune/provincia), li usiamo
+    # come fonte primaria. Altrimenti facciamo fallback al parser dell'indirizzo libero.
+    def resolve_addr(entity: Dict[str, Any]) -> Dict[str, str]:
+        cap_v = _clean(entity.get("cap"))
+        comune_v = _clean(entity.get("comune"))
+        prov_v = _clean(entity.get("provincia")).upper()[:2]
+        if comune_v and cap_v:
+            # campi separati valorizzati: usali (con sanitization indirizzo)
+            indir_raw = _clean(entity.get("indirizzo") or "")
+            # Rimuovi preamboli e ragione sociale dall'indirizzo
+            indir_raw = re.sub(r"(?i)\b(sede\s+legale|sede\s+operativa|sede)\s*:?\s*", "", indir_raw)
+            STREET_KW = re.compile(
+                r"\b(via|viale|v\.le|piazza|p\.zza|piazzale|corso|c\.so|vicolo|"
+                r"largo|strada|str\.|lungomare|lungotevere|salita|discesa|"
+                r"circonvallazione|borgo|contrada|loc\.|località)\b",
+                re.IGNORECASE,
+            )
+            m = STREET_KW.search(indir_raw)
+            if m and m.start() > 0:
+                indir_raw = indir_raw[m.start():].strip()
+            # se l'indirizzo libero conteneva CAP/comune/provincia, rimuovili
+            indir_raw = re.sub(rf"\b{re.escape(cap_v)}\b", "", indir_raw)
+            indir_raw = re.sub(rf"\b{re.escape(comune_v)}\b", "", indir_raw, flags=re.IGNORECASE)
+            if prov_v:
+                indir_raw = re.sub(rf"\b{prov_v}\b", "", indir_raw)
+            indir_raw = re.sub(r"\s*,\s*,\s*", ", ", indir_raw)
+            indir_raw = indir_raw.strip(" ,-").strip()
+            return {
+                "indirizzo": (indir_raw or "—")[:60],
+                "cap": cap_v[:5],
+                "comune": comune_v[:60],
+                "provincia": prov_v,
+                "nazione": (_clean(entity.get("nazione")) or "IT")[:2].upper(),
+            }
+        # fallback parser
+        return parse_address(entity.get("indirizzo", ""), entity.get("cap", ""))
+
+    cedente_addr = resolve_addr(company)
+    cessionario_addr = resolve_addr(cliente)
 
     regime_fiscale = _clean_alnum(company.get("regime_fiscale") or "RF01")[:4] or "RF01"
     iva_pct = float(fattura.get("iva_pct") or 22.0)

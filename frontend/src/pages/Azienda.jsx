@@ -15,7 +15,10 @@ const FIELDS = [
   { k: "ragione_sociale",  label: "Ragione sociale",         required: true,  placeholder: "CleanTec Demo Srl" },
   { k: "partita_iva",      label: "Partita IVA",             required: true,  placeholder: "IT01234567890" },
   { k: "codice_fiscale",   label: "Codice fiscale",          required: false, placeholder: "01234567890" },
-  { k: "indirizzo",        label: "Indirizzo completo",      required: true,  placeholder: "Via Roma 123, 20100 Milano (MI)" },
+  { k: "indirizzo",        label: "Indirizzo (via e civico)", required: true,  placeholder: "Via Roma 123" },
+  { k: "cap",              label: "CAP",                     required: true,  placeholder: "20100", maxLength: 5 },
+  { k: "comune",           label: "Comune",                  required: true,  placeholder: "Milano" },
+  { k: "provincia",        label: "Provincia (sigla)",       required: true,  placeholder: "MI", maxLength: 2 },
   { k: "iban",             label: "IBAN",                    required: false, placeholder: "IT60 X 05428 11101 00000 0123456" },
   { k: "email",            label: "Email",                   required: true,  placeholder: "info@tuaazienda.it" },
   { k: "pec",              label: "PEC",                     required: false, placeholder: "azienda@pec.it" },
@@ -167,6 +170,7 @@ export default function Azienda() {
                       value={val}
                       onChange={e => update(f.k, e.target.value)}
                       placeholder={f.placeholder}
+                      maxLength={f.maxLength}
                       data-testid={`azienda-${f.k}`}
                       className={missing ? "border-amber-300" : ""}
                     />
