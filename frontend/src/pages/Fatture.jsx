@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { clientePrimary, docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
@@ -106,14 +106,43 @@ export default function Fatture() {
       const a = document.createElement("a");
       a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
-      toast.success("XML Fattura Elettronica scaricato");
+      toast.success("XML Fattura Elettronica scaricato (validato XSD)");
     } catch (e) {
-      // Try to extract error message from blob
-      let msg = "Errore generazione XML";
+      // Estrai eventuali errori di validazione SdI dal blob
+      let detail = null;
       if (e.response?.data instanceof Blob) {
-        try { const text = await e.response.data.text(); msg = JSON.parse(text).detail || msg; } catch {}
-      } else if (e.response?.data?.detail) { msg = e.response.data.detail; }
-      toast.error(msg);
+        try { detail = JSON.parse(await e.response.data.text()).detail; } catch { /* ignore */ }
+      } else if (e.response?.data?.detail) {
+        detail = e.response.data.detail;
+      }
+      if (detail && typeof detail === "object" && Array.isArray(detail.errors)) {
+        toast.error(
+          `Fattura non conforme SdI (${detail.errors.length} errori). Apri la fattura per dettagli.`,
+          { duration: 8000 }
+        );
+        // Anche console per debugging
+        // eslint-disable-next-line no-console
+        console.warn("[XML SdI Validation]", detail.errors);
+      } else {
+        toast.error(typeof detail === "string" ? detail : "Errore generazione XML");
+      }
+    }
+  };
+
+  const validateXml = async (f) => {
+    try {
+      const { data } = await api.post(`/fatture/${f.id}/validate`);
+      if (data.ok) {
+        toast.success(`Fattura ${f.numero} conforme SdI ✓`, { duration: 5000 });
+      } else {
+        const lines = data.errors.slice(0, 6).map(er => `• ${er.message}`).join("\n");
+        toast.error(`Fattura ${f.numero} — ${data.errors.length} errore/i:\n${lines}`, {
+          duration: 12000,
+          style: { whiteSpace: "pre-line", maxWidth: "500px" },
+        });
+      }
+    } catch (e) {
+      toast.error("Errore validazione: " + (e.response?.data?.detail || "—"));
     }
   };
 
@@ -174,6 +203,7 @@ export default function Fatture() {
                 </td>
                 <td className="py-2 px-4 text-right space-x-1">
                   <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => validateXml(f)} title="Verifica conformità SdI" data-testid={`fatt-validate-${f.id}`}><ShieldCheck size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML Fattura Elettronica" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)}><Eye size={14} /></Button>
                   {f.stato_incasso !== "incassata" && (

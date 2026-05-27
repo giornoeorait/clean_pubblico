@@ -262,22 +262,29 @@ def build_fattura_elettronica_xml(
     company: Dict[str, Any],
     cliente: Dict[str, Any],
     ddts: List[Dict[str, Any]],
+    *,
+    validate_xsd: bool = True,
 ) -> Tuple[bytes, str]:
     """Generate the full Fattura Elettronica XML (FPR12 — privati) for a fattura.
 
     Returns (xml_bytes, filename).
     Filename convention: ITxxxxxxxxxxx_NNNNN.xml
+
+    Raises:
+        InvoiceValidationError: se dati pre-XML non validi (P.IVA, CAP, totali...)
+        XsdValidationError:     se XML generato non valida contro XSD ufficiale
     """
-    # ----- Validations
+    from .invoice_validation import InvoiceValidationError, validate_invoice_data
+
+    # --- Validazione formale pre-generazione (campi anagrafici, totali, formato)
+    pre_errors = validate_invoice_data(fattura, company, cliente, ddts)
+    if pre_errors:
+        raise InvoiceValidationError(pre_errors)
+
     company_piva = safe_partita_iva(company.get("partita_iva"))
     if not company_piva:
-        raise ValueError("Partita IVA azienda mancante in Anagrafica")
-    if not company.get("ragione_sociale"):
-        raise ValueError("Ragione sociale azienda mancante in Anagrafica")
-    if not company.get("indirizzo"):
-        raise ValueError("Indirizzo azienda mancante in Anagrafica")
-    if not cliente.get("ragione_sociale"):
-        raise ValueError("Ragione sociale cliente mancante")
+        # Salvaguardia: la validazione formale dovrebbe averlo già intercettato
+        raise ValueError("Partita IVA azienda non valorizzata o non valida")
 
     cliente_piva = safe_partita_iva(cliente.get("partita_iva"))
     cliente_cf = _clean_cf(cliente.get("codice_fiscale"))
@@ -393,17 +400,17 @@ def build_fattura_elettronica_xml(
         cessionario_ident += f"<CodiceFiscale>{_e(cliente_cf)}</CodiceFiscale>"
 
     # ----- Build the XML
-    # IMPORTANT: dichiariamo il namespace SDI sia con prefisso `p:` sul root
-    # SIA come default namespace (`xmlns="..."`) così TUTTI i figli ricadono
-    # automaticamente nel namespace SDI come richiesto dallo schema XSD
-    # (elementFormDefault="qualified"). Senza il default namespace gli
-    # elementi senza prefisso risulterebbero in "no-namespace" e lo SDI
-    # rifiuterebbe il file.
+    # IMPORTANT: lo schema XSD ufficiale FatturaPA usa elementFormDefault="unqualified".
+    # Significa:
+    #   - Il ROOT element (FatturaElettronica) è nel namespace SDI (qualified)
+    #     → usiamo il prefisso p: oppure il default xmlns="..."
+    #   - Tutti gli ELEMENTI FIGLI sono in "no-namespace" (unqualified)
+    #     → NON devono avere prefisso E NON devono ereditare un default namespace.
+    # Quindi: usiamo SOLO il prefisso p: sul root (no xmlns="..." di default!).
     fname = f"IT{company_piva}_{progressivo}.xml"
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<p:FatturaElettronica versione="FPR12" '
-        f'xmlns="{NS}" '
         f'xmlns:p="{NS}" '
         f'xmlns:xsi="{NS_XSI}" '
         f'xsi:schemaLocation="{NS} {SCHEMA}">'
@@ -502,4 +509,23 @@ def build_fattura_elettronica_xml(
         "</p:FatturaElettronica>"
     )
 
-    return xml.encode("utf-8"), fname
+    xml_bytes = xml.encode("utf-8")
+
+    # --- Validazione XSD ufficiale (post-generazione)
+    if validate_xsd:
+        from .xsd_validator import validate_xml_against_xsd
+        xsd_errors = validate_xml_against_xsd(xml_bytes)
+        if xsd_errors:
+            # Trasformiamo in InvoiceValidationError per uniformità di gestione errori
+            from .invoice_validation import InvoiceValidationError
+            errs = [
+                {
+                    "code": "E_XSD",
+                    "field": e.get("path", "/"),
+                    "message": f"[XSD line {e.get('line')}] {e.get('message')}",
+                }
+                for e in xsd_errors
+            ]
+            raise InvoiceValidationError(errs)
+
+    return xml_bytes, fname

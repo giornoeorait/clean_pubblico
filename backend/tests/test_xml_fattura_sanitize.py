@@ -26,8 +26,10 @@ def _make_inputs(company_overrides=None, cliente_overrides=None):
         "ragione_sociale": "TEST SRL",
         "partita_iva": "12345678901",
         "codice_fiscale": "12345678901",
-        "indirizzo": "Via Roma 1, 20100 Milano MI",
+        "indirizzo": "Via Roma 1",
         "cap": "20100",
+        "comune": "Milano",
+        "provincia": "MI",
         "regime_fiscale": "RF01",
         "iban": "IT60X0542811101000000123456",
     }
@@ -36,14 +38,16 @@ def _make_inputs(company_overrides=None, cliente_overrides=None):
     cliente = {
         "ragione_sociale": "Cliente Test Srl",
         "partita_iva": "03051240608",
-        "indirizzo": "03100 Via degli Etruschi, 7, Frosinone, FR, Italia",
+        "indirizzo": "Via degli Etruschi 7",
         "cap": "03100",
+        "comune": "Frosinone",
+        "provincia": "FR",
         "codice_sdi": "SUBM70N",
     }
     cliente.update(cliente_overrides or {})
 
     fattura = {
-        "numero": "FT-2026-00066/L",
+        "numero": "FT-2026-00066",
         "data": "2026-05-27",
         "totale": 1170.38,
         "imponibile": 959.33,
@@ -60,7 +64,7 @@ def test_unicode_invisible_chars_removed():
     """U+202A, U+202C ecc. devono essere rimossi dal CF del cedente."""
     cf_dirty = "\u202a01234567890\u202c"
     fattura, company, cliente, ddts = _make_inputs(company_overrides={"codice_fiscale": cf_dirty})
-    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts)
+    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts, validate_xsd=False)
     text = xml_bytes.decode("utf-8")
     assert "\u202a" not in text
     assert "\u202c" not in text
@@ -69,7 +73,7 @@ def test_unicode_invisible_chars_removed():
 
 def test_xml_is_well_formed():
     fattura, company, cliente, ddts = _make_inputs()
-    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts)
+    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts, validate_xsd=False)
     # Should parse without error
     root = ET.fromstring(xml_bytes)
     assert root.tag.endswith("FatturaElettronica")
@@ -139,22 +143,43 @@ def test_address_strips_company_name_prefix():
     assert "Via della Foce" in addr["indirizzo"]
 
 
+def test_xml_validates_against_official_xsd():
+    """Test critico: l'XML generato deve validare contro lo schema XSD ufficiale FatturaPA."""
+    from services.xsd_validator import validate_xml_against_xsd
+    fattura, company, cliente, ddts = _make_inputs(
+        cliente_overrides={
+            "cap": "03100", "comune": "Frosinone", "provincia": "FR",
+            "indirizzo": "Via degli Etruschi 7",
+            "ragione_sociale": "Cliente Test Srl",
+        },
+        company_overrides={
+            "cap": "20100", "comune": "Milano", "provincia": "MI",
+            "indirizzo": "Via Roma 1",
+        },
+    )
+    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts, validate_xsd=False)
+    errors = validate_xml_against_xsd(xml_bytes)
+    assert errors == [], f"XML non valido contro XSD: {errors}"
+
+
 def test_xml_includes_correct_cessionario_address():
     fattura, company, cliente, ddts = _make_inputs()
-    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts)
+    xml_bytes, _ = build_fattura_elettronica_xml(fattura, company, cliente, ddts, validate_xsd=False)
     root = ET.fromstring(xml_bytes)
-    sede = root.find(".//p:CessionarioCommittente/p:Sede", NS)
-    assert sede is not None
-    assert sede.find("p:CAP", NS).text == "03100"
-    assert sede.find("p:Comune", NS).text == "Frosinone"
-    assert sede.find("p:Provincia", NS).text == "FR"
-    indirizzo = sede.find("p:Indirizzo", NS).text
+    # Lo schema FatturaPA usa elementFormDefault="unqualified": i child di
+    # FatturaElettronica sono in no-namespace.
+    sede = root.find(".//CessionarioCommittente/Sede")
+    assert sede is not None, "Sede del cessionario non trovata"
+    assert sede.find("CAP").text == "03100"
+    assert sede.find("Comune").text == "Frosinone"
+    assert sede.find("Provincia").text == "FR"
+    indirizzo = sede.find("Indirizzo").text
     assert "Via degli Etruschi" in indirizzo
 
 
 def test_filename_convention():
     fattura, company, cliente, ddts = _make_inputs()
-    _, filename = build_fattura_elettronica_xml(fattura, company, cliente, ddts)
+    _, filename = build_fattura_elettronica_xml(fattura, company, cliente, ddts, validate_xsd=False)
     # Must follow ITxxxxxxxxxxx_NNNNN.xml
     assert filename.startswith("IT12345678901_")
     assert filename.endswith(".xml")

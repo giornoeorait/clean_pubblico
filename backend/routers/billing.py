@@ -158,6 +158,7 @@ async def fatture_xml_bulk(
     from fastapi import Response
     from routers.company import load_company_for_tenant
     from services.fattura_elettronica import build_fattura_elettronica_xml
+    from services.invoice_validation import InvoiceValidationError
 
     # ----- Risolvi from/to -----
     if month:
@@ -215,6 +216,10 @@ async def fatture_xml_bulk(
                     seq += 1
                 zf.writestr(base_name, xml_bytes)
                 included += 1
+            except InvoiceValidationError as e:
+                # Errore di validazione: salta la fattura con messaggio dettagliato
+                msgs = "; ".join(err["message"] for err in e.errors[:3])
+                skipped.append({"numero": fatt.get("numero", "?"), "reason": msgs})
             except ValueError as e:
                 skipped.append({"numero": fatt.get("numero", "?"), "reason": str(e)})
 
@@ -280,6 +285,7 @@ async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_use
     from fastapi import Response
     from routers.company import load_company_for_tenant
     from services.fattura_elettronica import build_fattura_elettronica_xml
+    from services.invoice_validation import InvoiceValidationError
 
     fatt = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
     if not fatt:
@@ -292,6 +298,9 @@ async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_use
     company = await load_company_for_tenant(user["tenant_id"])
     try:
         xml_bytes, filename = build_fattura_elettronica_xml(fatt, company, cliente, ddt_list)
+    except InvoiceValidationError as e:
+        # 422: dati anagrafici/totali non conformi a specifiche SdI
+        raise HTTPException(status_code=422, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(400, str(e))
     return Response(
@@ -299,6 +308,44 @@ async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_use
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{fid}/validate")
+async def validate_fattura(fid: str, user: Dict = Depends(get_current_user)):
+    """Esegue tutti i controlli formali SdI sulla fattura SENZA generarne lo XML.
+
+    Ritorna:
+      { ok: bool, errors: [{code, field, message}, ...] }
+    """
+    from routers.company import load_company_for_tenant
+    from services.invoice_validation import validate_invoice_data
+    from services.xsd_validator import validate_xml_against_xsd
+    from services.fattura_elettronica import build_fattura_elettronica_xml
+    from services.invoice_validation import InvoiceValidationError
+
+    fatt = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fatt:
+        raise HTTPException(404, "Fattura non trovata")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": fatt["cliente_id"]}), {"_id": 0}) or {}
+    ddt_list = await db.ddt.find(
+        merge_scope(user, {"id": {"$in": fatt.get("ddt_ids", [])}}),
+        {"_id": 0},
+    ).to_list(500)
+    company = await load_company_for_tenant(user["tenant_id"])
+
+    pre_errors = validate_invoice_data(fatt, company, cliente, ddt_list)
+    if pre_errors:
+        return {"ok": False, "stage": "pre", "errors": pre_errors}
+
+    # Se i dati passano, tentiamo la generazione + XSD per individuare errori formali XSD
+    try:
+        build_fattura_elettronica_xml(fatt, company, cliente, ddt_list, validate_xsd=True)
+    except InvoiceValidationError as e:
+        return {"ok": False, "stage": "xsd", "errors": e.errors}
+    except ValueError as e:
+        return {"ok": False, "stage": "generation", "errors": [{"code": "E_GEN", "field": "/", "message": str(e)}]}
+
+    return {"ok": True, "errors": []}
 
 
 @router.get("/{fid}")
