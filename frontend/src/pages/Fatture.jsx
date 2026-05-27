@@ -116,11 +116,11 @@ export default function Fatture() {
         detail = e.response.data.detail;
       }
       if (detail && typeof detail === "object" && Array.isArray(detail.errors)) {
-        toast.error(
-          `Fattura non conforme SdI (${detail.errors.length} errori). Apri la fattura per dettagli.`,
-          { duration: 8000 }
-        );
-        // Anche console per debugging
+        const lines = detail.errors.slice(0, 6).map(er => `• ${er.message}`).join("\n");
+        toast.error(`Fattura ${f.numero} — ${detail.errors.length} errore/i:\n${lines}`, {
+          duration: 12000,
+          style: { whiteSpace: "pre-line", maxWidth: "500px" },
+        });
         // eslint-disable-next-line no-console
         console.warn("[XML SdI Validation]", detail.errors);
       } else {
