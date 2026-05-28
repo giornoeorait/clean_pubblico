@@ -202,6 +202,10 @@ class PatchClienteIn(_PatchBase):
     partita_iva: Optional[str] = None
     codice_fiscale: Optional[str] = None
     indirizzo: Optional[str] = None
+    cap: Optional[str] = None
+    comune: Optional[str] = None
+    provincia: Optional[str] = None
+    nazione: Optional[str] = None
     email: Optional[str] = None
     telefono: Optional[str] = None
     pec: Optional[str] = None
