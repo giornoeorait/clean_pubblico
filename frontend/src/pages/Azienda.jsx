@@ -15,10 +15,6 @@ const FIELDS = [
   { k: "ragione_sociale",  label: "Ragione sociale",         required: true,  placeholder: "CleanTec Demo Srl" },
   { k: "partita_iva",      label: "Partita IVA",             required: true,  placeholder: "IT01234567890" },
   { k: "codice_fiscale",   label: "Codice fiscale",          required: false, placeholder: "01234567890" },
-  { k: "indirizzo",        label: "Indirizzo (via e civico)", required: true,  placeholder: "Via Roma 123" },
-  { k: "cap",              label: "CAP",                     required: true,  placeholder: "20100", maxLength: 5 },
-  { k: "comune",           label: "Comune",                  required: true,  placeholder: "Milano" },
-  { k: "provincia",        label: "Provincia (sigla)",       required: true,  placeholder: "MI", maxLength: 2 },
   { k: "iban",             label: "IBAN",                    required: false, placeholder: "IT60 X 05428 11101 00000 0123456" },
   { k: "email",            label: "Email",                   required: true,  placeholder: "info@tuaazienda.it" },
   { k: "pec",              label: "PEC",                     required: false, placeholder: "azienda@pec.it" },
@@ -28,6 +24,20 @@ const FIELDS = [
   { k: "regime_fiscale",   label: "Regime fiscale (Fattura elettronica)", required: false, placeholder: "RF01", options: ["RF01","RF02","RF04","RF05","RF06","RF07","RF08","RF09","RF10","RF11","RF12","RF13","RF14","RF15","RF16","RF17","RF18","RF19"] },
   { k: "iva_default_pct",  label: "Aliquota IVA di default (%)", required: false, placeholder: "22", type: "number" },
 ];
+
+const SEDE_FIELDS = [
+  { k: "indirizzo", label: "Indirizzo (via e civico)", required: true, placeholder: "Via Roma 123", colSpan: "md:col-span-2" },
+  { k: "cap",       label: "CAP",                     required: true, placeholder: "20100", maxLength: 5, colSpan: "" },
+  { k: "comune",    label: "Comune",                  required: true, placeholder: "Milano", colSpan: "" },
+  { k: "provincia", label: "Provincia",               required: true, placeholder: "MI", maxLength: 2, colSpan: "", upper: true },
+];
+
+const REQUIRED_KEYS = [
+  ...FIELDS.filter(f => f.required).map(f => f.k),
+  ...SEDE_FIELDS.filter(f => f.required).map(f => f.k),
+];
+
+const ALL_FIELDS_KEYS = [...FIELDS.map(f => f.k), ...SEDE_FIELDS.map(f => f.k)];
 
 export default function Azienda() {
   const [form, setForm] = useState(null);
@@ -54,7 +64,9 @@ export default function Azienda() {
 
   const update = (k, v) => setForm({ ...form, [k]: v });
 
-  const missingRequired = FIELDS.filter(f => f.required && !(form[f.k] || "").trim()).map(f => f.label);
+  const missingRequired = [...FIELDS, ...SEDE_FIELDS]
+    .filter(f => f.required && !(form[f.k] || "").trim())
+    .map(f => f.label);
   const isComplete = missingRequired.length === 0;
 
   const save = async () => {
@@ -64,7 +76,7 @@ export default function Azienda() {
     }
     setSaving(true);
     try {
-      const payload = Object.fromEntries(FIELDS.map(f => [f.k, form[f.k] || ""]));
+      const payload = Object.fromEntries(ALL_FIELDS_KEYS.map(k => [k, form[k] || ""]));
       const { data } = await api.put("/company", payload);
       setForm(data);
       toast.success("Anagrafica salvata");
@@ -179,6 +191,41 @@ export default function Azienda() {
               );
             })}
           </div>
+
+          {/* Sede legale (Fatturazione Elettronica) */}
+          <div className="mt-6 border-2 border-amber-300 rounded-lg p-4 bg-amber-50/60" data-testid="azienda-sede-section">
+            <h4 className="font-display font-bold text-sm text-amber-900 flex items-center gap-2 mb-3">
+              <ImageSquare size={16} className="text-amber-700" weight="duotone" />
+              Sede legale <span className="text-[11px] font-mono uppercase text-amber-700">(richiesti per Fatturazione Elettronica)</span>
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {SEDE_FIELDS.map(f => {
+                const val = form[f.k] != null ? String(form[f.k]) : "";
+                const missing = f.required && !val.trim();
+                return (
+                  <div key={f.k} className={f.colSpan || ""}>
+                    <Label className="text-amber-900">
+                      {f.label}
+                      {f.required && <span className="text-red-500 ml-0.5">*</span>}
+                    </Label>
+                    <Input
+                      type="text"
+                      value={val}
+                      onChange={e => update(f.k, f.upper ? e.target.value.toUpperCase().replace(/[^A-Z]/g, "") : e.target.value)}
+                      placeholder={f.placeholder}
+                      maxLength={f.maxLength}
+                      data-testid={`azienda-${f.k}`}
+                      className={`${missing ? "border-red-300 bg-red-50/30" : "border-amber-300"} ${f.k === "cap" || f.k === "provincia" ? "font-mono" : ""}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-amber-700 mt-2">
+              Senza questi 3 campi (CAP, Comune, Provincia) gli XML Fattura Elettronica saranno rifiutati dallo SdI.
+            </p>
+          </div>
+
           {!isComplete && (
             <div className="mt-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
               <Warning size={16} weight="fill" />

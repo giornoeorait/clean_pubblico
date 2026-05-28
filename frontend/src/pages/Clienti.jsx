@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit, EnvelopeSimple } from "@phosphor-icons/react";
+import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit, EnvelopeSimple, MapPin } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const EMPTY = {
@@ -154,15 +154,42 @@ export default function Clienti() {
                     <div className="col-span-2"><Label>Ragione sociale{req("ragione_sociale")}</Label><Input value={form.ragione_sociale} onChange={e => setForm({...form, ragione_sociale: e.target.value})} data-testid="cliente-ragione-sociale" /></div>
                     <div><Label>Partita IVA{req("partita_iva")}</Label><Input value={form.partita_iva} onChange={e => setForm({...form, partita_iva: e.target.value})} placeholder="IT01234567890" data-testid="cliente-partita-iva" /></div>
                     <div><Label>Codice fiscale</Label><Input value={form.codice_fiscale} onChange={e => setForm({...form, codice_fiscale: e.target.value})} /></div>
-                    <div className="col-span-2"><Label>Indirizzo sede legale (via e civico){req("indirizzo")}</Label><Input value={form.indirizzo} onChange={e => setForm({...form, indirizzo: e.target.value})} placeholder="Via Roma 123" /></div>
-                    <div><Label>CAP</Label><Input value={form.cap || ""} onChange={e => setForm({...form, cap: e.target.value})} placeholder="20100" maxLength={5} data-testid="cliente-cap" /></div>
-                    <div><Label>Comune</Label><Input value={form.comune || ""} onChange={e => setForm({...form, comune: e.target.value})} placeholder="Milano" data-testid="cliente-comune" /></div>
-                    <div><Label>Provincia (sigla)</Label><Input value={form.provincia || ""} onChange={e => setForm({...form, provincia: e.target.value.toUpperCase()})} placeholder="MI" maxLength={2} data-testid="cliente-provincia" /></div>
                     <div><Label>Email{req("email")}</Label><Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
                     <div><Label>Telefono{req("telefono")}</Label><Input value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} /></div>
                     <div><Label>PEC</Label><Input value={form.pec} onChange={e => setForm({...form, pec: e.target.value})} placeholder="cliente@pec.it" data-testid="cliente-pec" /></div>
-                    <div><Label>Codice SDI</Label><Input value={form.codice_sdi} onChange={e => setForm({...form, codice_sdi: e.target.value})} placeholder="ABCDE12" data-testid="cliente-sdi" /></div>
+                    <div><Label>Codice SDI</Label><Input value={form.codice_sdi} onChange={e => setForm({...form, codice_sdi: e.target.value})} placeholder="ABCDE12 (7 caratteri)" maxLength={7} data-testid="cliente-sdi" /></div>
                   </div>
+                </section>
+
+                {/* Sezione 1bis: Sede legale (richiesta per Fattura Elettronica) */}
+                <section className="border-2 border-amber-300 rounded-lg p-4 bg-amber-50/60">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MapPin size={18} className="text-amber-700" weight="duotone" />
+                    <h4 className="font-display font-bold text-sm text-amber-900">
+                      Sede legale <span className="text-[11px] font-mono uppercase text-amber-700">(richiesti per Fatturazione Elettronica)</span>
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-12">
+                      <Label>Indirizzo (via e civico){req("indirizzo")}</Label>
+                      <Input value={form.indirizzo} onChange={e => setForm({...form, indirizzo: e.target.value})} placeholder="Via Roma 123" data-testid="cliente-indirizzo" />
+                    </div>
+                    <div className="col-span-3">
+                      <Label className="text-amber-900">CAP <span className="text-red-500">*</span></Label>
+                      <Input value={form.cap || ""} onChange={e => setForm({...form, cap: e.target.value.replace(/\D/g, "")})} placeholder="20100" maxLength={5} data-testid="cliente-cap" className="font-mono" />
+                    </div>
+                    <div className="col-span-7">
+                      <Label className="text-amber-900">Comune <span className="text-red-500">*</span></Label>
+                      <Input value={form.comune || ""} onChange={e => setForm({...form, comune: e.target.value})} placeholder="Milano" data-testid="cliente-comune" />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-amber-900">Prov. <span className="text-red-500">*</span></Label>
+                      <Input value={form.provincia || ""} onChange={e => setForm({...form, provincia: e.target.value.toUpperCase().replace(/[^A-Z]/g, "")})} placeholder="MI" maxLength={2} data-testid="cliente-provincia" className="font-mono uppercase" />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-amber-700 mt-2">
+                    Senza questi 3 campi compilati, l&apos;XML Fattura Elettronica per questo cliente sarà rifiutato dallo SdI.
+                  </p>
                 </section>
 
                 {/* Sezione 2: Denominazione struttura (operativa) */}
@@ -254,7 +281,16 @@ export default function Clienti() {
                         <Buildings size={16} className="text-indaco" weight="duotone" />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-medium text-slate-900 truncate">{clientePrimary(c)}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-slate-900 truncate">{clientePrimary(c)}</div>
+                          {(!c.cap || !c.comune || !c.provincia) && (
+                            <span title="Mancano CAP/Comune/Provincia: la Fattura Elettronica per questo cliente sarà rifiutata dallo SdI"
+                                  className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap"
+                                  data-testid={`fe-warn-${c.id}`}>
+                              ⚠ FE
+                            </span>
+                          )}
+                        </div>
                         {clienteSecondary(c) && (
                           <div className="text-[11px] text-slate-400 truncate">{clienteSecondary(c)}</div>
                         )}
