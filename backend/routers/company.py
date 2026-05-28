@@ -44,6 +44,12 @@ class CompanyIn(BaseModel):
     sito_web: Optional[str] = ""
     regime_fiscale: Optional[str] = "RF01"   # FatturaPA RegimeFiscale (RF01..RF19)
     iva_default_pct: Optional[float] = 22.0  # Aliquota IVA di default per nuove fatture
+    # Iscrizione REA (opzionale ma raccomandato per società di capitali — art. 2250 CC)
+    rea_ufficio: Optional[str] = ""             # sigla provincia (es. "RM")
+    rea_numero: Optional[str] = ""              # numero REA
+    capitale_sociale: Optional[float] = None    # capitale sociale (€)
+    rea_socio_unico: Optional[str] = ""         # "SU" (socio unico) | "SM" (più soci) | ""
+    rea_stato_liquidazione: Optional[str] = ""  # "LS" (in liquidazione) | "LN" (no) | ""
 
 
 REQUIRED_FIELDS = ["nome", "ragione_sociale", "partita_iva", "indirizzo", "email", "telefono"]

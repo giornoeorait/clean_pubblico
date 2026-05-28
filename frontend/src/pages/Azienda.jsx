@@ -32,12 +32,20 @@ const SEDE_FIELDS = [
   { k: "provincia", label: "Provincia",               required: true, placeholder: "MI", maxLength: 2, colSpan: "", upper: true },
 ];
 
+const REA_FIELDS = [
+  { k: "rea_ufficio",            label: "REA Ufficio (sigla provincia)", placeholder: "RM", maxLength: 2, upper: true },
+  { k: "rea_numero",              label: "Numero REA",                    placeholder: "1234567" },
+  { k: "capitale_sociale",        label: "Capitale sociale (€)",          placeholder: "10000.00", type: "number" },
+  { k: "rea_socio_unico",         label: "Socio unico",                   options: [["","—"],["SU","SU (Socio Unico)"],["SM","SM (Più soci)"]] },
+  { k: "rea_stato_liquidazione",  label: "Stato liquidazione",            options: [["","—"],["LN","LN (Non in liquidazione)"],["LS","LS (In liquidazione)"]] },
+];
+
 const REQUIRED_KEYS = [
   ...FIELDS.filter(f => f.required).map(f => f.k),
   ...SEDE_FIELDS.filter(f => f.required).map(f => f.k),
 ];
 
-const ALL_FIELDS_KEYS = [...FIELDS.map(f => f.k), ...SEDE_FIELDS.map(f => f.k)];
+const ALL_FIELDS_KEYS = [...FIELDS.map(f => f.k), ...SEDE_FIELDS.map(f => f.k), ...REA_FIELDS.map(f => f.k)];
 
 export default function Azienda() {
   const [form, setForm] = useState(null);
@@ -223,6 +231,45 @@ export default function Azienda() {
             </div>
             <p className="text-[11px] text-amber-700 mt-2">
               Senza questi 3 campi (CAP, Comune, Provincia) gli XML Fattura Elettronica saranno rifiutati dallo SdI.
+            </p>
+          </div>
+
+          {/* Iscrizione REA (opzionale, raccomandato per società di capitali — art. 2250 CC) */}
+          <div className="mt-4 border border-slate-200 rounded-lg p-4 bg-slate-50/40">
+            <h4 className="font-display font-bold text-sm text-slate-800 flex items-center gap-2 mb-3">
+              <Buildings size={16} className="text-slate-500" weight="duotone" />
+              Iscrizione REA <span className="text-[11px] font-mono uppercase text-slate-400">(opzionale — società di capitali, art. 2250 CC)</span>
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {REA_FIELDS.map(f => {
+                const val = form[f.k] != null ? String(form[f.k]) : "";
+                return (
+                  <div key={f.k}>
+                    <Label>{f.label}</Label>
+                    {f.options ? (
+                      <select
+                        value={val}
+                        onChange={e => update(f.k, e.target.value)}
+                        data-testid={`azienda-${f.k}`}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indaco">
+                        {f.options.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+                      </select>
+                    ) : (
+                      <Input
+                        type={f.type || "text"}
+                        value={val}
+                        onChange={e => update(f.k, f.upper ? e.target.value.toUpperCase().replace(/[^A-Z]/g, "") : e.target.value)}
+                        placeholder={f.placeholder}
+                        maxLength={f.maxLength}
+                        data-testid={`azienda-${f.k}`}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Migliora la qualità dell&apos;XML e soddisfa l&apos;art. 2250 CC. Lascia vuoto se non sei una società di capitali.
             </p>
           </div>
 

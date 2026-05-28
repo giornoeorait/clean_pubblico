@@ -18,7 +18,8 @@
       <xs:element name="FatturaElettronicaBody"   type="FatturaElettronicaBodyType"   maxOccurs="unbounded" />
       <xs:element ref="ds:Signature"                                                  minOccurs="0"         />
     </xs:sequence>
-    <xs:attribute name="versione" type="FormatoTrasmissioneType" use="required" />
+    <xs:attribute name="SistemaEmittente" type="xs:string" use="optional" />
+      <xs:attribute name="versione" type="FormatoTrasmissioneType" use="required" />
   </xs:complexType>
   <xs:complexType name="FatturaElettronicaHeaderType">
     <xs:sequence>
@@ -418,7 +419,19 @@
           <xs:documentation>Autofattura</xs:documentation>
         </xs:annotation>
       </xs:enumeration>
-    </xs:restriction>
+          <xs:enumeration value="TD16"><xs:annotation><xs:documentation>Integrazione fattura reverse charge interno</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD17"><xs:annotation><xs:documentation>Integrazione/autofattura per acquisto servizi dall'estero</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD18"><xs:annotation><xs:documentation>Integrazione per acquisto di beni intracomunitari</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD19"><xs:annotation><xs:documentation>Integrazione/autofattura ex art.17 c.2 DPR 633/72</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD21"><xs:annotation><xs:documentation>Autofattura per splafonamento</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD22"><xs:annotation><xs:documentation>Estrazione beni da Deposito IVA</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD23"><xs:annotation><xs:documentation>Estrazione beni da Deposito IVA con versamento IVA</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD24"><xs:annotation><xs:documentation>Fattura differita art. 21 c.4 lett. a)</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD25"><xs:annotation><xs:documentation>Fattura differita art. 21 c.4 lett. b)</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD26"><xs:annotation><xs:documentation>Cessione beni ammortizzabili (art.36 DPR 633/72)</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD27"><xs:annotation><xs:documentation>Fattura per autoconsumo o cessioni gratuite senza rivalsa</xs:documentation></xs:annotation></xs:enumeration>
+      <xs:enumeration value="TD28"><xs:annotation><xs:documentation>Acquisti da San Marino con IVA</xs:documentation></xs:annotation></xs:enumeration>
+</xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="TipoRitenutaType">
     <xs:restriction base="xs:string">

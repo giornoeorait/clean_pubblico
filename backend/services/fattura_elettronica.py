@@ -255,6 +255,66 @@ def _tag(name: str, value: Any) -> str:
     return f"<{name}>{_e(s)}</{name}>"
 
 
+def _build_contatti_trasmittente(company: Dict[str, Any]) -> str:
+    """ContattiTrasmittente: telefono + email del soggetto che trasmette (opzionale ma raccomandato)."""
+    tel = _clean(company.get("telefono"))
+    email = _clean(company.get("email"))
+    if not tel and not email:
+        return ""
+    inner = ""
+    if tel:
+        inner += _tag("Telefono", tel[:12])
+    if email:
+        inner += _tag("Email", email)
+    return f"<ContattiTrasmittente>{inner}</ContattiTrasmittente>"
+
+
+def _build_contatti_cedente(company: Dict[str, Any]) -> str:
+    """Contatti del CedentePrestatore (Telefono/Email/Fax). Opzionale ma migliora la qualità."""
+    tel = _clean(company.get("telefono"))
+    email = _clean(company.get("email"))
+    if not tel and not email:
+        return ""
+    inner = ""
+    if tel:
+        inner += _tag("Telefono", tel[:12])
+    if email:
+        inner += _tag("Email", email)
+    return f"<Contatti>{inner}</Contatti>"
+
+
+def _build_iscrizione_rea(company: Dict[str, Any]) -> str:
+    """IscrizioneREA: ufficio + numero REA + (opzionale) capitale sociale + socio unico + stato liquidazione.
+
+    Necessario per società di capitali (art. 2250 CC). Tutti i campi sono opzionali nel
+    nostro schema: se l'utente non li ha compilati nel form Azienda, il nodo viene omesso.
+    """
+    ufficio = _clean(company.get("rea_ufficio")).upper()[:2]
+    numero_rea = _clean(company.get("rea_numero"))
+    capitale = company.get("capitale_sociale")
+    socio_unico = _clean(company.get("rea_socio_unico"))
+    stato_liq = _clean(company.get("rea_stato_liquidazione"))
+
+    if not ufficio or not numero_rea:
+        # IscrizioneREA richiede sia Ufficio che NumeroREA — se mancano, lo omettiamo
+        return ""
+
+    inner = (
+        f"<Ufficio>{_e(ufficio)}</Ufficio>"
+        f"<NumeroREA>{_e(numero_rea)}</NumeroREA>"
+    )
+    if capitale is not None and str(capitale).strip() != "":
+        try:
+            inner += f"<CapitaleSociale>{round(float(capitale), 2):.2f}</CapitaleSociale>"
+        except (TypeError, ValueError):
+            pass
+    if socio_unico in ("SU", "SM"):
+        inner += f"<SocioUnico>{socio_unico}</SocioUnico>"
+    if stato_liq in ("LS", "LN"):
+        inner += f"<StatoLiquidazione>{stato_liq}</StatoLiquidazione>"
+    return f"<IscrizioneREA>{inner}</IscrizioneREA>"
+
+
 # --------------------------------------------------------------- Main builder
 
 def build_fattura_elettronica_xml(
@@ -408,12 +468,23 @@ def build_fattura_elettronica_xml(
     #     → NON devono avere prefisso E NON devono ereditare un default namespace.
     # Quindi: usiamo SOLO il prefisso p: sul root (no xmlns="..." di default!).
     fname = f"IT{company_piva}_{progressivo}.xml"
+
+    # ----- TipoDocumento: TD24 (Fattura differita) se almeno un DDT ha data < data fattura,
+    # altrimenti TD01 (Fattura immediata). Elimina i 4 avvisi "Fattura Accompagnatoria".
+    fattura_data = fmt_date(fattura.get("data"))
+    is_differita = any(
+        d.get("data") and fmt_date(d.get("data")) < fattura_data
+        for d in ddts
+    )
+    tipo_documento = "TD24" if is_differita else "TD01"
+
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<p:FatturaElettronica versione="FPR12" '
         f'xmlns:p="{NS}" '
         f'xmlns:xsi="{NS_XSI}" '
-        f'xsi:schemaLocation="{NS} {SCHEMA}">'
+        f'xsi:schemaLocation="{NS} {SCHEMA}" '
+        f'SistemaEmittente="CLEANTEC-SAAS">'
 
         # ---------- HEADER ----------
         "<FatturaElettronicaHeader>"
@@ -425,6 +496,7 @@ def build_fattura_elettronica_xml(
         f"<ProgressivoInvio>{_e(progressivo)}</ProgressivoInvio>"
         "<FormatoTrasmissione>FPR12</FormatoTrasmissione>"
         f"<CodiceDestinatario>{_e(codice_dest)}</CodiceDestinatario>"
+        + _build_contatti_trasmittente(company)
         + (f"<PECDestinatario>{_e(pec_dest)}</PECDestinatario>" if codice_dest == "0000000" and pec_dest else "")
         + "</DatiTrasmissione>"
 
@@ -448,7 +520,11 @@ def build_fattura_elettronica_xml(
         + (f"<Provincia>{_e(cedente_addr['provincia'])}</Provincia>" if cedente_addr['provincia'] else "")
         + f"<Nazione>{_e(cedente_addr['nazione'])}</Nazione>"
         "</Sede>"
-        "</CedentePrestatore>"
+        # IscrizioneREA (opzionale, ma raccomandato per società di capitali — art. 2250 CC)
+        + _build_iscrizione_rea(company)
+        # Contatti (email cedente — migliora la qualità del documento)
+        + _build_contatti_cedente(company)
+        + "</CedentePrestatore>"
 
         # CessionarioCommittente (chi riceve la fattura — il cliente)
         "<CessionarioCommittente>"
@@ -472,7 +548,7 @@ def build_fattura_elettronica_xml(
         "<FatturaElettronicaBody>"
         "<DatiGenerali>"
         "<DatiGeneraliDocumento>"
-        "<TipoDocumento>TD01</TipoDocumento>"
+        "<TipoDocumento>" + tipo_documento + "</TipoDocumento>"
         "<Divisa>EUR</Divisa>"
         f"<Data>{_e(fmt_date(fattura.get('data')))}</Data>"
         f"<Numero>{_e(numero_doc)}</Numero>"
