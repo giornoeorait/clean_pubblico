@@ -32,6 +32,7 @@ export default function Ordinativi() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
   const [filterStato, setFilterStato] = useState("da_lavorare");
+  const [listinoPrezzi, setListinoPrezzi] = useState({}); // { articolo_id: prezzo } per il cliente selezionato
 
   const fetchAll = useCallback(async () => {
     // "da_lavorare" e "all" non passano filtro backend (filtriamo client-side)
@@ -46,6 +47,22 @@ export default function Ordinativi() {
   }, [filterStato]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Carica il listino prezzi del cliente selezionato (per la preview totale corretta)
+  useEffect(() => {
+    const cliId = form?.cliente_id;
+    if (!cliId) { setListinoPrezzi({}); return; }
+    const cli = clienti.find(c => c.id === cliId);
+    const listinoId = cli?.listino_id;
+    if (!listinoId) { setListinoPrezzi({}); return; }
+    api.get(`/listini/${listinoId}/prezzi`)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(p => { if (p.prezzo != null) map[p.articolo_id] = Number(p.prezzo); });
+        setListinoPrezzi(map);
+      })
+      .catch(() => setListinoPrezzi({}));
+  }, [form?.cliente_id, clienti]);
 
   const openNew = () => {
     setEditing(null);
@@ -114,7 +131,10 @@ export default function Ordinativi() {
   const preview = (form?.righe || []).reduce((acc, r) => {
     const a = articoli.find(x => x.id === r.articolo_id);
     if (!a) return acc;
-    const p = a.prezzo_lavaggio || a.prezzo || 0;
+    // Prezzo dal listino del cliente se presente, altrimenti fallback al prezzo articolo
+    const p = listinoPrezzi[r.articolo_id] != null
+      ? listinoPrezzi[r.articolo_id]
+      : (a.prezzo_lavaggio || a.prezzo || 0);
     return acc + p * (r.quantita || 0);
   }, 0);
 
@@ -256,7 +276,10 @@ export default function Ordinativi() {
                   <tbody>
                     {form.righe.map((r, i) => {
                       const a = articoli.find(x => x.id === r.articolo_id);
-                      const p = a?.prezzo_lavaggio || a?.prezzo || 0;
+                      const p = listinoPrezzi[r.articolo_id] != null
+                        ? listinoPrezzi[r.articolo_id]
+                        : (a?.prezzo_lavaggio || a?.prezzo || 0);
+                      const fromListino = listinoPrezzi[r.articolo_id] != null;
                       return (
                         <tr key={i} className="border-b border-slate-100">
                           <td className="p-2">
@@ -284,7 +307,9 @@ export default function Ordinativi() {
                             )}
                           </td>
                           <td className="text-right text-xs font-mono">
-                            <div className="text-slate-600">€ {p.toFixed(2)}/{a?.unita_misura || "pz"}</div>
+                            <div className={fromListino ? "text-indaco" : "text-amber-600"} title={fromListino ? "Prezzo dal listino cliente" : "Prezzo di default (cliente senza listino)"}>
+                              € {p.toFixed(2)}/{a?.unita_misura || "pz"} {fromListino ? "⚡" : "•"}
+                            </div>
                             <div className="text-indaco font-bold">€ {(p * (r.quantita || 0)).toFixed(2)}</div>
                           </td>
                           <td><Button variant="ghost" size="icon" onClick={() => delRiga(i)} className="text-red-500"><Trash size={13} /></Button></td>

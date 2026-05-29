@@ -34,6 +34,7 @@ export default function Offerte() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
+  const [listinoPrezzi, setListinoPrezzi] = useState({});
 
   const fetchAll = useCallback(async () => {
     const [o, c, a, t] = await Promise.all([
@@ -46,6 +47,22 @@ export default function Offerte() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Carica il listino prezzi del cliente selezionato
+  useEffect(() => {
+    const cliId = form?.cliente_id;
+    if (!cliId) { setListinoPrezzi({}); return; }
+    const cli = clienti.find(c => c.id === cliId);
+    const listinoId = form?.listino_id || cli?.listino_id;
+    if (!listinoId) { setListinoPrezzi({}); return; }
+    api.get(`/listini/${listinoId}/prezzi`)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(p => { if (p.prezzo != null) map[p.articolo_id] = Number(p.prezzo); });
+        setListinoPrezzi(map);
+      })
+      .catch(() => setListinoPrezzi({}));
+  }, [form?.cliente_id, form?.listino_id, clienti]);
 
   const openNew = () => {
     setEditing(null);
@@ -170,7 +187,9 @@ export default function Offerte() {
   const preview = (form?.righe || []).reduce((acc, r) => {
     const a = articoli.find(x => x.id === r.articolo_id);
     if (!a) return acc;
-    const pu = a.prezzo_lavaggio || a.prezzo || 0;
+    const pu = listinoPrezzi[r.articolo_id] != null
+      ? listinoPrezzi[r.articolo_id]
+      : (a.prezzo_lavaggio || a.prezzo || 0);
     const pf = Math.max(0, pu * (1 - (r.sconto_perc || 0) / 100) - (r.sconto_eur || 0));
     return acc + pf * (r.quantita || 0);
   }, 0);
@@ -329,7 +348,10 @@ export default function Offerte() {
                     <tbody>
                       {form.righe.map((r, i) => {
                         const a = articoli.find(x => x.id === r.articolo_id);
-                        const pu = a?.prezzo_lavaggio || a?.prezzo || 0;
+                        const pu = listinoPrezzi[r.articolo_id] != null
+                          ? listinoPrezzi[r.articolo_id]
+                          : (a?.prezzo_lavaggio || a?.prezzo || 0);
+                        const fromListino = listinoPrezzi[r.articolo_id] != null;
                         const pf = Math.max(0, pu * (1 - (r.sconto_perc || 0) / 100) - (r.sconto_eur || 0));
                         return (
                           <tr key={i} className="border-b border-slate-100" data-testid={`riga-${i}`}>
@@ -345,7 +367,9 @@ export default function Offerte() {
                             <td><Input type="number" step="0.5" min={0} max={100} className="h-8 w-16 text-right font-mono" value={r.sconto_perc} onChange={e => updRiga(i, "sconto_perc", parseFloat(e.target.value) || 0)} /></td>
                             <td><Input type="number" step="0.01" min={0} className="h-8 w-20 text-right font-mono" value={r.sconto_eur} onChange={e => updRiga(i, "sconto_eur", parseFloat(e.target.value) || 0)} /></td>
                             <td className="text-right text-xs font-mono">
-                              <div className="text-slate-400 line-through">€ {pu.toFixed(2)}</div>
+                              <div className={fromListino ? "text-indaco/70" : "text-amber-600"} title={fromListino ? "Prezzo dal listino del cliente" : "Prezzo di default (cliente senza listino)"}>
+                                € {pu.toFixed(2)} {fromListino ? "⚡" : "•"}
+                              </div>
                               <div className="text-indaco font-bold">€ {pf.toFixed(2)}</div>
                               <div className="text-slate-700">= € {(pf * (r.quantita || 0)).toFixed(2)}</div>
                             </td>
