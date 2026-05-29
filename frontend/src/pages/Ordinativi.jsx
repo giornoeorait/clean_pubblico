@@ -57,8 +57,10 @@ export default function Ordinativi() {
     if (!listinoId) { setListinoPrezzi({}); return; }
     api.get(`/listini/${listinoId}/prezzi`)
       .then(({ data }) => {
+        // L'endpoint restituisce { listino, rows: [{ articolo_id, prezzo, ... }] }
+        const rows = Array.isArray(data) ? data : (data.rows || []);
         const map = {};
-        (data || []).forEach(p => { if (p.prezzo != null) map[p.articolo_id] = Number(p.prezzo); });
+        rows.forEach(p => { if (p.prezzo != null) map[p.articolo_id] = Number(p.prezzo); });
         setListinoPrezzi(map);
       })
       .catch(() => setListinoPrezzi({}));
