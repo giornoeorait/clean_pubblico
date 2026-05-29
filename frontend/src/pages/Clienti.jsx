@@ -314,7 +314,12 @@ export default function Clienti() {
                       <span className="px-2 py-0.5 text-xs rounded-full bg-indaco/10 text-indaco">
                         {listini.find(l => l.id === c.listino_id)?.nome || "—"}
                       </span>
-                    ) : <span className="text-xs text-slate-400">—</span>}
+                    ) : (
+                      <span title="Cliente senza listino: prezzi default articolo (spesso a 0€)"
+                            className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap">
+                        ⚠ NO LISTINO
+                      </span>
+                    )}
                   </td>
                   <td>
                     <div className="flex gap-1">

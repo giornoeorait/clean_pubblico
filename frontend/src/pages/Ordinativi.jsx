@@ -253,6 +253,33 @@ export default function Ordinativi() {
                       </SelectItem>
                     ))}</SelectContent>
                   </Select>
+                  {form.cliente_id && (() => {
+                    const cli = clienti.find(c => c.id === form.cliente_id);
+                    if (!cli) return null;
+                    if (!cli.listino_id) {
+                      return (
+                        <div className="mt-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-300 text-[12px] text-amber-900 flex items-start gap-2" data-testid="warn-no-listino">
+                          <span className="font-bold">⚠</span>
+                          <span>
+                            Questo cliente non ha un <b>listino associato</b>. I prezzi mostrati saranno quelli di <b>default articolo</b> (spesso a € 0,00).
+                            Apri la scheda cliente e collega un listino, oppure imposta i prezzi articolo manualmente.
+                          </span>
+                        </div>
+                      );
+                    }
+                    if (Object.keys(listinoPrezzi).length === 0) {
+                      return (
+                        <div className="mt-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-300 text-[12px] text-amber-900" data-testid="warn-empty-listino">
+                          ⚠ Listino associato ma <b>nessun prezzo compilato</b>. Vai in Listini → seleziona il listino e compila i prezzi.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-1 text-[11px] text-emerald-700 font-mono">
+                        ⚡ Listino cliente attivo · {Object.keys(listinoPrezzi).length} articoli prezzati
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <Label>Data consegna richiesta</Label>

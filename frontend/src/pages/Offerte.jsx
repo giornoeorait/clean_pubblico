@@ -313,10 +313,21 @@ export default function Offerte() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedCliente && !selectedCliente.listino_id && (
+                    <div className="mt-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-300 text-[12px] text-amber-900 flex items-start gap-2" data-testid="offerta-warn-no-listino">
+                      <span className="font-bold">⚠</span>
+                      <span>Cliente <b>senza listino associato</b>. I prezzi saranno quelli di default articolo (spesso € 0,00). Apri la scheda cliente e collega un listino.</span>
+                    </div>
+                  )}
+                  {selectedCliente && selectedCliente.listino_id && Object.keys(listinoPrezzi).length === 0 && (
+                    <div className="mt-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-300 text-[12px] text-amber-900" data-testid="offerta-warn-empty-listino">
+                      ⚠ Listino associato ma <b>nessun prezzo compilato</b>. Vai in Listini per impostarli.
+                    </div>
+                  )}
                   {selectedCliente && (
                     <div className="text-xs text-slate-500 mt-1">
                       P.IVA: <span className="font-mono">{selectedCliente.partita_iva || "—"}</span>
-                      {selectedCliente.listino_id && <> · Listino cliente: <b className="text-indaco">associato</b></>}
+                      {selectedCliente.listino_id && Object.keys(listinoPrezzi).length > 0 && <> · <span className="text-emerald-700">⚡ Listino · {Object.keys(listinoPrezzi).length} articoli prezzati</span></>}
                     </div>
                   )}
                 </div>
