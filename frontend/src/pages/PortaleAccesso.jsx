@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Storefront, MagnifyingGlass, ArrowRight, ShieldCheck, Warning } from "@phosphor-icons/react";
+import { Storefront, MagnifyingGlass, ArrowRight, ShieldCheck, Warning, House, Buildings } from "@phosphor-icons/react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -9,19 +9,41 @@ export default function PortaleAccesso() {
   const [ident, setIdent] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [match, setMatch] = useState(null);
+  const [match, setMatch] = useState(null);       // singolo cliente identificato
+  const [multi, setMulti] = useState(null);       // più strutture per stessa P.IVA
+  const [selecting, setSelecting] = useState(false);
   const navigate = useNavigate();
+
+  const reset = () => { setMatch(null); setMulti(null); setIdent(""); setErr(""); };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!ident.trim()) { setErr("Inserisci P.IVA o Codice Fiscale"); return; }
-    setLoading(true); setErr(""); setMatch(null);
+    setLoading(true); setErr(""); setMatch(null); setMulti(null);
     try {
       const { data } = await axios.post(`${API}/public/portale/lookup`, { identificativo: ident.trim() });
-      setMatch(data);
+      if (data.multiple_matches) {
+        setMulti(data);
+      } else {
+        setMatch(data);
+      }
     } catch (e2) {
       setErr(e2.response?.data?.detail || "Errore di connessione");
     } finally { setLoading(false); }
+  };
+
+  const selectStruttura = async (cliente_id) => {
+    setSelecting(true); setErr("");
+    try {
+      const { data } = await axios.post(`${API}/public/portale/lookup/select`, {
+        selection_token: multi.selection_token,
+        cliente_id,
+      });
+      setMulti(null);
+      setMatch(data);
+    } catch (e2) {
+      setErr(e2.response?.data?.detail || "Errore di selezione struttura");
+    } finally { setSelecting(false); }
   };
 
   const proceed = () => {
@@ -42,7 +64,7 @@ export default function PortaleAccesso() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
-          {!match ? (
+          {!match && !multi && (
             <form onSubmit={submit} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs uppercase tracking-wide font-mono text-slate-600 mb-2">
@@ -83,16 +105,76 @@ export default function PortaleAccesso() {
                 <span>Accesso sicuro · Sessione di 1 ora</span>
               </div>
             </form>
-          ) : (
+          )}
+
+          {/* CASO 2: più strutture stesso gruppo */}
+          {multi && (
+            <div className="p-6 space-y-4" data-testid="portale-multi">
+              <div className="flex flex-col items-center text-center">
+                <div className="w-14 h-14 rounded-full bg-indaco/10 flex items-center justify-center mb-3">
+                  <Buildings size={28} weight="duotone" className="text-indaco" />
+                </div>
+                <p className="text-xs uppercase tracking-wide font-mono text-slate-500">Gruppo identificato</p>
+                <h2 className="text-lg font-display font-bold text-slate-900 mt-1">{multi.ragione_sociale}</h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Sono presenti <b>{multi.strutture.length} strutture</b> per questa P.IVA.<br />
+                  Seleziona quella per cui vuoi inviare l&apos;ordine:
+                </p>
+              </div>
+
+              {err && (
+                <div className="flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  <Warning size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+                  <span>{err}</span>
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {multi.strutture.map(s => (
+                  <button
+                    key={s.cliente_id}
+                    onClick={() => selectStruttura(s.cliente_id)}
+                    disabled={selecting}
+                    data-testid={`portale-struttura-${s.cliente_id}`}
+                    className="w-full text-left flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:border-indaco hover:bg-indaco/5 transition disabled:opacity-50 group">
+                    <House size={20} weight="duotone" className="text-indaco flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-900 truncate">{s.denominazione_struttura}</div>
+                      {s.indirizzo_scarico && (
+                        <div className="text-[11px] text-slate-500 truncate">📦 Scarico: {s.indirizzo_scarico}</div>
+                      )}
+                      {!s.indirizzo_scarico && s.indirizzo && (
+                        <div className="text-[11px] text-slate-500 truncate">{s.indirizzo}</div>
+                      )}
+                      {(s.comune || s.provincia) && (
+                        <div className="text-[10px] text-slate-400 font-mono uppercase">{[s.comune, s.provincia].filter(Boolean).join(" · ")}</div>
+                      )}
+                    </div>
+                    <ArrowRight size={16} className="text-slate-300 group-hover:text-indaco mt-1" />
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={reset}
+                className="w-full border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-lg text-sm transition"
+                data-testid="portale-multi-back">
+                Annulla e cambia P.IVA
+              </button>
+            </div>
+          )}
+
+          {/* CASO 1: cliente identificato (o struttura selezionata) */}
+          {match && (
             <div className="p-6 space-y-4" data-testid="portale-confirm">
               <div className="flex flex-col items-center text-center">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
                   <ShieldCheck size={28} weight="fill" className="text-emerald-600" />
                 </div>
                 <p className="text-xs uppercase tracking-wide font-mono text-slate-500">Cliente identificato</p>
-                <h2 className="text-xl font-display font-bold text-slate-900 mt-1">{match.cliente.ragione_sociale}</h2>
-                {match.cliente.denominazione_struttura && match.cliente.denominazione_struttura !== match.cliente.ragione_sociale && (
-                  <p className="text-sm text-slate-600">{match.cliente.denominazione_struttura}</p>
+                <h2 className="text-xl font-display font-bold text-slate-900 mt-1">{match.cliente.denominazione_struttura || match.cliente.ragione_sociale}</h2>
+                {match.cliente.ragione_sociale && match.cliente.denominazione_struttura && match.cliente.denominazione_struttura !== match.cliente.ragione_sociale && (
+                  <p className="text-sm text-slate-600">{match.cliente.ragione_sociale}</p>
                 )}
                 {match.cliente.indirizzo && (
                   <p className="text-xs text-slate-400 mt-1">{match.cliente.indirizzo}</p>
@@ -101,7 +183,7 @@ export default function PortaleAccesso() {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setMatch(null); setIdent(""); }}
+                  onClick={reset}
                   className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 py-3 rounded-lg text-sm transition"
                   data-testid="portale-back">
                   Non sono io

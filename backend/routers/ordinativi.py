@@ -495,17 +495,21 @@ async def _resolve_portale_token(token: str) -> Optional[Dict]:
 
 @public_router.post("/portale/lookup")
 async def portale_lookup(body: PortaleLookupIn):
-    """Cliente self-service: inserisce P.IVA o CF, riceve un session_token effimero (TTL 1h).
+    """Cliente self-service: inserisce P.IVA o CF.
 
-    Ricerca esatta su `partita_iva` OR `codice_fiscale` cross-tenant.
+    - Se UN solo cliente attivo matcha → ritorna direttamente il `session_token` (TTL 1h).
+    - Se PIÙ clienti attivi matchano (stessa P.IVA con strutture multiple) → ritorna
+      `multiple_matches=True` con la lista delle strutture; l'utente seleziona quella
+      desiderata e chiama `/portale/lookup/select`.
+
     Anti-enumeration: stesso 404 per non-trovato e disattivato.
-    Rate-limit: max 10 lookup falliti per identificativo nei 60s precedenti (mitigazione brute-force).
+    Rate-limit: max 10 lookup falliti per identificativo nei 60s precedenti.
     """
     ident = (body.identificativo or "").strip().upper()
     if not ident:
         raise HTTPException(400, "Identificativo richiesto")
 
-    # Rate-limit semplice: conta i tentativi falliti recenti per questo identificativo
+    # Rate-limit
     cutoff = now_utc() - timedelta(seconds=60)
     fails_recent = await db.portale_lookup_failed.count_documents({
         "identificativo": ident,
@@ -514,19 +518,110 @@ async def portale_lookup(body: PortaleLookupIn):
     if fails_recent >= 10:
         raise HTTPException(429, "Troppi tentativi. Riprova tra qualche minuto.")
 
-    cli = await db.clienti.find_one({
+    # Trovo TUTTI i clienti attivi con P.IVA o CF matching
+    clienti_match = await db.clienti.find({
         "$or": [
             {"partita_iva": ident},
             {"codice_fiscale": ident},
         ],
-    }, {"_id": 0})
-    if not cli or not cli.get("attivo", True):
-        # Log tentativo fallito per rate-limit
+        "attivo": {"$ne": False},
+    }, {"_id": 0}).to_list(50)
+
+    if not clienti_match:
         await db.portale_lookup_failed.insert_one({
             "identificativo": ident,
             "at": now_utc().replace(tzinfo=None),
         })
         raise HTTPException(404, "Nessun cliente trovato con questo identificativo")
+
+    # CASO 1: una sola struttura → emetto il token direttamente
+    if len(clienti_match) == 1:
+        cli = clienti_match[0]
+        token = secrets.token_urlsafe(24)
+        expires = now_utc() + timedelta(hours=1)
+        await db.portale_sessions.insert_one({
+            "token": token,
+            "tenant_id": cli["tenant_id"],
+            "cliente_id": cli["id"],
+            "created_at": now_utc(),
+            "expires_at": expires,
+        })
+        return {
+            "token": token,
+            "cliente": {
+                "ragione_sociale": cli.get("ragione_sociale"),
+                "denominazione_struttura": cli.get("denominazione_struttura") or cli.get("ragione_sociale"),
+                "indirizzo": cli.get("indirizzo"),
+            },
+            "url_path": f"/ordina/{token}",
+            "expires_at": expires.isoformat(),
+        }
+
+    # CASO 2: più strutture stesso gruppo → l'utente deve scegliere
+    # Genero un "selection token" effimero (5 min) che contiene gli ID dei clienti
+    selection_token = secrets.token_urlsafe(24)
+    expires_sel = now_utc() + timedelta(minutes=5)
+    await db.portale_lookup_selections.insert_one({
+        "selection_token": selection_token,
+        "identificativo": ident,
+        "cliente_ids": [c["id"] for c in clienti_match],
+        "tenant_ids": [c["tenant_id"] for c in clienti_match],
+        "created_at": now_utc(),
+        "expires_at": expires_sel,
+    })
+    return {
+        "multiple_matches": True,
+        "selection_token": selection_token,
+        "ragione_sociale": clienti_match[0].get("ragione_sociale"),
+        "strutture": [
+            {
+                "cliente_id": c["id"],
+                "denominazione_struttura": c.get("denominazione_struttura") or c.get("ragione_sociale"),
+                "ragione_sociale": c.get("ragione_sociale"),
+                "indirizzo": c.get("indirizzo"),
+                "indirizzo_scarico": c.get("indirizzo_scarico"),
+                "comune": c.get("comune"),
+                "provincia": c.get("provincia"),
+            }
+            for c in clienti_match
+        ],
+        "expires_at": expires_sel.isoformat(),
+    }
+
+
+class PortaleSelectIn(BaseModel):
+    selection_token: str
+    cliente_id: str
+
+
+@public_router.post("/portale/lookup/select")
+async def portale_lookup_select(body: PortaleSelectIn):
+    """Step 2: l'utente seleziona una specifica struttura dopo lookup multiplo.
+    Convalida il selection_token, emette il session_token vero e proprio."""
+    sel = await db.portale_lookup_selections.find_one({
+        "selection_token": body.selection_token,
+    }, {"_id": 0})
+    if not sel:
+        raise HTTPException(404, "Selezione scaduta o non valida")
+    # Verifica scadenza
+    exp = sel.get("expires_at")
+    if exp:
+        exp_dt = exp if isinstance(exp, datetime) else datetime.fromisoformat(str(exp))
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        if now_utc() > exp_dt:
+            await db.portale_lookup_selections.delete_one({"selection_token": body.selection_token})
+            raise HTTPException(410, "Selezione scaduta. Riprova dal portale.")
+    # Verifica che il cliente_id selezionato sia tra quelli proposti (anti-tampering)
+    if body.cliente_id not in (sel.get("cliente_ids") or []):
+        raise HTTPException(400, "Struttura non valida per questa selezione")
+
+    cli = await db.clienti.find_one({"id": body.cliente_id, "attivo": {"$ne": False}}, {"_id": 0})
+    if not cli:
+        raise HTTPException(404, "Struttura non trovata o non attiva")
+
+    # Una volta consumato il selection_token, lo eliminiamo
+    await db.portale_lookup_selections.delete_one({"selection_token": body.selection_token})
 
     token = secrets.token_urlsafe(24)
     expires = now_utc() + timedelta(hours=1)
