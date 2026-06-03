@@ -231,7 +231,7 @@ async def ord_pdf(oid: str, user: Dict = Depends(get_current_user)):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": f'inline; filename="{fname}"'},
     )
 
 

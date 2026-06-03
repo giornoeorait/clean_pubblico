@@ -133,15 +133,10 @@ export default function Ordinativi() {
   const downloadPdf = async (o) => {
     try {
       const res = await api.get(`/ordinativi/${o.id}/pdf`, { responseType: "blob" });
-      const disp = res.headers["content-disposition"] || "";
-      const m = disp.match(/filename="?([^";]+)"?/);
-      const filename = m ? m[1] : `ordinativo-${o.numero || o.id.slice(0,8)}.pdf`;
       const url = URL.createObjectURL(res.data);
-      const a = document.createElement("a");
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Errore download PDF");
+      toast.error(e.response?.data?.detail || "Errore PDF");
     }
   };
 
