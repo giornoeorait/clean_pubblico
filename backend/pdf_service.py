@@ -1,12 +1,15 @@
 """PDF generation service for DDT and Fatture (ReportLab)."""
 import io
+import re
+import unicodedata
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage,
 )
@@ -18,6 +21,25 @@ INDACO = colors.HexColor("#4F46E5")
 SLATE_800 = colors.HexColor("#1E293B")
 SLATE_500 = colors.HexColor("#64748B")
 SLATE_200 = colors.HexColor("#E2E8F0")
+
+
+# --- Sanitizer per testi PDF (rimuove caratteri Unicode invisibili)
+_INVISIBLE = "\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\ufeff\u00a0"
+
+
+def s(value: Any) -> str:
+    """Sanitize text for PDF rendering: rimuove caratteri di controllo Unicode
+    (LTR/RTL marks, ZWSP, BOM) che il font base di ReportLab non sa renderizzare
+    e che apparirebbero come quadratini ▪ nel PDF.
+    """
+    if value is None:
+        return ""
+    txt = str(value)
+    for ch in _INVISIBLE:
+        txt = txt.replace(ch, "")
+    # Rimuovi altri caratteri di categoria Cf/Cc (escluso TAB/LF/CR)
+    txt = "".join(c for c in txt if unicodedata.category(c)[0] != "C" or c in "\t\n\r")
+    return txt.strip()
 
 
 def _styles():
@@ -35,14 +57,38 @@ def _styles():
 
 
 def _logo_flowable(logo_path: Optional[str], max_w_mm: float = 35, max_h_mm: float = 18):
+    """Carica il logo preservando l'aspect ratio originale.
+
+    Calcola le dimensioni reali dell'immagine sorgente e scala mantenendo
+    le proporzioni dentro il bounding box (max_w_mm × max_h_mm).
+    """
     if not logo_path:
         return None
     try:
         data, _ = get_object(logo_path)
-        img = RLImage(io.BytesIO(data))
-        img.drawWidth = max_w_mm * mm
-        img.drawHeight = max_h_mm * mm
-        img._restrictSize(max_w_mm * mm, max_h_mm * mm)
+        buf = io.BytesIO(data)
+        # Leggi le dimensioni reali dell'immagine
+        try:
+            reader = ImageReader(io.BytesIO(data))
+            iw, ih = reader.getSize()
+        except Exception:
+            iw, ih = 0, 0
+
+        max_w = max_w_mm * mm
+        max_h = max_h_mm * mm
+
+        if iw > 0 and ih > 0:
+            ratio = iw / ih
+            # Scala mantenendo l'aspect ratio
+            w = max_w
+            h = w / ratio
+            if h > max_h:
+                h = max_h
+                w = h * ratio
+        else:
+            w, h = max_w, max_h
+
+        img = RLImage(buf, width=w, height=h)
         return img
     except Exception:
         return None
@@ -51,46 +97,72 @@ def _logo_flowable(logo_path: Optional[str], max_w_mm: float = 35, max_h_mm: flo
 def _company_block(company: Dict, st: Dict) -> List:
     lines = []
     if company.get("nome"):
-        lines.append(f"<b>{company['nome']}</b>")
+        lines.append(f"<b>{s(company['nome'])}</b>")
     if company.get("ragione_sociale"):
-        lines.append(company["ragione_sociale"])
-    if company.get("indirizzo"):
-        lines.append(company["indirizzo"])
-    piva = company.get("partita_iva", "")
-    cf = company.get("codice_fiscale", "")
+        lines.append(s(company["ragione_sociale"]))
+    # Indirizzo completo (via, civico, CAP comune provincia)
+    addr_parts = [s(company.get("indirizzo"))]
+    locality = " ".join(filter(None, [s(company.get("cap")), s(company.get("comune"))])).strip()
+    if locality:
+        prov = s(company.get("provincia"))
+        if prov:
+            locality += f" ({prov})"
+        addr_parts.append(locality)
+    addr_line = " · ".join([p for p in addr_parts if p])
+    if addr_line:
+        lines.append(addr_line)
+    piva = s(company.get("partita_iva"))
+    cf = s(company.get("codice_fiscale"))
     if piva or cf:
         bits = []
-        if piva: bits.append(f"P.IVA {piva}")
-        if cf and cf != piva: bits.append(f"CF {cf}")
+        if piva:
+            bits.append(f"P.IVA {piva}")
+        if cf and cf != piva:
+            bits.append(f"CF {cf}")
         lines.append(" · ".join(bits))
     contacts = []
-    if company.get("telefono"): contacts.append(f"Tel {company['telefono']}")
-    if company.get("email"): contacts.append(company["email"])
+    if company.get("telefono"):
+        contacts.append(f"Tel {s(company['telefono'])}")
+    if company.get("email"):
+        contacts.append(s(company["email"]))
     if contacts:
         lines.append(" · ".join(contacts))
-    if company.get("pec"): lines.append(f"PEC: {company['pec']}")
-    if company.get("iban"): lines.append(f"IBAN: {company['iban']}")
-    if company.get("sito_web"): lines.append(company["sito_web"])
-    return [Paragraph(l, st["small"]) for l in lines]
+    if company.get("pec"):
+        lines.append(f"PEC: {s(company['pec'])}")
+    if company.get("iban"):
+        lines.append(f"IBAN: {s(company['iban'])}")
+    if company.get("sito_web"):
+        lines.append(s(company["sito_web"]))
+    return [Paragraph(line, st["small"]) for line in lines]
 
 
 def _cliente_block(cliente: Dict, st: Dict) -> List:
     lines = []
-    primary = (cliente.get("denominazione_struttura") or cliente.get("ragione_sociale") or "").strip()
-    secondary = cliente.get("ragione_sociale", "")
+    primary = s(cliente.get("denominazione_struttura") or cliente.get("ragione_sociale"))
+    secondary = s(cliente.get("ragione_sociale"))
     if primary:
         lines.append(f"<b>{primary}</b>")
-    if secondary and secondary.strip() and secondary.strip() != primary:
+    if secondary and secondary != primary:
         lines.append(f"<font size=8>{secondary}</font>")
     if cliente.get("indirizzo"):
-        lines.append(cliente["indirizzo"])
-    piva = cliente.get("partita_iva", "")
-    cf = cliente.get("codice_fiscale", "")
-    if piva: lines.append(f"P.IVA {piva}")
-    if cf and cf != piva: lines.append(f"CF {cf}")
-    if cliente.get("email"): lines.append(cliente["email"])
-    if cliente.get("telefono"): lines.append(f"Tel {cliente['telefono']}")
-    return [Paragraph(l, st["right"]) for l in lines]
+        lines.append(s(cliente["indirizzo"]))
+    locality = " ".join(filter(None, [s(cliente.get("cap")), s(cliente.get("comune"))])).strip()
+    if locality:
+        prov = s(cliente.get("provincia"))
+        if prov:
+            locality += f" ({prov})"
+        lines.append(locality)
+    piva = s(cliente.get("partita_iva"))
+    cf = s(cliente.get("codice_fiscale"))
+    if piva:
+        lines.append(f"P.IVA {piva}")
+    if cf and cf != piva:
+        lines.append(f"CF {cf}")
+    if cliente.get("email"):
+        lines.append(s(cliente["email"]))
+    if cliente.get("telefono"):
+        lines.append(f"Tel {s(cliente['telefono'])}")
+    return [Paragraph(line, st["right"]) for line in lines]
 
 
 def _rows_table(righe: List[Dict], st: Dict) -> Table:
@@ -105,9 +177,9 @@ def _rows_table(righe: List[Dict], st: Dict) -> Table:
     data = [header]
     for r in righe:
         data.append([
-            Paragraph(r.get("codice", ""), st["mono"]),
-            Paragraph(r.get("descrizione", ""), st["body"]),
-            Paragraph(r.get("unita_misura", "pz"), st["body"]),
+            Paragraph(s(r.get("codice")), st["mono"]),
+            Paragraph(s(r.get("descrizione")), st["body"]),
+            Paragraph(s(r.get("unita_misura") or "pz"), st["body"]),
             Paragraph(f"{r.get('quantita', 0):g}", st["right"]),
             Paragraph(f"€ {float(r.get('prezzo_unitario', 0)):.2f}", st["right"]),
             Paragraph(f"€ {float(r.get('totale', 0)):.2f}", st["right"]),
