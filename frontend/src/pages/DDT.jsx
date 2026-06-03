@@ -12,11 +12,18 @@ import { clientePrimary, clienteSecondary, docPrimary, docSecondary } from "../l
 import { toast } from "sonner";
 
 export default function DDT() {
+  // Default: mese in corso (dal 1° del mese a oggi) + solo "non fatturato"
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const toISODate = (d) => d.toISOString().slice(0, 10);
+
   const [list, setList] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [articoli, setArticoli] = useState([]);
   const [filterCliente, setFilterCliente] = useState("all");
-  const [filterStato, setFilterStato] = useState("all");
+  const [filterStato, setFilterStato] = useState("non_fatturato");
+  const [filterFrom, setFilterFrom] = useState(toISODate(firstOfMonth));
+  const [filterTo, setFilterTo] = useState(toISODate(today));
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [cliId, setCliId] = useState("");
@@ -27,6 +34,8 @@ export default function DDT() {
     const params = [];
     if (filterCliente !== "all") params.push(`cliente_id=${filterCliente}`);
     if (filterStato !== "all") params.push(`stato_fatturazione=${filterStato}`);
+    if (filterFrom) params.push(`from_date=${filterFrom}`);
+    if (filterTo) params.push(`to_date=${filterTo}`);
     const q = params.length ? `?${params.join("&")}` : "";
     const [d, c, a] = await Promise.all([
       api.get(`/ddt${q}`),
@@ -34,7 +43,14 @@ export default function DDT() {
       api.get("/articoli"),
     ]);
     setList(d.data); setClienti(c.data); setArticoli(a.data);
-  }, [filterCliente, filterStato]);
+  }, [filterCliente, filterStato, filterFrom, filterTo]);
+
+  const resetFilters = () => {
+    setFilterCliente("all");
+    setFilterStato("non_fatturato");
+    setFilterFrom(toISODate(firstOfMonth));
+    setFilterTo(toISODate(today));
+  };
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -187,7 +203,7 @@ export default function DDT() {
         <div>
           <Label className="text-xs">Stato</Label>
           <Select value={filterStato} onValueChange={setFilterStato}>
-            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-48" data-testid="ddt-filter-stato"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tutti</SelectItem>
               <SelectItem value="non_fatturato">Non fatturati</SelectItem>
@@ -195,8 +211,19 @@ export default function DDT() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label className="text-xs">Dal</Label>
+          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="w-36" data-testid="ddt-filter-from" />
+        </div>
+        <div>
+          <Label className="text-xs">Al</Label>
+          <Input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="w-36" data-testid="ddt-filter-to" />
+        </div>
+        <Button variant="outline" size="sm" onClick={resetFilters} title="Reset (mese in corso + non fatturati)" data-testid="ddt-filter-reset">
+          Reset
+        </Button>
         <div className="ml-auto text-right">
-          <div className="overline">Totale DDT visualizzati</div>
+          <div className="overline">Totale DDT visualizzati ({list.length})</div>
           <div className="font-display text-2xl font-bold text-indaco" data-testid="ddt-totale">€ {totaleList.toFixed(2)}</div>
         </div>
       </div>

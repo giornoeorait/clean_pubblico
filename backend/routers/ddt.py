@@ -63,13 +63,42 @@ async def list_ddt(
     user: Dict = Depends(get_current_user),
     cliente_id: Optional[str] = None,
     stato_fatturazione: Optional[str] = None,  # non_fatturato | fatturato
+    from_date: Optional[str] = None,   # ISO date YYYY-MM-DD inclusive
+    to_date: Optional[str] = None,     # ISO date YYYY-MM-DD inclusive
     limit: int = 500,
 ):
     q: Dict[str, Any] = dict(tenant_scope(user))
-    if cliente_id: q["cliente_id"] = cliente_id
-    if stato_fatturazione: q["stato_fatturazione"] = stato_fatturazione
+    if cliente_id:
+        q["cliente_id"] = cliente_id
+    if stato_fatturazione:
+        q["stato_fatturazione"] = stato_fatturazione
     if user["role"] == "cliente" and user.get("cliente_id"):
         q["cliente_id"] = user["cliente_id"]
+    # Filtro intervallo date.
+    # IMPORTANTE: in DB `data` può essere salvato sia come ISO string ("YYYY-MM-DDT...")
+    # che come BSON datetime. MongoDB NON confronta cross-type, quindi usiamo $or
+    # con entrambe le rappresentazioni.
+    if from_date or to_date:
+        from datetime import datetime as _dt
+        date_or = []
+        # Versione stringa (ISO sortable: T è dopo qualsiasi cifra valida)
+        str_q: Dict[str, Any] = {}
+        if from_date:
+            str_q["$gte"] = from_date
+        if to_date:
+            str_q["$lte"] = f"{to_date}T23:59:59.999"
+        date_or.append({"data": str_q})
+        # Versione datetime
+        dt_q: Dict[str, Any] = {}
+        try:
+            if from_date:
+                dt_q["$gte"] = _dt.fromisoformat(from_date)
+            if to_date:
+                dt_q["$lte"] = _dt.fromisoformat(f"{to_date}T23:59:59.999")
+            date_or.append({"data": dt_q})
+        except ValueError:
+            pass
+        q["$or"] = date_or
     docs = await db.ddt.find(q, {"_id": 0}).sort("data", -1).to_list(limit)
     return await _enrich_cliente_denominazione(docs, user)
 
