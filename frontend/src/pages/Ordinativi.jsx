@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import {
   Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
-  Note, CheckCircle, XCircle,
+  Note, CheckCircle, XCircle, FilePdf,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -130,6 +130,21 @@ export default function Ordinativi() {
     catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 
+  const downloadPdf = async (o) => {
+    try {
+      const res = await api.get(`/ordinativi/${o.id}/pdf`, { responseType: "blob" });
+      const disp = res.headers["content-disposition"] || "";
+      const m = disp.match(/filename="?([^";]+)"?/);
+      const filename = m ? m[1] : `ordinativo-${o.numero || o.id.slice(0,8)}.pdf`;
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore download PDF");
+    }
+  };
+
   const preview = (form?.righe || []).reduce((acc, r) => {
     const a = articoli.find(x => x.id === r.articolo_id);
     if (!a) return acc;
@@ -209,6 +224,7 @@ export default function Ordinativi() {
                       <div className="flex items-center gap-0.5">
                         {o.stato !== "convertito_ddt" && (
                           <>
+                            <Button variant="ghost" size="icon" onClick={() => downloadPdf(o)} title="Scarica PDF" data-testid={`ord-pdf-${o.id}`}><FilePdf size={13} /></Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(o)} title="Modifica"><Note size={13} /></Button>
                             {o.stato === "nuovo" && (
                               <Button variant="ghost" size="icon" onClick={() => cambiaStato(o, "in_lavorazione")} title="In lavorazione" className="text-amber-600"><Clipboard size={13} /></Button>

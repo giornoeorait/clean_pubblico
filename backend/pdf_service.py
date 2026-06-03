@@ -184,6 +184,68 @@ def generate_ddt_pdf(ddt: Dict, cliente: Dict, company: Dict) -> bytes:
     return _build(el)
 
 
+def generate_ordinativo_pdf(ordinativo: Dict, cliente: Dict, company: Dict) -> bytes:
+    """Stampa un ordinativo (commessa interna) come PDF.
+
+    Documento NON fiscale: serve come scheda di lavorazione interna o ricevuta
+    per il cliente. Mostra: cliente, struttura, indirizzo scarico, righe,
+    quantità, prezzi (se disponibili), totale imponibile, note, stato e origine.
+    """
+    st = _styles()
+    el: List = []
+    el.append(_header_table(company, cliente, st))
+    el.append(Spacer(1, 8*mm))
+
+    numero = ordinativo.get("numero") or ordinativo.get("id", "")[:8].upper()
+    el.append(Paragraph(f"<b>Ordinativo {numero}</b>", st["h1"]))
+    el.append(Paragraph(f"Data: {_fmt_date(ordinativo.get('data_richiesta') or ordinativo.get('data'))}", st["small"]))
+
+    # Riga meta: stato + origine + indirizzo scarico
+    stato_lbl = {
+        "nuovo": "Nuovo",
+        "in_lavorazione": "In lavorazione",
+        "convertito_ddt": "Trasformato in DDT",
+        "annullato": "Annullato",
+    }.get(ordinativo.get("stato"), ordinativo.get("stato") or "—")
+    origine_lbl = "Portale Self-Service" if ordinativo.get("origine") == "portale" else "Inserito da operatore"
+    meta_bits = [f"Stato: <b>{stato_lbl}</b>", f"Origine: {origine_lbl}"]
+    if ordinativo.get("ddt_numero"):
+        meta_bits.append(f"DDT collegato: <b>{ordinativo['ddt_numero']}</b>")
+    el.append(Paragraph(" · ".join(meta_bits), st["small"]))
+
+    indir_scarico = (cliente or {}).get("indirizzo_scarico")
+    if indir_scarico:
+        el.append(Spacer(1, 2*mm))
+        el.append(Paragraph(f"<b>Indirizzo scarico:</b> {indir_scarico}", st["small"]))
+
+    el.append(Spacer(1, 6*mm))
+    el.append(_rows_table(ordinativo.get("righe", []), st))
+
+    imp = ordinativo.get("totale") if ordinativo.get("totale") is not None else ordinativo.get("imponibile")
+    if imp is not None:
+        el.append(Spacer(1, 4*mm))
+        el.append(Paragraph(
+            f"<b>Imponibile preventivo: € {float(imp):.2f}</b>",
+            ParagraphStyle("tot", parent=st["right"], fontName="Helvetica-Bold", fontSize=11),
+        ))
+
+    note = ordinativo.get("note_interne") or ordinativo.get("note_cliente") or ordinativo.get("note")
+    if note:
+        el.append(Spacer(1, 4*mm))
+        if ordinativo.get("note_cliente") and not ordinativo.get("note_interne"):
+            el.append(Paragraph("<b>Note dal cliente (portale):</b>", st["body"]))
+        else:
+            el.append(Paragraph("<b>Note:</b>", st["body"]))
+        el.append(Paragraph(note, st["small"]))
+
+    el.append(Spacer(1, 10*mm))
+    el.append(Paragraph(
+        "Ordinativo — documento NON fiscale. La fatturazione avverrà a seguito di emissione del relativo DDT.",
+        st["small"],
+    ))
+    return _build(el)
+
+
 def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: List[Dict]) -> bytes:
     st = _styles()
     el: List = []

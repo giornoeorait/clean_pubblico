@@ -215,6 +215,26 @@ async def get_ord(oid: str, user: Dict = Depends(get_current_user)):
     return doc
 
 
+@router.get("/ordinativi/{oid}/pdf")
+async def ord_pdf(oid: str, user: Dict = Depends(get_current_user)):
+    from fastapi import Response
+    from routers.company import load_company_for_tenant
+    from pdf_service import generate_ordinativo_pdf
+
+    doc = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Ordinativo non trovato")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": doc["cliente_id"]}), {"_id": 0}) or {}
+    company = await load_company_for_tenant(user["tenant_id"])
+    pdf_bytes = generate_ordinativo_pdf(doc, cliente, company)
+    fname = f"ordinativo-{(doc.get('numero') or oid[:8]).replace('/', '_')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.post("/ordinativi")
 async def create_ord(body: OrdinativoIn, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
     if not body.righe: raise HTTPException(400, "Righe obbligatorie")
