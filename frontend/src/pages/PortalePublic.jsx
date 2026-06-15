@@ -5,10 +5,12 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
-import { ShoppingCart, Plus, Minus, CheckCircle, Warning, Package, Buildings, Truck, CurrencyEur } from "@phosphor-icons/react";
+import { ShoppingCart, Plus, Minus, CheckCircle, Warning, Package, Buildings, Truck, CurrencyEur, Storefront } from "@phosphor-icons/react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const MIN_ORDER_AMOUNT = 50; // soglia minima ordine portale (€ netti)
 
 function inDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
@@ -21,6 +23,7 @@ export default function PortalePublic() {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
+  const [showMinDialog, setShowMinDialog] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -49,12 +52,23 @@ export default function PortalePublic() {
   const submit = async () => {
     if (!nRighe) { toast.error("Aggiungi almeno un articolo"); return; }
     if (!dataConsegna) { toast.error("Seleziona data consegna"); return; }
+    // Soglia 50€: se sotto, chiedi conferma con ritiro lavanderia
+    if (totale < MIN_ORDER_AMOUNT) {
+      setShowMinDialog(true);
+      return;
+    }
+    await doSubmit(false);
+  };
+
+  const doSubmit = async (ritiroLavanderia) => {
+    setShowMinDialog(false);
     setSubmitting(true);
     try {
       const payload = {
         data_consegna_richiesta: dataConsegna,
         righe: Object.entries(cart).map(([articolo_id, quantita]) => ({ articolo_id, quantita: parseInt(quantita) || 0 })),
         note_cliente: note,
+        ritiro_lavanderia: !!ritiroLavanderia,
       };
       const { data } = await axios.post(`${BACKEND}/api/public/portale/${token}/ordinativo`, payload);
       setSuccess(data);
@@ -86,6 +100,12 @@ export default function PortalePublic() {
           <div className="mt-6 p-4 bg-slate-50 rounded-lg text-left">
             <div className="flex justify-between text-sm"><span className="text-slate-500">Righe:</span><span className="font-mono font-bold">{success.righe.length}</span></div>
             <div className="flex justify-between text-sm mt-1"><span className="text-slate-500">Consegna richiesta:</span><span className="font-mono font-bold">{new Date(success.data_consegna_richiesta).toLocaleDateString("it-IT")}</span></div>
+            {success.ritiro_lavanderia && (
+              <div className="flex justify-between text-sm mt-1">
+                <span className="text-slate-500">Modalità:</span>
+                <span className="font-mono font-bold text-amber-700">Ritiro in lavanderia</span>
+              </div>
+            )}
             <div className="flex justify-between text-base mt-3 pt-3 border-t border-slate-200"><span className="font-semibold">Totale stimato:</span><span className="font-mono font-bold text-indaco text-xl">€ {success.totale.toFixed(2)}</span></div>
           </div>
           <Button onClick={() => setSuccess(null)} className="mt-6 bg-indaco hover:bg-indaco-dark" data-testid="portale-new-order-btn">Nuovo ordinativo</Button>
@@ -194,6 +214,12 @@ export default function PortalePublic() {
                 <span className="font-mono font-bold text-indaco text-lg">€ {totale.toFixed(2)}</span>
               </div>
             </div>
+            {nRighe > 0 && totale < MIN_ORDER_AMOUNT && (
+              <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800 flex items-start gap-2" data-testid="portale-min-warn">
+                <Warning size={14} weight="fill" className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <span>Soglia minima ordine <b>€ {MIN_ORDER_AMOUNT.toFixed(2)}</b>. Sotto questa cifra è disponibile il <b>ritiro in lavanderia</b>.</span>
+              </div>
+            )}
             <Button onClick={submit} disabled={submitting || nRighe === 0} className="w-full mt-4 bg-indaco hover:bg-indaco-dark" data-testid="portale-submit-btn">
               <Truck size={16} className="mr-2" />
               {submitting ? "Invio…" : `Invia ordinativo`}
@@ -204,6 +230,47 @@ export default function PortalePublic() {
           </aside>
         </div>
       </main>
+
+      {/* Dialog soglia minima 50€ */}
+      <Dialog open={showMinDialog} onOpenChange={setShowMinDialog}>
+        <DialogContent className="max-w-md" data-testid="portale-min-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <Warning size={20} weight="fill" /> Ordine sotto soglia minima
+            </DialogTitle>
+            <DialogDescription>
+              L'importo del tuo ordine è di <b>€ {totale.toFixed(2)}</b>, inferiore alla soglia minima di <b>€ {MIN_ORDER_AMOUNT.toFixed(2)}</b> per la consegna a domicilio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <p className="text-sm text-slate-600">
+              Puoi <b>modificare l'ordine</b> aggiungendo articoli, oppure <b>confermarlo</b> ritirando direttamente in lavanderia.
+            </p>
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              Scegliendo "Ritiro in lavanderia" l'ordine verrà segnalato all'operatore e dovrai recarti tu in struttura per il ritiro.
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t border-slate-200">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowMinDialog(false)}
+              data-testid="portale-min-modify-btn"
+            >
+              <ShoppingCart size={14} className="mr-2" />Modifica ordine
+            </Button>
+            <Button
+              className="flex-1 bg-amber-600 hover:bg-amber-700"
+              disabled={submitting}
+              onClick={() => doSubmit(true)}
+              data-testid="portale-min-confirm-pickup-btn"
+            >
+              <Storefront size={14} className="mr-2" />
+              {submitting ? "Invio…" : "Conferma con ritiro lavanderia"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

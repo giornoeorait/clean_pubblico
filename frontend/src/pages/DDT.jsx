@@ -81,6 +81,11 @@ export default function DDT() {
     setCliId(d.cliente_id);
     setRows((d.righe || []).map(r => ({ articolo_id: r.articolo_id, quantita: r.quantita })));
     setNote(d.note || "");
+    // pre-popola la data corrente del DDT in formato YYYY-MM-DD
+    try {
+      const iso = d.data ? new Date(d.data).toISOString().slice(0, 10) : "";
+      setEditingData(iso);
+    } catch { setEditingData(""); }
     setFormOpen(true);
   };
 
@@ -107,7 +112,9 @@ export default function DDT() {
         righe: rows.map(r => ({ articolo_id: r.articolo_id, quantita: parseInt(r.quantita) || 0 })),
       };
       if (editingId) {
-        await api.patch(`/ddt/${editingId}`, { note: payload.note, righe: payload.righe });
+        const patchBody = { note: payload.note, righe: payload.righe };
+        if (canEditDate && editingData) patchBody.data = editingData;
+        await api.patch(`/ddt/${editingId}`, patchBody);
         toast.success("DDT aggiornato");
       } else {
         const { data } = await api.post("/ddt", payload);
@@ -244,10 +251,18 @@ export default function DDT() {
         <Button variant="outline" size="sm" onClick={resetFilters} title="Reset (mese in corso + non fatturati)" data-testid="ddt-filter-reset">
           Reset
         </Button>
-        <div className="ml-auto text-right">
-          <div className="overline">Totale DDT visualizzati ({list.length})</div>
-          <div className="font-display text-2xl font-bold text-indaco" data-testid="ddt-totale">€ {totaleList.toFixed(2)}</div>
-        </div>
+        {canSeePrices && (
+          <div className="ml-auto text-right">
+            <div className="overline">Totale DDT visualizzati ({list.length})</div>
+            <div className="font-display text-2xl font-bold text-indaco" data-testid="ddt-totale">€ {totaleList.toFixed(2)}</div>
+          </div>
+        )}
+        {!canSeePrices && (
+          <div className="ml-auto text-right">
+            <div className="overline">DDT visualizzati</div>
+            <div className="font-display text-2xl font-bold text-indaco" data-testid="ddt-count">{list.length}</div>
+          </div>
+        )}
       </div>
 
       <div className="kpi-card p-0 overflow-x-auto">
@@ -257,14 +272,16 @@ export default function DDT() {
               <th className="text-left py-3 px-4">N°</th>
               <th className="text-left py-3 px-4">Data</th>
               <th className="text-left py-3 px-4">Cliente</th>
-              <th className="text-center py-3 px-4">Righe</th>
-              <th className="text-right py-3 px-4">Imponibile</th>
+              <th className="text-center py-3 px-4">Pezzi</th>
+              {canSeePrices && <th className="text-right py-3 px-4">Imponibile</th>}
               <th className="text-center py-3 px-4">Stato</th>
               <th className="text-right py-3 px-4">Azioni</th>
             </tr>
           </thead>
           <tbody>
-            {list.map(d => (
+            {list.map(d => {
+              const pezziTot = (d.righe || []).reduce((s, r) => s + (Number(r.quantita) || 0), 0);
+              return (
               <tr key={d.id} className="border-b border-slate-100" data-testid={`ddt-${d.id}`}>
                 <td className="py-2 px-4 font-mono font-bold">{d.numero}</td>
                 <td className="py-2 px-4">{new Date(d.data).toLocaleDateString("it-IT")}</td>
@@ -272,8 +289,8 @@ export default function DDT() {
                   <div>{docPrimary(d)}</div>
                   {docSecondary(d) && <div className="text-xs text-slate-500">{docSecondary(d)}</div>}
                 </td>
-                <td className="py-2 px-4 text-center font-mono">{d.righe?.length || 0}</td>
-                <td className="py-2 px-4 text-right font-mono font-bold">€ {d.imponibile.toFixed(2)}</td>
+                <td className="py-2 px-4 text-center font-mono" data-testid={`ddt-pezzi-${d.id}`}>{pezziTot}</td>
+                {canSeePrices && <td className="py-2 px-4 text-right font-mono font-bold">€ {d.imponibile.toFixed(2)}</td>}
                 <td className="py-2 px-4 text-center">
                   {d.stato_fatturazione === "fatturato" ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700"><CheckCircle size={10} weight="fill" /> {d.fattura_numero || "Fatturato"}</span>
@@ -293,8 +310,9 @@ export default function DDT() {
                   </div>
                 </td>
               </tr>
-            ))}
-            {list.length === 0 && <tr><td colSpan="7" className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
+              );
+            })}
+            {list.length === 0 && <tr><td colSpan={canSeePrices ? 7 : 6} className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
           </tbody>
         </table>
       </div>

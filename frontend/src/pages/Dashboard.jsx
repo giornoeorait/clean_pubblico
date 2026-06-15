@@ -4,6 +4,7 @@ import PageHeader from "../components/PageHeader";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Users, Package, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
+import { usePermissions } from "../lib/permissions";
 
 const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId }) => (
   <div className="kpi-card" data-testid={testId}>
@@ -22,6 +23,7 @@ const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId }) 
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { canSeePrices } = usePermissions();
   const [kpi, setKpi] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,8 +49,12 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard icon={Users} label="Clienti" value={kpi.clienti_totali} hint={`${kpi.articoli_totali} articoli · ${kpi.listini_attivi} listini attivi`} testId="kpi-clienti" />
         <KpiCard icon={Truck} label="DDT questo mese" value={kpi.ddt_mese} hint={`${kpi.ddt_oggi} oggi · ${kpi.ddt_non_fatturati} da fatturare`} accent="celeste" testId="kpi-ddt" />
-        <KpiCard icon={Receipt} label="Fatturato mese" value={`€ ${kpi.fatturato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`Incassato: € ${kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} testId="kpi-fatturato" />
-        <KpiCard icon={CurrencyEur} label="Sospesi" value={`€ ${kpi.sospesi_totale.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`${kpi.sospesi_count} fatture da incassare`} accent="amber-500" testId="kpi-sospesi" />
+        {canSeePrices && (
+          <>
+            <KpiCard icon={Receipt} label="Fatturato mese" value={`€ ${kpi.fatturato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`Incassato: € ${kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} testId="kpi-fatturato" />
+            <KpiCard icon={CurrencyEur} label="Sospesi" value={`€ ${kpi.sospesi_totale.toLocaleString("it-IT", {minimumFractionDigits: 2})}`} hint={`${kpi.sospesi_count} fatture da incassare`} accent="amber-500" testId="kpi-sospesi" />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -87,20 +93,24 @@ export default function Dashboard() {
               </div>
               <span className="font-display text-2xl font-bold text-indaco">{kpi.ddt_non_fatturati}</span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-md">
-              <div className="flex items-center gap-2">
-                <CurrencyEur size={18} className="text-amber-600" weight="duotone" />
-                <span className="text-sm">Fatture da incassare</span>
-              </div>
-              <span className="font-display text-2xl font-bold text-amber-600">{kpi.sospesi_count}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-md">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-emerald-600" weight="duotone" />
-                <span className="text-sm">Incassato nel mese</span>
-              </div>
-              <span className="font-display text-lg font-bold text-emerald-600">€ {kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}</span>
-            </div>
+            {canSeePrices && (
+              <>
+                <div className="flex items-center justify-between p-3 bg-amber-50 rounded-md">
+                  <div className="flex items-center gap-2">
+                    <CurrencyEur size={18} className="text-amber-600" weight="duotone" />
+                    <span className="text-sm">Fatture da incassare</span>
+                  </div>
+                  <span className="font-display text-2xl font-bold text-amber-600">{kpi.sospesi_count}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-md">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={18} className="text-emerald-600" weight="duotone" />
+                    <span className="text-sm">Incassato nel mese</span>
+                  </div>
+                  <span className="font-display text-lg font-bold text-emerald-600">€ {kpi.incassato_mese.toLocaleString("it-IT", {minimumFractionDigits: 2})}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

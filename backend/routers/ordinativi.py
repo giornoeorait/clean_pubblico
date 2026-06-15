@@ -46,6 +46,7 @@ class OrdinativoIn(BaseModel):
 
 class OrdinativoPatch(BaseModel):
     data_consegna_richiesta: Optional[str] = None
+    data_richiesta: Optional[str] = None  # solo admin: modifica data inserimento ordinativo
     righe: Optional[List[RigaOrd]] = None
     note_interne: Optional[str] = None
     stato: Optional[Literal["nuovo", "in_lavorazione", "annullato"]] = None
@@ -55,6 +56,7 @@ class PortaleOrdIn(BaseModel):
     data_consegna_richiesta: str
     righe: List[RigaOrd]
     note_cliente: Optional[str] = ""
+    ritiro_lavanderia: Optional[bool] = False  # ordini < 50€ → cliente ritira in lavanderia
 
 
 # ---------- Helpers ----------
@@ -115,7 +117,8 @@ def _cli_snapshot(cli: Dict) -> Dict:
 
 async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | OrdinativoIn | PortaleOrdIn,
                              origine: str, data_consegna: Optional[str], note_cliente: str = "",
-                             note_interne: str = "", created_by: Optional[str] = None) -> Dict:
+                             note_interne: str = "", created_by: Optional[str] = None,
+                             ritiro_lavanderia: bool = False) -> Dict:
     cli = await db.clienti.find_one({"tenant_id": tenant_id, "id": cli_id}, {"_id": 0})
     if not cli:
         raise HTTPException(404, "Cliente non trovato")
@@ -136,6 +139,7 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
         "origine": origine,
         "note_cliente": note_cliente or "",
         "note_interne": note_interne or "",
+        "ritiro_lavanderia": bool(ritiro_lavanderia),
         "created_at": now_utc(), "updated_at": now_utc(),
         "created_by": created_by,
     }
@@ -261,6 +265,15 @@ async def update_ord(oid: str, body: OrdinativoPatch, user: Dict = Depends(requi
         patch["totale"] = round(sum(r["totale"] for r in rows), 2)
     for k in ("data_consegna_richiesta", "note_interne", "stato"):
         if k in data: patch[k] = data[k]
+    # Modifica data_richiesta riservata SOLO ad admin
+    if "data_richiesta" in data and data["data_richiesta"]:
+        if user.get("role") != "admin":
+            raise HTTPException(403, "Solo gli amministratori possono modificare la data dell'ordinativo")
+        from core import to_dt
+        new_dt = to_dt(data["data_richiesta"])
+        if not new_dt:
+            raise HTTPException(400, "Formato data non valido")
+        patch["data_richiesta"] = new_dt
     await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": patch})
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
 
@@ -479,6 +492,7 @@ async def portale_crea_ordinativo(token: str, body: PortaleOrdIn):
     doc = await _create_ordinativo(
         cli["tenant_id"], cli["id"], body, "portale",
         body.data_consegna_richiesta, body.note_cliente or "",
+        ritiro_lavanderia=bool(body.ritiro_lavanderia),
     )
     return {
         "numero": doc["numero"],
@@ -486,6 +500,7 @@ async def portale_crea_ordinativo(token: str, body: PortaleOrdIn):
         "righe": doc["righe"],
         "data_consegna_richiesta": doc["data_consegna_richiesta"],
         "stato": doc["stato"],
+        "ritiro_lavanderia": doc.get("ritiro_lavanderia", False),
     }
 
 

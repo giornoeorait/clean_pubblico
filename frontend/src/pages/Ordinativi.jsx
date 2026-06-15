@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
+import { usePermissions } from "../lib/permissions";
 import {
   Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
   Note, CheckCircle, XCircle, FilePdf,
@@ -25,14 +26,27 @@ const STATO_LBL = { nuovo: "Nuovo", in_lavorazione: "In lavorazione", convertito
 function inDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
 export default function Ordinativi() {
+  const { canSeePrices, canEditDate } = usePermissions();
   const [list, setList] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [articoli, setArticoli] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
+  const [editDataRichiesta, setEditDataRichiesta] = useState(""); // solo admin
   const [filterStato, setFilterStato] = useState("da_lavorare");
   const [listinoPrezzi, setListinoPrezzi] = useState({}); // { articolo_id: prezzo } per il cliente selezionato
+
+  // Clienti ordinati alfabeticamente per Denominazione struttura → Ragione sociale
+  const sortedClienti = useMemo(() => {
+    const arr = [...clienti];
+    arr.sort((a, b) => {
+      const A = (a.denominazione_struttura || a.ragione_sociale || "").toLowerCase();
+      const B = (b.denominazione_struttura || b.ragione_sociale || "").toLowerCase();
+      return A.localeCompare(B, "it");
+    });
+    return arr;
+  }, [clienti]);
 
   const fetchAll = useCallback(async () => {
     // "da_lavorare" e "all" non passano filtro backend (filtriamo client-side)
@@ -69,6 +83,7 @@ export default function Ordinativi() {
   const openNew = () => {
     setEditing(null);
     setForm({ cliente_id: "", data_consegna_richiesta: inDays(3), righe: [], note_interne: "" });
+    setEditDataRichiesta("");
     setOpen(true);
   };
   const openEdit = (o) => {
@@ -79,6 +94,10 @@ export default function Ordinativi() {
       righe: o.righe.map(r => ({ articolo_id: r.articolo_id, quantita: r.quantita })),
       note_interne: o.note_interne || "",
     });
+    try {
+      const iso = o.data_richiesta ? new Date(o.data_richiesta).toISOString().slice(0, 10) : "";
+      setEditDataRichiesta(iso);
+    } catch { setEditDataRichiesta(""); }
     setOpen(true);
   };
 
@@ -100,6 +119,9 @@ export default function Ordinativi() {
       };
       if (editing) {
         const { cliente_id: _, ...patch } = payload;
+        if (canEditDate && editDataRichiesta) {
+          patch.data_richiesta = editDataRichiesta;
+        }
         await api.patch(`/ordinativi/${editing.id}`, patch);
         toast.success("Ordinativo aggiornato");
       } else {
@@ -184,10 +206,12 @@ export default function Ordinativi() {
             <thead>
               <tr>
                 <th>Numero</th>
+                <th>Data</th>
                 <th>Cliente</th>
                 <th>Origine</th>
                 <th>Richiesto per</th>
-                <th>Totale</th>
+                <th>Pezzi</th>
+                {canSeePrices && <th>Totale</th>}
                 <th>Stato</th>
                 <th>Azioni</th>
               </tr>
@@ -195,12 +219,15 @@ export default function Ordinativi() {
             <tbody>
               {list.map(o => {
                 const cli = clienti.find(c => c.id === o.cliente_id);
+                const pezziTot = (o.righe || []).reduce((s, r) => s + (Number(r.quantita) || 0), 0);
                 return (
                   <tr key={o.id} data-testid={`ord-row-${o.id}`}>
                     <td>
                       <div className="font-mono font-bold">{o.numero}</div>
                       {o.ddt_numero && <div className="text-[11px] text-emerald-700 font-mono">→ {o.ddt_numero}</div>}
+                      {o.ritiro_lavanderia && <div className="text-[10px] text-amber-700 font-mono mt-0.5">↳ Ritiro lavanderia</div>}
                     </td>
+                    <td className="text-xs">{o.data_richiesta ? new Date(o.data_richiesta).toLocaleDateString("it-IT") : "—"}</td>
                     <td className="text-sm">
                       <div>{clientePrimary(cli || o.cliente_snapshot)}</div>
                       {clienteSecondary(cli || o.cliente_snapshot) && (
@@ -213,7 +240,8 @@ export default function Ordinativi() {
                       </span>
                     </td>
                     <td className="text-xs">{o.data_consegna_richiesta ? new Date(o.data_consegna_richiesta).toLocaleDateString("it-IT") : "—"}</td>
-                    <td className="font-mono font-bold text-indaco">€ {o.totale.toFixed(2)}</td>
+                    <td className="font-mono text-center" data-testid={`ord-pezzi-${o.id}`}>{pezziTot}</td>
+                    {canSeePrices && <td className="font-mono font-bold text-indaco">€ {o.totale.toFixed(2)}</td>}
                     <td><span className={`px-2 py-0.5 text-xs rounded-full ${STATO_CLASS[o.stato]}`}>{STATO_LBL[o.stato]}</span></td>
                     <td>
                       <div className="flex items-center gap-0.5">
@@ -239,7 +267,7 @@ export default function Ordinativi() {
                 );
               })}
               {list.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-16 text-slate-400">
+                <tr><td colSpan={canSeePrices ? 9 : 8} className="text-center py-16 text-slate-400">
                   <Truck size={32} className="mx-auto mb-2 text-slate-300" weight="duotone" />
                   Nessun ordinativo.
                 </td></tr>
@@ -259,7 +287,7 @@ export default function Ordinativi() {
                   <Label>Cliente *</Label>
                   <Select value={form.cliente_id} onValueChange={v => setForm({...form, cliente_id: v})} disabled={!!editing}>
                     <SelectTrigger data-testid="ord-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
-                    <SelectContent>{clienti.map(c => (
+                    <SelectContent>{sortedClienti.map(c => (
                       <SelectItem key={c.id} value={c.id}>
                         <span className="font-medium">{clientePrimary(c)}</span>
                         {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
@@ -302,6 +330,18 @@ export default function Ordinativi() {
                   <Label>Note interne</Label>
                   <Input value={form.note_interne} onChange={e => setForm({...form, note_interne: e.target.value})} />
                 </div>
+                {canEditDate && editing && (
+                  <div className="col-span-2">
+                    <Label>Data ordinativo (admin)</Label>
+                    <Input
+                      type="date"
+                      value={editDataRichiesta}
+                      onChange={e => setEditDataRichiesta(e.target.value)}
+                      data-testid="ord-data-richiesta"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">Modifica riservata agli amministratori.</p>
+                  </div>
+                )}
               </div>
 
               <section className="border border-slate-200 rounded-lg overflow-hidden">
@@ -311,7 +351,7 @@ export default function Ordinativi() {
                 </div>
                 <table className="w-full text-sm">
                   <thead className="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                    <tr><th className="p-2 text-left">Articolo</th><th>Q.tà</th><th className="text-right">Preview</th><th></th></tr>
+                    <tr><th className="p-2 text-left">Articolo</th><th>Q.tà</th>{canSeePrices && <th className="text-right">Preview</th>}<th></th></tr>
                   </thead>
                   <tbody>
                     {form.righe.map((r, i) => {
@@ -346,25 +386,29 @@ export default function Ordinativi() {
                               <div className="text-[10px] text-amber-600 font-mono mt-0.5">multipli di {a.multiplo_quantita}</div>
                             )}
                           </td>
-                          <td className="text-right text-xs font-mono">
-                            <div className={fromListino ? "text-indaco" : "text-amber-600"} title={fromListino ? "Prezzo dal listino cliente" : "Prezzo di default (cliente senza listino)"}>
-                              € {p.toFixed(2)}/{a?.unita_misura || "pz"} {fromListino ? "⚡" : "•"}
-                            </div>
-                            <div className="text-indaco font-bold">€ {(p * (r.quantita || 0)).toFixed(2)}</div>
-                          </td>
+                          {canSeePrices && (
+                            <td className="text-right text-xs font-mono">
+                              <div className={fromListino ? "text-indaco" : "text-amber-600"} title={fromListino ? "Prezzo dal listino cliente" : "Prezzo di default (cliente senza listino)"}>
+                                € {p.toFixed(2)}/{a?.unita_misura || "pz"} {fromListino ? "⚡" : "•"}
+                              </div>
+                              <div className="text-indaco font-bold">€ {(p * (r.quantita || 0)).toFixed(2)}</div>
+                            </td>
+                          )}
                           <td><Button variant="ghost" size="icon" onClick={() => delRiga(i)} className="text-red-500"><Trash size={13} /></Button></td>
                         </tr>
                       );
                     })}
-                    {form.righe.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-slate-400 text-xs">Aggiungi righe</td></tr>}
+                    {form.righe.length === 0 && <tr><td colSpan={canSeePrices ? 4 : 3} className="p-4 text-center text-slate-400 text-xs">Aggiungi righe</td></tr>}
                   </tbody>
-                  <tfoot className="bg-indaco/5 border-t-2 border-indaco">
-                    <tr>
-                      <td colSpan={2} className="p-2 text-right font-semibold">Totale stimato:</td>
-                      <td className="text-right font-mono font-bold text-indaco">€ {preview.toFixed(2)}</td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
+                  {canSeePrices && (
+                    <tfoot className="bg-indaco/5 border-t-2 border-indaco">
+                      <tr>
+                        <td colSpan={2} className="p-2 text-right font-semibold">Totale stimato:</td>
+                        <td className="text-right font-mono font-bold text-indaco">€ {preview.toFixed(2)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </section>
 
