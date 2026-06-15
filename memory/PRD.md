@@ -1,4 +1,16 @@
-# CleanTec - PRD (updated 14 May 2026 · Label Swap validation)
+# CleanTec - PRD (updated 15 Giu 2026 · Batch 7 punti completato)
+
+## Latest changes (15 Giu 2026)
+- **RBAC date editing**: solo gli admin possono modificare la data dei DDT e degli ordinativi (campo data_richiesta). Backend rifiuta con 403 se non admin (`ddt.py` linee 197-200, `ordinativi.py` linee 268-276).
+- **Frontend gating prezzi** (`lib/permissions.js` + `useCanSeePrices`/`canEditDate`):
+  - Dashboard: KPI Fatturato/Sospesi/Incassato nascosti per logistica
+  - DDT: colonna Imponibile + totale aggregato nascosti per logistica
+  - Ordinativi: colonna Totale + preview prezzi + footer totale nascosti per logistica
+- **Colonna "Pezzi"** (somma quantità riga) in tabelle DDT e Ordinativi (sostituisce conteggio righe).
+- **Ordinamento alfabetico clienti** (per denominazione_struttura / ragione_sociale) nei Select di DDT e Ordinativi.
+- **Soglia 50€ portale B2B** (`PortalePublic.jsx`): ordine con totale < 50€ apre dialog 'Ordine sotto soglia minima' con bottoni 'Modifica ordine' / 'Conferma con ritiro lavanderia'. Quest'ultimo salva `ritiro_lavanderia: true` sull'ordinativo. Backend `PortaleOrdIn` accetta nuovo campo opzionale.
+- **Badge "Ritiro lavanderia"** mostrato in tabella Ordinativi accanto al numero.
+- **Iter 29 testing**: 11/11 pytest passati + UI verificata via screenshot per admin e logistica.
 
 ## Latest changes (14 May 2026)
 - Fix JSX syntax in `Clienti.jsx` and `DDT.jsx` (mismatched div/trailing `v>`)
