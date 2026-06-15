@@ -9,9 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple } from "@phosphor-icons/react";
 import { clientePrimary, clienteSecondary, docPrimary, docSecondary } from "../lib/clienteLabel";
+import { usePermissions } from "../lib/permissions";
 import { toast } from "sonner";
 
 export default function DDT() {
+  const { canSeePrices, canEditDate } = usePermissions();
   // Default: mese in corso (dal 1° del mese a oggi) + solo "non fatturato"
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -29,6 +31,18 @@ export default function DDT() {
   const [cliId, setCliId] = useState("");
   const [rows, setRows] = useState([]);
   const [note, setNote] = useState("");
+  const [editingData, setEditingData] = useState(""); // ISO YYYY-MM-DD (solo admin)
+
+  // Clienti ordinati alfabeticamente per Denominazione struttura → Ragione sociale
+  const sortedClienti = useMemo(() => {
+    const arr = [...clienti];
+    arr.sort((a, b) => {
+      const A = (a.denominazione_struttura || a.ragione_sociale || "").toLowerCase();
+      const B = (b.denominazione_struttura || b.ragione_sociale || "").toLowerCase();
+      return A.localeCompare(B, "it");
+    });
+    return arr;
+  }, [clienti]);
 
   const fetchAll = useCallback(async () => {
     const params = [];
@@ -140,7 +154,7 @@ export default function DDT() {
                   <Select value={cliId} onValueChange={setCliId} disabled={!!editingId}>
                     <SelectTrigger data-testid="ddt-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
                     <SelectContent>
-                      {clienti.filter(c => c.attivo !== false).map(c => (
+                      {sortedClienti.filter(c => c.attivo !== false).map(c => (
                         <SelectItem key={c.id} value={c.id}>
                           <span className="font-medium">{clientePrimary(c)}</span>
                           {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
@@ -154,9 +168,17 @@ export default function DDT() {
                   )}
                 </div>
 
+                {canEditDate && editingId && (
+                  <div>
+                    <Label>Data DDT (admin)</Label>
+                    <Input type="date" value={editingData || ""} onChange={e => setEditingData(e.target.value)} data-testid="ddt-data" />
+                    <p className="text-[11px] text-slate-500 mt-1">Modifica riservata agli amministratori.</p>
+                  </div>
+                )}
+
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <Label>Righe DDT</Label>
+                    <Label>Pezzi DDT</Label>
                     <Button type="button" variant="outline" size="sm" onClick={addRow} data-testid="ddt-add-row"><Plus size={12} className="mr-1" />Aggiungi</Button>
                   </div>
                   {rows.length === 0 && <div className="text-center text-sm text-slate-400 py-4 border border-dashed border-slate-200 rounded">Aggiungi una riga</div>}
