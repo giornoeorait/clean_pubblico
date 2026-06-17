@@ -29,6 +29,7 @@ async def create_user(body: UserCreate, user: Dict = Depends(require_roles("admi
         "name": body.name,
         "role": body.role,
         "cliente_id": body.cliente_id,
+        "can_edit_dates": bool(body.can_edit_dates),
         "attivo": True,
         "created_at": now_utc(),
     }

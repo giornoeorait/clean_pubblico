@@ -46,7 +46,6 @@ class OrdinativoIn(BaseModel):
 
 class OrdinativoPatch(BaseModel):
     data_consegna_richiesta: Optional[str] = None
-    data_richiesta: Optional[str] = None  # solo admin: modifica data inserimento ordinativo
     righe: Optional[List[RigaOrd]] = None
     note_interne: Optional[str] = None
     stato: Optional[Literal["nuovo", "in_lavorazione", "annullato"]] = None
@@ -265,15 +264,6 @@ async def update_ord(oid: str, body: OrdinativoPatch, user: Dict = Depends(requi
         patch["totale"] = round(sum(r["totale"] for r in rows), 2)
     for k in ("data_consegna_richiesta", "note_interne", "stato"):
         if k in data: patch[k] = data[k]
-    # Modifica data_richiesta riservata SOLO ad admin
-    if "data_richiesta" in data and data["data_richiesta"]:
-        if user.get("role") != "admin":
-            raise HTTPException(403, "Solo gli amministratori possono modificare la data dell'ordinativo")
-        from core import to_dt
-        new_dt = to_dt(data["data_richiesta"])
-        if not new_dt:
-            raise HTTPException(400, "Formato data non valido")
-        patch["data_richiesta"] = new_dt
     await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": patch})
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
 

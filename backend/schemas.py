@@ -14,6 +14,7 @@ class UserCreate(BaseModel):
     name: str
     role: str = "contabilita"
     cliente_id: Optional[str] = None
+    can_edit_dates: Optional[bool] = False
 
 
 class ClienteIn(BaseModel):
@@ -195,6 +196,7 @@ class PatchUserIn(_PatchBase):
     attivo: Optional[bool] = None
     cliente_id: Optional[str] = None
     password: Optional[str] = None
+    can_edit_dates: Optional[bool] = None
 
 
 class PatchClienteIn(_PatchBase):

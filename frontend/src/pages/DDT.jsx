@@ -6,9 +6,10 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import ClienteCombobox from "../components/ClienteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple } from "@phosphor-icons/react";
-import { clientePrimary, clienteSecondary, docPrimary, docSecondary } from "../lib/clienteLabel";
+import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { usePermissions } from "../lib/permissions";
 import { toast } from "sonner";
 
@@ -32,17 +33,6 @@ export default function DDT() {
   const [rows, setRows] = useState([]);
   const [note, setNote] = useState("");
   const [editingData, setEditingData] = useState(""); // ISO YYYY-MM-DD (solo admin)
-
-  // Clienti ordinati alfabeticamente per Denominazione struttura → Ragione sociale
-  const sortedClienti = useMemo(() => {
-    const arr = [...clienti];
-    arr.sort((a, b) => {
-      const A = (a.denominazione_struttura || a.ragione_sociale || "").toLowerCase();
-      const B = (b.denominazione_struttura || b.ragione_sociale || "").toLowerCase();
-      return A.localeCompare(B, "it");
-    });
-    return arr;
-  }, [clienti]);
 
   const fetchAll = useCallback(async () => {
     const params = [];
@@ -158,18 +148,14 @@ export default function DDT() {
               <form onSubmit={submit} className="space-y-4">
                 <div>
                   <Label>Cliente *</Label>
-                  <Select value={cliId} onValueChange={setCliId} disabled={!!editingId}>
-                    <SelectTrigger data-testid="ddt-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
-                    <SelectContent>
-                      {sortedClienti.filter(c => c.attivo !== false).map(c => (
-                        <SelectItem key={c.id} value={c.id}>
-                          <span className="font-medium">{clientePrimary(c)}</span>
-                          {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
-                          {c.listino_id ? " • listino ✓" : " • no listino"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ClienteCombobox
+                    clienti={clienti.filter(c => c.attivo !== false)}
+                    value={cliId}
+                    onChange={setCliId}
+                    disabled={!!editingId}
+                    showListinoBadge
+                    testId="ddt-cliente"
+                  />
                   {selectedCliente && !selectedCliente.listino_id && (
                     <p className="text-xs text-amber-700 mt-1">⚠ Il cliente non ha un listino associato — verrà usato il prezzo default dell'articolo.</p>
                   )}
@@ -221,13 +207,16 @@ export default function DDT() {
       <div className="flex flex-wrap gap-2 mb-4 items-end">
         <div>
           <Label className="text-xs">Cliente</Label>
-          <Select value={filterCliente} onValueChange={setFilterCliente}>
-            <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tutti</SelectItem>
-              {clienti.map(c => <SelectItem key={c.id} value={c.id}>{clientePrimary(c)}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="w-64">
+            <ClienteCombobox
+              clienti={clienti}
+              value={filterCliente}
+              onChange={setFilterCliente}
+              allowAll
+              allLabel="Tutti i clienti"
+              testId="ddt-filter-cliente"
+            />
+          </div>
         </div>
         <div>
           <Label className="text-xs">Stato</Label>

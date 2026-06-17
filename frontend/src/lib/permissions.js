@@ -11,11 +11,13 @@ export function usePermissions() {
   const { user } = useAuth() || {};
   const role = user?.role || "";
   const isAdmin = role === "admin" || role === "superadmin";
+  const canEditDate = isAdmin || !!user?.can_edit_dates;
   return {
     role,
     isAdmin,
     canSeePrices: isAdmin || role === "contabilita",
-    canEditDate: isAdmin,
+    canEditDate,             // permesso per modificare la data DDT (admin OR can_edit_dates flag)
+    canEditDDTDate: canEditDate,
     canSeeRevenue: isAdmin || role === "contabilita",
     canAccessBilling: isAdmin || role === "contabilita",
   };

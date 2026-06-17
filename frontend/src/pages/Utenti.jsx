@@ -7,14 +7,14 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
-import { Plus, User, ShieldCheck, Trash, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { Plus, User, ShieldCheck, Trash, CheckCircle, XCircle, CalendarBlank } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 export default function Utenti() {
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", name: "", role: "contabilita" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", role: "contabilita", can_edit_dates: false });
   const [meId, setMeId] = useState(null);
 
   const fetch = async () => {
@@ -29,8 +29,17 @@ export default function Utenti() {
 
   const save = async (e) => {
     e.preventDefault();
-    try { await api.post("/users", form); toast.success("Utente creato"); setOpen(false); setForm({ email: "", password: "", name: "", role: "contabilita" }); fetch(); }
+    try { await api.post("/users", form); toast.success("Utente creato"); setOpen(false); setForm({ email: "", password: "", name: "", role: "contabilita", can_edit_dates: false }); fetch(); }
     catch (e) { toast.error(e.response?.data?.detail); }
+  };
+
+  const toggleCanEditDates = async (u) => {
+    try {
+      const next = !u.can_edit_dates;
+      await api.patch(`/users/${u.id}`, { can_edit_dates: next });
+      toast.success(next ? `${u.name}: permesso modifica data DDT attivato` : `${u.name}: permesso revocato`);
+      fetch();
+    } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 
   const toggleAttivo = async (u) => {
@@ -81,6 +90,21 @@ export default function Utenti() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="rounded-md border border-slate-200 px-3 py-2.5 bg-slate-50">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-indaco"
+                      checked={!!form.can_edit_dates}
+                      onChange={e => setForm({...form, can_edit_dates: e.target.checked})}
+                      data-testid="new-user-can-edit-dates"
+                    />
+                    <span className="text-sm">
+                      <span className="font-semibold flex items-center gap-1"><CalendarBlank size={14} /> Può modificare la data dei DDT</span>
+                      <span className="block text-[11px] text-slate-500">Permette all'utente (anche se non admin) di cambiare la data di un DDT non fatturato.</span>
+                    </span>
+                  </label>
+                </div>
                 <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button><Button type="submit" className="bg-indaco hover:bg-indaco-dark">Crea</Button></div>
               </form>
             </DialogContent>
@@ -97,10 +121,12 @@ export default function Utenti() {
         <TabsContent value="users" className="mt-4">
           <div className="kpi-card p-0 overflow-hidden">
             <table className="data-table">
-              <thead><tr><th>Utente</th><th>Email</th><th>Ruolo</th><th>Stato</th><th>Creato</th><th>Azioni</th></tr></thead>
+              <thead><tr><th>Utente</th><th>Email</th><th>Ruolo</th><th>Permessi</th><th>Stato</th><th>Creato</th><th>Azioni</th></tr></thead>
               <tbody>
                 {users.map(u => {
                   const isMe = u.id === meId;
+                  const isAdmin = u.role === "admin";
+                  const hasEditDates = isAdmin || !!u.can_edit_dates;
                   return (
                     <tr key={u.id} data-testid={`user-row-${u.id}`}>
                       <td className="flex items-center gap-2 py-3">
@@ -110,6 +136,22 @@ export default function Utenti() {
                       </td>
                       <td className="font-mono text-xs">{u.email}</td>
                       <td><span className="text-xs uppercase tracking-wider font-semibold text-indaco">{u.role}</span></td>
+                      <td>
+                        <button
+                          onClick={() => !isAdmin && toggleCanEditDates(u)}
+                          disabled={isAdmin}
+                          title={isAdmin ? "Gli admin hanno automaticamente tutti i permessi" : (hasEditDates ? "Revoca permesso modifica data DDT" : "Concedi permesso modifica data DDT")}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                            hasEditDates
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          } ${isAdmin ? "cursor-default opacity-90" : "cursor-pointer"}`}
+                          data-testid={`user-toggle-can-edit-dates-${u.id}`}
+                        >
+                          <CalendarBlank size={12} weight={hasEditDates ? "fill" : "regular"} />
+                          {hasEditDates ? "Modifica data DDT" : "No modifica date"}
+                        </button>
+                      </td>
                       <td>{u.attivo ? <span className="text-xs text-emerald-600 font-semibold">Attivo</span> : <span className="text-xs text-red-500">Disattivo</span>}</td>
                       <td className="text-xs text-slate-500 font-mono">{u.created_at?.slice(0, 10)}</td>
                       <td>

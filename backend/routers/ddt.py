@@ -196,8 +196,8 @@ async def update_ddt(did: str, body: DDTPatch, user: Dict = Depends(require_role
 
     data = body.model_dump(exclude_unset=True)
     if "data" in data and data["data"]:
-        if user.get("role") != "admin":
-            raise HTTPException(403, "Solo gli amministratori possono modificare la data del DDT")
+        if user.get("role") != "admin" and not user.get("can_edit_dates"):
+            raise HTTPException(403, "Non hai i permessi per modificare la data del DDT")
         data["data"] = to_dt(data["data"]) or now_utc()
     if body.righe is not None:
         righe, imp = await _compute_righe(user["tenant_id"], existing.get("listino_id"), body.righe)

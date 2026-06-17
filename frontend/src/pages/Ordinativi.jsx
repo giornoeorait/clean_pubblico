@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
@@ -9,6 +9,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import { usePermissions } from "../lib/permissions";
+import ClienteCombobox from "../components/ClienteCombobox";
 import {
   Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
   Note, CheckCircle, XCircle, FilePdf,
@@ -26,27 +27,15 @@ const STATO_LBL = { nuovo: "Nuovo", in_lavorazione: "In lavorazione", convertito
 function inDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
 export default function Ordinativi() {
-  const { canSeePrices, canEditDate } = usePermissions();
+  const { canSeePrices } = usePermissions();
   const [list, setList] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [articoli, setArticoli] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
-  const [editDataRichiesta, setEditDataRichiesta] = useState(""); // solo admin
   const [filterStato, setFilterStato] = useState("da_lavorare");
   const [listinoPrezzi, setListinoPrezzi] = useState({}); // { articolo_id: prezzo } per il cliente selezionato
-
-  // Clienti ordinati alfabeticamente per Denominazione struttura → Ragione sociale
-  const sortedClienti = useMemo(() => {
-    const arr = [...clienti];
-    arr.sort((a, b) => {
-      const A = (a.denominazione_struttura || a.ragione_sociale || "").toLowerCase();
-      const B = (b.denominazione_struttura || b.ragione_sociale || "").toLowerCase();
-      return A.localeCompare(B, "it");
-    });
-    return arr;
-  }, [clienti]);
 
   const fetchAll = useCallback(async () => {
     // "da_lavorare" e "all" non passano filtro backend (filtriamo client-side)
@@ -83,7 +72,6 @@ export default function Ordinativi() {
   const openNew = () => {
     setEditing(null);
     setForm({ cliente_id: "", data_consegna_richiesta: inDays(3), righe: [], note_interne: "" });
-    setEditDataRichiesta("");
     setOpen(true);
   };
   const openEdit = (o) => {
@@ -94,10 +82,6 @@ export default function Ordinativi() {
       righe: o.righe.map(r => ({ articolo_id: r.articolo_id, quantita: r.quantita })),
       note_interne: o.note_interne || "",
     });
-    try {
-      const iso = o.data_richiesta ? new Date(o.data_richiesta).toISOString().slice(0, 10) : "";
-      setEditDataRichiesta(iso);
-    } catch { setEditDataRichiesta(""); }
     setOpen(true);
   };
 
@@ -119,9 +103,6 @@ export default function Ordinativi() {
       };
       if (editing) {
         const { cliente_id: _, ...patch } = payload;
-        if (canEditDate && editDataRichiesta) {
-          patch.data_richiesta = editDataRichiesta;
-        }
         await api.patch(`/ordinativi/${editing.id}`, patch);
         toast.success("Ordinativo aggiornato");
       } else {
@@ -285,15 +266,13 @@ export default function Ordinativi() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <Label>Cliente *</Label>
-                  <Select value={form.cliente_id} onValueChange={v => setForm({...form, cliente_id: v})} disabled={!!editing}>
-                    <SelectTrigger data-testid="ord-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
-                    <SelectContent>{sortedClienti.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        <span className="font-medium">{clientePrimary(c)}</span>
-                        {clienteSecondary(c) && <span className="text-slate-500"> · {clienteSecondary(c)}</span>}
-                      </SelectItem>
-                    ))}</SelectContent>
-                  </Select>
+                  <ClienteCombobox
+                    clienti={clienti}
+                    value={form.cliente_id}
+                    onChange={v => setForm({...form, cliente_id: v})}
+                    disabled={!!editing}
+                    testId="ord-cliente"
+                  />
                   {form.cliente_id && (() => {
                     const cli = clienti.find(c => c.id === form.cliente_id);
                     if (!cli) return null;
@@ -330,18 +309,6 @@ export default function Ordinativi() {
                   <Label>Note interne</Label>
                   <Input value={form.note_interne} onChange={e => setForm({...form, note_interne: e.target.value})} />
                 </div>
-                {canEditDate && editing && (
-                  <div className="col-span-2">
-                    <Label>Data ordinativo (admin)</Label>
-                    <Input
-                      type="date"
-                      value={editDataRichiesta}
-                      onChange={e => setEditDataRichiesta(e.target.value)}
-                      data-testid="ord-data-richiesta"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">Modifica riservata agli amministratori.</p>
-                  </div>
-                )}
               </div>
 
               <section className="border border-slate-200 rounded-lg overflow-hidden">
