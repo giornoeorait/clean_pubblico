@@ -1,4 +1,21 @@
-# CleanTec - PRD (updated 15 Giu 2026 · Batch 7 punti completato)
+# CleanTec - PRD (updated 17 Giu 2026 · Permesso can_edit_dates + ClienteCombobox con ricerca)
+
+## Latest changes (17 Giu 2026)
+- **Permesso modifica data DDT per-utente** (`can_edit_dates`):
+  - Backend: aggiunto campo `can_edit_dates: bool` su modello User (`schemas.py` UserCreate + PatchUserIn). Salvato in DB e ritornato da `/auth/me`.
+  - Backend: `ddt.py` PATCH ora controlla `role == 'admin' OR can_edit_dates`. Messaggio 403 aggiornato: "Non hai i permessi per modificare la data del DDT".
+  - Frontend: `permissions.js` → `canEditDate = isAdmin || user?.can_edit_dates`.
+  - Frontend: pagina `/utenti` ha nuova colonna **Permessi** con badge toggle ("Modifica data DDT" / "No modifica date"). Admin è readonly (sempre ON).
+  - Form Nuovo Utente: checkbox dedicato `Può modificare la data dei DDT`.
+- **Modifica data Ordinativi rimossa** (l'utente vuole solo DDT). Editor `data_richiesta` rimosso da `Ordinativi.jsx` e dal backend (`OrdinativoPatch` non contiene più il campo).
+- **ClienteCombobox con ricerca** (`components/ClienteCombobox.jsx`):
+  - Popover + Command/cmdk
+  - Ordinamento alfabetico (denominazione_struttura / ragione_sociale)
+  - Campo di ricerca con match substring case-insensitive
+  - Prop `allowAll` per filtri (es. "Tutti i clienti")
+  - Prop `showListinoBadge` per indicare cliente con/senza listino
+  - Sostituisce il vecchio Select cliente in **DDT.jsx (form + filtro)** e **Ordinativi.jsx (form)**.
+- **Iter 30 testing**: 9/9 pytest backend PASS + UI verificata.
 
 ## Latest changes (15 Giu 2026)
 - **RBAC date editing**: solo gli admin possono modificare la data dei DDT e degli ordinativi (campo data_richiesta). Backend rifiuta con 403 se non admin (`ddt.py` linee 197-200, `ordinativi.py` linee 268-276).
