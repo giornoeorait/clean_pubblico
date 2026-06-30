@@ -8,7 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import ClienteCombobox from "../components/ClienteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
-import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple } from "@phosphor-icons/react";
+import { Plus, Trash, Receipt, Truck, CheckCircle, XCircle, FloppyDisk, FilePdf, PencilSimple, Package, Archive } from "@phosphor-icons/react";
 import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { usePermissions } from "../lib/permissions";
 import { toast } from "sonner";
@@ -126,6 +126,19 @@ export default function DDT() {
       fetchAll();
     }
     catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+  };
+
+  const toggleOperativo = async (d, flag) => {
+    const next = !d[flag];
+    try {
+      const payload = {}; payload[flag] = next;
+      const { data: updated } = await api.patch(`/ddt/${d.id}/operativi`, payload);
+      setList(prev => prev.map(x => x.id === d.id ? updated : x));
+      const lbl = flag === "consegnato" ? "Consegnato" : "Ritiro sporco";
+      toast.success(next ? `${lbl} segnato` : `${lbl} rimosso`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore aggiornamento flag");
+    }
   };
 
   const totaleList = list.reduce((s, d) => s + (d.imponibile || 0), 0);
@@ -264,12 +277,18 @@ export default function DDT() {
               <th className="text-center py-3 px-4">Pezzi</th>
               {canSeePrices && <th className="text-right py-3 px-4">Imponibile</th>}
               <th className="text-center py-3 px-4">Stato</th>
+              <th className="text-center py-3 px-4">Operativi</th>
               <th className="text-right py-3 px-4">Azioni</th>
             </tr>
           </thead>
           <tbody>
             {list.map(d => {
               const pezziTot = (d.righe || []).reduce((s, r) => s + (Number(r.quantita) || 0), 0);
+              const fmtDT = (iso) => {
+                if (!iso) return "";
+                try { const dt = new Date(iso); return dt.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+                catch { return ""; }
+              };
               return (
               <tr key={d.id} className="border-b border-slate-100" data-testid={`ddt-${d.id}`}>
                 <td className="py-2 px-4 font-mono font-bold">{d.numero}</td>
@@ -287,6 +306,42 @@ export default function DDT() {
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">Non fatturato</span>
                   )}
                 </td>
+                <td className="py-2 px-4 text-center">
+                  <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleOperativo(d, "consegnato")}
+                      title={d.consegnato
+                        ? `Consegnato il ${fmtDT(d.consegnato_at)}${d.consegnato_by ? ` da ${d.consegnato_by}` : ""}\nClicca per rimuovere`
+                        : "Segna come consegnato"}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        d.consegnato
+                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                          : "bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                      data-testid={`ddt-flag-consegnato-${d.id}`}
+                    >
+                      <Package size={12} weight={d.consegnato ? "fill" : "regular"} />
+                      Consegnato
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleOperativo(d, "ritirato_sporco")}
+                      title={d.ritirato_sporco
+                        ? `Ritiro sporco il ${fmtDT(d.ritirato_sporco_at)}${d.ritirato_sporco_by ? ` da ${d.ritirato_sporco_by}` : ""}\nClicca per rimuovere`
+                        : "Segna ritiro sporco"}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        d.ritirato_sporco
+                          ? "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                          : "bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                      data-testid={`ddt-flag-sporco-${d.id}`}
+                    >
+                      <Archive size={12} weight={d.ritirato_sporco ? "fill" : "regular"} />
+                      Sporco
+                    </button>
+                  </div>
+                </td>
                 <td className="py-2 px-4 text-right">
                   <div className="inline-flex items-center gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openPdf(d)} title="Scarica PDF" data-testid={`pdf-ddt-${d.id}`}><FilePdf size={16} /></Button>
@@ -301,7 +356,7 @@ export default function DDT() {
               </tr>
               );
             })}
-            {list.length === 0 && <tr><td colSpan={canSeePrices ? 7 : 6} className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
+            {list.length === 0 && <tr><td colSpan={canSeePrices ? 8 : 7} className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
           </tbody>
         </table>
       </div>

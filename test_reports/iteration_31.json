@@ -1,0 +1,39 @@
+{
+  "summary": "Iter31 — Tested CleanTec batch 5 (riepilogo cumulato fatture, recap ordinativi, flag operativi DDT, KPI fatturare mese, integrazione fatturato_storico pre-app). Backend: 12/12 pytest PASS. Frontend: tutte le verifiche OK (Dashboard KPIs + chart cumulato, Ordinativi recap panel + BarChart, DDT colonna Operativi con toggle verde + toast, Fattura detail dialog con sezioni DDT + Riepilogo). CRITICAL BUG TROVATO E FIXATO IN-FLIGHT in routers/dashboard.py: l'endpoint /api/dashboard/kpi restituiva 500 (TypeError offset-naive vs offset-aware datetime). Fix applicato: wrap d['data'] / f.get('data') con .replace(tzinfo=UTC) prima del confronto.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_batch5.py",
+    "/app/test_reports/pytest/iter31_results.xml"
+  ],
+  "action_items": [
+    "Verificare la fix applicata in routers/dashboard.py (lines ~83-97 e ~121-127): aggiunto helper _as_aware() + check tzinfo per evitare TypeError nel confronto datetime. Senza fix l'intero /api/dashboard/kpi restituiva 500 e bloccava completamente la Dashboard (anche quella già esistente prima del batch 5)."
+  ],
+  "critical_code_review_comments": [
+    "routers/dashboard.py L86-89 (PRIMA del fix): confronto `cur <= d['data'] < nxt` con cur tz-aware (datetime.now(timezone.utc)) e d['data'] tz-naive (motor PyMongo restituisce datetime naive) → TypeError 500. Stesso pattern anche a L121-125 sul filtro fatture_anno_mesi. Fix minimo applicato (helper _as_aware). RACCOMANDAZIONE: introdurre utility centralizzata to_utc_aware() in core.py per evitare ricomparsa del bug.",
+    "routers/billing.py L87-130: create_fattura calcola correttamente ddt_dettagli + riepilogo_articoli con prezzo medio ponderato. Aggregazione cross-DDT verificata: qty sommata per articolo_id, prezzo unitario medio = totale / qty. OK.",
+    "routers/billing.py L398-442: backfill on-the-fly in GET /fatture/{fid} funziona — verificato con $unset diretto in Mongo. OK.",
+    "routers/ordinativi.py L214-296: /ordinativi/recap correttamente registrato PRIMA di /ordinativi/{oid} (altrimenti FastAPI lo matchava come oid='recap'). Filtro stato ∈ {nuovo, in_lavorazione} esclude convertito_ddt/annullato. OK.",
+    "routers/ddt.py L218-251: PATCH /ddt/{id}/operativi NON tocca dati fiscali — verificato che imponibile e righe restano invariati anche dopo set consegnato su DDT fatturato. user_label = name|email|id (fallback chain) OK.",
+    "routers/dashboard.py STORICO_PREAPP_MONTHS=[(2026,1),(2026,2),(2026,3)] hardcoded: funziona finché siamo nel 2026; al cambio anno il flag andrà aggiornato o reso configurabile per tenant.",
+    "Frontend Fatture.jsx: il bottone 'Dettaglio' (icona occhio) NON ha data-testid esplicito (`title` è None). Suggerimento: aggiungere data-testid='fatt-detail-{id}' per testabilità (gli altri bottoni della stessa riga - PDF, validate, XML, incassa - già hanno testid). NON bloccante."
+  ],
+  "updated_files": [
+    "/app/backend/routers/dashboard.py (FIX critico: datetime tz handling)",
+    "/app/backend/tests/test_iter31_batch5.py (NEW: 12 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (tutte le verifiche UI OK)"},
+  "test_credentials": "admin@cleantec.it/admin123 + logistica@cleantec.it/logistica123 — entrambi OK.",
+  "seed_data_creation": "Pytest ha creato vari DDT/fatture/ordinativi TEST (note='TEST iter31'), un record temporaneo in fatturato_storico anno=2026 mese=1|2|3 totale_netto=1234.56 (pulito a fine test). Sul DDT id 8d498120-1ef7-468e-9373-cec37a7bbf73 è stato lasciato consegnato=true (test UI manuale).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter31 = batch 5 features. Bug critico in dashboard.py risolto in-flight (TypeError datetime tz mismatch). Tutti gli endpoint /api/fatture (ddt_dettagli + riepilogo + backfill), /api/ordinativi/recap, /api/ddt/{id}/operativi, /api/dashboard/kpi (con fatturare_mese_* + fatturato_anno_storico) funzionano. UI: Dashboard nuovi KPI testid kpi-da-fatturare-mese / kpi-fatturato-anno / trend-da-fatturare visibili solo per admin/contabilita (canSeePrices). Ordinativi panel testid ord-recap-panel con recap-row-{aid} + BarChart Recharts. DDT colonna con ddt-flag-consegnato-{id} e ddt-flag-sporco-{id} - click cambia colore + toast 'Consegnato segnato'. Fatture detail dialog: testid fatt-detail-ddt e fatt-detail-riepilogo. Nota: il bottone occhio della tabella fatture NON ha data-testid esplicito (suggerito aggiungerlo).",
+  "rca_of_the_issue": "Bug critico /api/dashboard/kpi: il codice batch 5 ha aggiunto un ciclo cumulativo che confronta cur (datetime.now(timezone.utc).replace tz-aware) con d['data'] (datetime tz-naive da motor PyMongo). Python solleva TypeError → 500. Riproduzione: GET /api/dashboard/kpi con qualunque token su tenant con DDT del mese corrente. Mitigation applicata: helper _as_aware() che normalizza a UTC se naive. Lo stesso pattern compariva anche nel loop di deduplicazione storico (fd.month senza check tz)."
+}

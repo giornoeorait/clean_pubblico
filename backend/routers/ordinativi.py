@@ -211,6 +211,91 @@ async def list_ord(
     return await db.ordinativi.find(filt, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
+@router.get("/ordinativi/recap")
+async def ordinativi_recap(user: Dict = Depends(get_current_user)):
+    """Riepilogo cumulativo articoli ancora da lavorare.
+    Considera SOLO ordinativi con stato `nuovo` o `in_lavorazione` (cioè aperti,
+    non evasi, non trasformati in DDT, non annullati).
+    Quando un ordinativo viene convertito in DDT il suo stato passa a
+    `convertito_ddt` e quindi viene escluso automaticamente da questo recap.
+    """
+    filt = {**tenant_scope(user), "stato": {"$in": ["nuovo", "in_lavorazione"]}}
+    ords = await db.ordinativi.find(filt, {"_id": 0}).to_list(5000)
+
+    agg: Dict[str, Dict[str, Any]] = {}
+    earliest_by_aid: Dict[str, Any] = {}
+    nuovo_cnt = 0
+    in_lav_cnt = 0
+    for o in ords:
+        st = o.get("stato")
+        if st == "nuovo":
+            nuovo_cnt += 1
+        elif st == "in_lavorazione":
+            in_lav_cnt += 1
+        o_date = o.get("data_richiesta") or o.get("created_at")
+        for r in (o.get("righe") or []):
+            aid = r.get("articolo_id")
+            if not aid:
+                continue
+            qty = int(r.get("quantita") or 0)
+            tot = float(r.get("totale") or 0)
+            e = agg.setdefault(aid, {
+                "articolo_id": aid,
+                "codice": r.get("codice", ""),
+                "descrizione": r.get("descrizione", ""),
+                "unita_misura": r.get("unita_misura", "pz"),
+                "quantita_totale": 0,
+                "totale_stimato": 0.0,
+                "ordinativi_count": 0,
+                "ordinativi_nuovo": 0,
+                "ordinativi_in_lavorazione": 0,
+            })
+            e["quantita_totale"] += qty
+            e["totale_stimato"] += tot
+            e["ordinativi_count"] += 1
+            if st == "nuovo":
+                e["ordinativi_nuovo"] += 1
+            elif st == "in_lavorazione":
+                e["ordinativi_in_lavorazione"] += 1
+            # prima data ordine per articolo (gestisce dt/str mix)
+            if o_date is not None:
+                prev = earliest_by_aid.get(aid)
+                if prev is None:
+                    earliest_by_aid[aid] = o_date
+                else:
+                    try:
+                        if o_date < prev:
+                            earliest_by_aid[aid] = o_date
+                    except TypeError:
+                        # tipi diversi (datetime vs string), normalizziamo a string ISO
+                        a_str = o_date.isoformat() if hasattr(o_date, "isoformat") else str(o_date)
+                        p_str = prev.isoformat() if hasattr(prev, "isoformat") else str(prev)
+                        if a_str < p_str:
+                            earliest_by_aid[aid] = o_date
+
+    items: List[Dict[str, Any]] = []
+    for aid, e in agg.items():
+        e["totale_stimato"] = round(e["totale_stimato"], 2)
+        d0 = earliest_by_aid.get(aid)
+        if hasattr(d0, "isoformat"):
+            e["prima_data_ordine"] = d0.isoformat()
+        elif d0:
+            e["prima_data_ordine"] = str(d0)
+        else:
+            e["prima_data_ordine"] = None
+        items.append(e)
+    items.sort(key=lambda x: x.get("quantita_totale", 0), reverse=True)
+
+    return {
+        "items": items,
+        "totale_pezzi": sum(i["quantita_totale"] for i in items),
+        "totale_articoli": len(items),
+        "ordinativi_aperti": len(ords),
+        "ordinativi_nuovo": nuovo_cnt,
+        "ordinativi_in_lavorazione": in_lav_cnt,
+    }
+
+
 @router.get("/ordinativi/{oid}")
 async def get_ord(oid: str, user: Dict = Depends(get_current_user)):
     doc = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})

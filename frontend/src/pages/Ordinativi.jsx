@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import { usePermissions } from "../lib/permissions";
 import ClienteCombobox from "../components/ClienteCombobox";
-import {
-  Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
-  Note, CheckCircle, XCircle, FilePdf,
+import { Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
+  Note, CheckCircle, XCircle, FilePdf, ChartBar, Factory,
 } from "@phosphor-icons/react";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { toast } from "sonner";
 
 const STATO_CLASS = {
@@ -36,17 +36,20 @@ export default function Ordinativi() {
   const [form, setForm] = useState(null);
   const [filterStato, setFilterStato] = useState("da_lavorare");
   const [listinoPrezzi, setListinoPrezzi] = useState({}); // { articolo_id: prezzo } per il cliente selezionato
+  const [recap, setRecap] = useState(null); // riepilogo cumulativo articoli da lavorare
 
   const fetchAll = useCallback(async () => {
     // "da_lavorare" e "all" non passano filtro backend (filtriamo client-side)
     const q = (filterStato === "all" || filterStato === "da_lavorare") ? "" : `?stato=${filterStato}`;
-    const [o, c, a] = await Promise.all([
+    const [o, c, a, r] = await Promise.all([
       api.get(`/ordinativi${q}`), api.get("/clienti"), api.get("/articoli"),
+      api.get("/ordinativi/recap").catch(() => ({ data: null })),
     ]);
     const data = filterStato === "da_lavorare"
       ? o.data.filter(x => x.stato === "nuovo" || x.stato === "in_lavorazione")
       : o.data;
     setList(data); setClienti(c.data); setArticoli(a.data);
+    setRecap(r.data);
   }, [filterStato]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -257,6 +260,93 @@ export default function Ordinativi() {
           </table>
         </div>
       </div>
+
+      {/* RECAP CUMULATIVO ARTICOLI DA LAVORARE */}
+      {canSeePrices !== undefined && recap && recap.items && recap.items.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 mt-6" data-testid="ord-recap-panel">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Factory size={20} weight="duotone" className="text-indaco" />
+              <h2 className="font-display text-lg font-semibold">Carico produzione residuo</h2>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-slate-500">Ordini aperti: <b className="text-indaco font-mono">{recap.ordinativi_aperti}</b></span>
+              <span className="text-slate-500">Articoli distinti: <b className="text-indaco font-mono">{recap.totale_articoli}</b></span>
+              <span className="text-slate-500">Pezzi totali da lavorare: <b className="text-indaco font-mono text-base">{recap.totale_pezzi}</b></span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Griglia */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs uppercase tracking-widest text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="text-left py-2 px-3">Articolo</th>
+                    <th className="text-center py-2 px-3">Q.tà</th>
+                    <th className="text-center py-2 px-3">N° ord.</th>
+                    <th className="text-left py-2 px-3">Prima data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recap.items.map(it => (
+                    <tr key={it.articolo_id} className="border-b border-slate-100" data-testid={`recap-row-${it.articolo_id}`}>
+                      <td className="py-2 px-3">
+                        <div className="font-medium">{it.descrizione}</div>
+                        <div className="text-[11px] font-mono text-slate-500">{it.codice}</div>
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <span className="font-display font-bold text-indaco text-lg">{it.quantita_totale}</span>
+                        <span className="text-xs text-slate-500 ml-1">{it.unita_misura}</span>
+                      </td>
+                      <td className="py-2 px-3 text-center text-xs">
+                        <div className="font-mono font-bold">{it.ordinativi_count}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {it.ordinativi_nuovo > 0 && <span className="text-indaco">{it.ordinativi_nuovo} nuovi</span>}
+                          {it.ordinativi_nuovo > 0 && it.ordinativi_in_lavorazione > 0 && " · "}
+                          {it.ordinativi_in_lavorazione > 0 && <span className="text-amber-600">{it.ordinativi_in_lavorazione} in lav.</span>}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-xs text-slate-500">
+                        {it.prima_data_ordine ? new Date(it.prima_data_ordine).toLocaleDateString("it-IT") : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Istogramma */}
+            <div className="border border-slate-200 rounded-md p-3 bg-slate-50/50">
+              <div className="flex items-center gap-1 mb-2">
+                <ChartBar size={14} className="text-indaco" weight="duotone" />
+                <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Pezzi da lavorare per articolo</span>
+              </div>
+              <ResponsiveContainer width="100%" height={Math.max(220, recap.items.length * 34)}>
+                <BarChart data={recap.items} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} />
+                  <YAxis
+                    type="category"
+                    dataKey="descrizione"
+                    tick={{ fontSize: 11, fill: "#334155" }}
+                    width={120}
+                  />
+                  <Tooltip
+                    formatter={(v) => [`${v} pezzi`, "Da lavorare"]}
+                    contentStyle={{ borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12 }}
+                  />
+                  <Bar dataKey="quantita_totale" radius={[0, 4, 4, 0]} data-testid="recap-bar">
+                    {recap.items.map((_, idx) => (
+                      <Cell key={idx} fill={idx % 2 === 0 ? "#4338ca" : "#0ea5e9"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(null); } }}>
         <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">

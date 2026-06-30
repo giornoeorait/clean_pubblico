@@ -302,16 +302,51 @@ export default function Fatture() {
                 <div><div className="overline">Stato</div><div className={`font-semibold ${detail.stato_incasso === "incassata" ? "text-emerald-600" : "text-amber-600"}`}>{detail.stato_incasso}</div></div>
               </div>
               <div>
-                <div className="overline mb-1">DDT inclusi</div>
-                <div className="space-y-1">
-                  {(detail.ddts || []).map(d => (
-                    <div key={d.id} className="flex justify-between text-xs font-mono py-1 border-b border-slate-100">
-                      <span>{d.numero}</span>
-                      <span>€ {d.imponibile.toFixed(2)}</span>
+                <div className="overline mb-1">DDT inclusi ({(detail.ddt_dettagli || detail.ddts || []).length})</div>
+                <div className="space-y-1 max-h-48 overflow-y-auto" data-testid="fatt-detail-ddt">
+                  {(detail.ddt_dettagli || detail.ddts || []).map(d => (
+                    <div key={d.id || d.numero} className="flex items-center justify-between text-xs py-1 border-b border-slate-100">
+                      <div>
+                        <span className="font-mono font-bold">{d.numero}</span>
+                        {d.data && <span className="text-slate-500 ml-2">{new Date(d.data).toLocaleDateString("it-IT")}</span>}
+                      </div>
+                      <span className="font-mono">€ {Number(d.imponibile || 0).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
               </div>
+              {detail.riepilogo_articoli && detail.riepilogo_articoli.length > 0 && (
+                <div>
+                  <div className="overline mb-1">Riepilogo cumulativo articoli</div>
+                  <div className="rounded border border-slate-200 overflow-hidden" data-testid="fatt-detail-riepilogo">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px]">
+                        <tr>
+                          <th className="text-left px-2 py-1.5">Articolo</th>
+                          <th className="text-center px-2 py-1.5">Q.tà tot.</th>
+                          <th className="text-right px-2 py-1.5">Prezzo unit.</th>
+                          <th className="text-right px-2 py-1.5">Totale</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.riepilogo_articoli.map((r, i) => (
+                          <tr key={r.articolo_id || i} className="border-t border-slate-100">
+                            <td className="px-2 py-1.5">
+                              <div className="font-medium">{r.descrizione}</div>
+                              {r.codice && <div className="font-mono text-[10px] text-slate-500">{r.codice}</div>}
+                            </td>
+                            <td className="px-2 py-1.5 text-center font-mono font-bold">
+                              {r.quantita_totale} <span className="text-slate-400">{r.unita_misura}</span>
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-mono text-slate-600">€ {Number(r.prezzo_unitario_medio).toFixed(4)}</td>
+                            <td className="px-2 py-1.5 text-right font-mono font-semibold text-indaco">€ {Number(r.totale).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
               <div className="border-t border-slate-200 pt-3 space-y-1">
                 <div className="flex justify-between"><span>Imponibile</span><span className="font-mono">€ {detail.imponibile.toFixed(2)}</span></div>
                 <div className="flex justify-between text-slate-500"><span>IVA {detail.iva_pct}%</span><span className="font-mono">€ {detail.iva.toFixed(2)}</span></div>

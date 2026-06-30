@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { Users, Package, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur } from "@phosphor-icons/react";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from "recharts";
+import { Users, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur, ChartLineUp, Archive } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import { usePermissions } from "../lib/permissions";
 
-const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId }) => (
+const MESI_LBL = { 1: "Gen", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mag", 6: "Giu", 7: "Lug", 8: "Ago", 9: "Set", 10: "Ott", 11: "Nov", 12: "Dic" };
+
+const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId, badge }) => (
   <div className="kpi-card" data-testid={testId}>
     <div className="flex items-start justify-between">
       <div>
-        <div className="overline">{label}</div>
+        <div className="overline flex items-center gap-1.5">
+          {label}
+          {badge && <span className="text-[9px] font-mono uppercase bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{badge}</span>}
+        </div>
         <div className="font-display text-3xl font-bold text-slate-900 mt-2 tracking-tight" data-testid={`${testId}-value`}>{value}</div>
         {hint && <div className="text-xs text-slate-500 mt-1 font-mono">{hint}</div>}
       </div>
@@ -56,6 +61,82 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      {canSeePrices && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <KpiCard
+            icon={ChartLineUp}
+            label="Da fatturare mese corrente"
+            value={`€ ${kpi.fatturare_mese_importo.toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
+            hint={`${kpi.fatturare_mese_count} DDT prodotti non ancora fatturati`}
+            accent="celeste"
+            testId="kpi-da-fatturare-mese"
+          />
+          <KpiCard
+            icon={Archive}
+            label={`Fatturato ${kpi.anno_corrente}`}
+            value={`€ ${kpi.fatturato_anno.toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
+            hint={kpi.fatturato_anno_storico > 0
+              ? `Fatture: € ${kpi.fatturato_anno_fatture.toLocaleString("it-IT", { minimumFractionDigits: 2 })} · Storico: € ${kpi.fatturato_anno_storico.toLocaleString("it-IT", { minimumFractionDigits: 2 })}`
+              : `Solo fatture emesse · nessun mese storico integrato`
+            }
+            badge={kpi.fatturato_anno_storico > 0 ? "incl. storico" : null}
+            testId="kpi-fatturato-anno"
+          />
+          {kpi.storico_mesi_inclusi && kpi.storico_mesi_inclusi.length > 0 && (
+            <div className="kpi-card lg:col-span-2" data-testid="storico-info">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="overline">Mesi storici inclusi nelle statistiche</div>
+                  <div className="font-display text-base font-semibold text-slate-900 mt-2">
+                    {kpi.storico_mesi_inclusi.map(m => MESI_LBL[m]).join(" · ")} {kpi.anno_corrente}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    Totale storico anno: <b className="font-mono">€ {kpi.storico_totale_anno.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</b>
+                    {" · "}Aggiunto a dashboard: <b className="font-mono">€ {kpi.fatturato_anno_storico.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</b>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    Sono esclusi mesi per i quali esistono fatture vere (no doppi conteggi).
+                  </div>
+                </div>
+                <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-emerald-100">
+                  <Archive size={22} weight="duotone" className="text-emerald-700" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Mini-trend: valore cumulato giorno per giorno dei DDT non ancora fatturati */}
+      {canSeePrices && Array.isArray(kpi.fatturare_mese_serie_cumul) && kpi.fatturare_mese_serie_cumul.length > 0 && (
+        <div className="kpi-card mb-6" data-testid="trend-da-fatturare">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <ChartLineUp size={20} className="text-celeste" weight="duotone" />
+              <h3 className="font-display text-lg font-bold">Produzione economica cumulata · mese corrente</h3>
+            </div>
+            <span className="text-xs text-slate-500 font-mono">
+              Valore residuo da fatturare: <b className="text-celeste">€ {kpi.fatturare_mese_importo.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</b>
+            </span>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={kpi.fatturare_mese_serie_cumul}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="giorno" fontSize={10} tick={{ fill: "#64748b" }} />
+              <YAxis fontSize={10} tickFormatter={(v) => `€ ${v.toLocaleString("it-IT")}`} tick={{ fill: "#64748b" }} />
+              <Tooltip
+                formatter={(v, name) => [
+                  `€ ${Number(v).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`,
+                  name === "cumulato" ? "Cumulato" : "Valore giorno"
+                ]}
+                contentStyle={{ borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12 }}
+              />
+              <Line type="monotone" dataKey="cumulato" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="kpi-card lg:col-span-2">

@@ -85,6 +85,50 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         raise HTTPException(400, "Uno o più DDT non validi o già fatturati")
 
     imponibile = round(sum(d.get("imponibile", 0) for d in ddts), 2)
+
+    # ---- Aggregazione articoli + dettagli DDT per il riepilogo cumulativo ----
+    # ddt_dettagli: lista di {id, numero, data, imponibile}
+    # riepilogo_articoli: aggregato per articolo_id con qty totale e prezzo medio ponderato
+    ddt_dettagli: List[Dict[str, Any]] = []
+    art_agg: Dict[str, Dict[str, Any]] = {}
+    for d in ddts:
+        d_data = d.get("data")
+        if hasattr(d_data, "isoformat"):
+            d_data_iso = d_data.isoformat()
+        else:
+            d_data_iso = str(d_data) if d_data else None
+        ddt_dettagli.append({
+            "id": d["id"],
+            "numero": d.get("numero"),
+            "data": d_data_iso,
+            "imponibile": round(d.get("imponibile", 0), 2),
+            "righe_count": len(d.get("righe") or []),
+        })
+        for r in (d.get("righe") or []):
+            aid = r.get("articolo_id")
+            if not aid:
+                continue
+            qty = int(r.get("quantita") or 0)
+            tot = float(r.get("totale") or 0)
+            entry = art_agg.setdefault(aid, {
+                "articolo_id": aid,
+                "codice": r.get("codice", ""),
+                "descrizione": r.get("descrizione", ""),
+                "unita_misura": r.get("unita_misura", "pz"),
+                "quantita_totale": 0,
+                "totale": 0.0,
+            })
+            entry["quantita_totale"] += qty
+            entry["totale"] += tot
+    # prezzo unitario medio ponderato
+    riepilogo_articoli: List[Dict[str, Any]] = []
+    for e in art_agg.values():
+        qty = e["quantita_totale"]
+        e["totale"] = round(e["totale"], 2)
+        e["prezzo_unitario_medio"] = round(e["totale"] / qty, 4) if qty else 0
+        riepilogo_articoli.append(e)
+    riepilogo_articoli.sort(key=lambda x: (x.get("codice") or "", x.get("descrizione") or ""))
+
     # Resolve IVA: explicit body value > company default > 22
     iva_pct = body.iva_pct
     if iva_pct is None:
@@ -112,6 +156,8 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         "totale": totale,
         "ddt_ids": [d["id"] for d in ddts],
         "ddt_numeri": [d["numero"] for d in ddts],
+        "ddt_dettagli": ddt_dettagli,
+        "riepilogo_articoli": riepilogo_articoli,
         "note": body.note or "",
         "stato_incasso": "da_incassare",
         "data_incasso": None,
@@ -358,6 +404,41 @@ async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
         doc["ddts"] = await db.ddt.find(
             merge_scope(user, {"id": {"$in": doc["ddt_ids"]}}), {"_id": 0}
         ).to_list(100)
+        # Backfill on-the-fly per fatture vecchie senza ddt_dettagli/riepilogo_articoli
+        if not doc.get("ddt_dettagli"):
+            dets: List[Dict[str, Any]] = []
+            for d in doc["ddts"]:
+                d_data = d.get("data")
+                d_data_iso = d_data.isoformat() if hasattr(d_data, "isoformat") else (str(d_data) if d_data else None)
+                dets.append({
+                    "id": d["id"], "numero": d.get("numero"),
+                    "data": d_data_iso,
+                    "imponibile": round(d.get("imponibile", 0), 2),
+                    "righe_count": len(d.get("righe") or []),
+                })
+            doc["ddt_dettagli"] = dets
+        if not doc.get("riepilogo_articoli"):
+            agg: Dict[str, Dict[str, Any]] = {}
+            for d in doc["ddts"]:
+                for r in (d.get("righe") or []):
+                    aid = r.get("articolo_id")
+                    if not aid: continue
+                    qty = int(r.get("quantita") or 0)
+                    tot = float(r.get("totale") or 0)
+                    e = agg.setdefault(aid, {
+                        "articolo_id": aid, "codice": r.get("codice", ""),
+                        "descrizione": r.get("descrizione", ""),
+                        "unita_misura": r.get("unita_misura", "pz"),
+                        "quantita_totale": 0, "totale": 0.0,
+                    })
+                    e["quantita_totale"] += qty
+                    e["totale"] += tot
+            riep: List[Dict[str, Any]] = []
+            for e in agg.values():
+                e["totale"] = round(e["totale"], 2)
+                e["prezzo_unitario_medio"] = round(e["totale"] / e["quantita_totale"], 4) if e["quantita_totale"] else 0
+                riep.append(e)
+            doc["riepilogo_articoli"] = sorted(riep, key=lambda x: (x.get("codice") or "", x.get("descrizione") or ""))
     return doc
 
 

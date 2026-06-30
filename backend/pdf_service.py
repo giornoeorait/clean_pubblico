@@ -318,6 +318,66 @@ def generate_ordinativo_pdf(ordinativo: Dict, cliente: Dict, company: Dict) -> b
     return _build(el)
 
 
+def _ddt_inclusi_table(ddt_list: List[Dict], st: Dict) -> Table:
+    """Tabella compatta degli D.D.T. inclusi in fattura: numero · data · imponibile."""
+    header = [
+        Paragraph("<b>N° D.D.T.</b>", st["body"]),
+        Paragraph("<b>Data</b>", st["body"]),
+        Paragraph("<b>Righe</b>", st["right"]),
+        Paragraph("<b>Imponibile</b>", st["right"]),
+    ]
+    data = [header]
+    for d in ddt_list:
+        data.append([
+            Paragraph(d.get("numero", ""), st["mono"]),
+            Paragraph(_fmt_date(d.get("data")), st["body"]),
+            Paragraph(str(len(d.get("righe") or [])), st["right"]),
+            Paragraph(f"€ {float(d.get('imponibile', 0)):.2f}", st["right"]),
+        ])
+    t = Table(data, colWidths=[40*mm, 30*mm, 25*mm, 35*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, INDACO),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.3, SLATE_200),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return t
+
+
+def _riepilogo_articoli_table(riepilogo: List[Dict], st: Dict) -> Table:
+    """Tabella riepilogo cumulativo articoli: cod · descrizione · qty totale · prezzo unit · totale."""
+    header = [
+        Paragraph("<b>Codice</b>", st["body"]),
+        Paragraph("<b>Descrizione</b>", st["body"]),
+        Paragraph("<b>Q.tà tot.</b>", st["right"]),
+        Paragraph("<b>Prezzo unit.</b>", st["right"]),
+        Paragraph("<b>Totale</b>", st["right"]),
+    ]
+    data = [header]
+    for r in riepilogo:
+        qty = int(r.get("quantita_totale", 0))
+        um = r.get("unita_misura", "pz")
+        data.append([
+            Paragraph(r.get("codice", ""), st["mono"]),
+            Paragraph(r.get("descrizione", ""), st["body"]),
+            Paragraph(f"{qty} {um}", st["right"]),
+            Paragraph(f"€ {float(r.get('prezzo_unitario_medio', 0)):.4f}", st["right"]),
+            Paragraph(f"<b>€ {float(r.get('totale', 0)):.2f}</b>", st["right"]),
+        ])
+    t = Table(data, colWidths=[22*mm, 70*mm, 24*mm, 28*mm, 26*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2FF")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, INDACO),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.3, SLATE_200),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return t
+
+
 def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: List[Dict]) -> bytes:
     st = _styles()
     el: List = []
@@ -329,13 +389,52 @@ def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: 
     el.append(Paragraph(f"Data: {_fmt_date(fattura.get('data'))}", st["small"]))
     el.append(Spacer(1, 6*mm))
 
-    # Aggregate all rows from all DDT
-    aggregated_rows: List[Dict] = []
-    for d in ddt_list:
-        for r in d.get("righe", []):
-            aggregated_rows.append(r)
-    el.append(_rows_table(aggregated_rows, st))
-    el.append(Spacer(1, 4*mm))
+    # Elenco D.D.T. inclusi (numero, data, imponibile)
+    if ddt_list:
+        el.append(Paragraph("<b>D.D.T. inclusi in fattura</b>", st["h2"]))
+        el.append(Spacer(1, 2*mm))
+        el.append(_ddt_inclusi_table(ddt_list, st))
+        el.append(Spacer(1, 4*mm))
+
+    # Riepilogo cumulativo articoli: usa riepilogo_articoli salvato in fattura,
+    # se assente lo ricostruisce on-the-fly aggregando le righe dei DDT.
+    riepilogo = fattura.get("riepilogo_articoli") or []
+    if not riepilogo and ddt_list:
+        agg: Dict[str, Dict] = {}
+        for d in ddt_list:
+            for r in d.get("righe", []):
+                aid = r.get("articolo_id")
+                if not aid: continue
+                qty = int(r.get("quantita") or 0)
+                tot = float(r.get("totale") or 0)
+                e = agg.setdefault(aid, {
+                    "articolo_id": aid,
+                    "codice": r.get("codice", ""),
+                    "descrizione": r.get("descrizione", ""),
+                    "unita_misura": r.get("unita_misura", "pz"),
+                    "quantita_totale": 0, "totale": 0.0,
+                })
+                e["quantita_totale"] += qty
+                e["totale"] += tot
+        for e in agg.values():
+            e["totale"] = round(e["totale"], 2)
+            e["prezzo_unitario_medio"] = round(e["totale"] / e["quantita_totale"], 4) if e["quantita_totale"] else 0
+        riepilogo = sorted(agg.values(), key=lambda x: (x.get("codice") or "", x.get("descrizione") or ""))
+
+    if riepilogo:
+        el.append(Paragraph("<b>Riepilogo cumulativo articoli</b>", st["h2"]))
+        el.append(Spacer(1, 2*mm))
+        el.append(_riepilogo_articoli_table(riepilogo, st))
+        el.append(Spacer(1, 4*mm))
+    else:
+        # Fallback al vecchio comportamento: elenco riga-per-riga aggregato grezzo
+        aggregated_rows: List[Dict] = []
+        for d in ddt_list:
+            for r in d.get("righe", []):
+                aggregated_rows.append(r)
+        el.append(_rows_table(aggregated_rows, st))
+        el.append(Spacer(1, 4*mm))
+
     el.append(Paragraph(
         f"<b>Imponibile: € {float(fattura.get('imponibile', fattura.get('totale', 0))):.2f}</b>",
         ParagraphStyle("tot", parent=st["right"], fontName="Helvetica-Bold", fontSize=11),
@@ -344,10 +443,6 @@ def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: 
         f"<b>Totale: € {float(fattura.get('totale', 0)):.2f}</b>",
         ParagraphStyle("tot2", parent=st["right"], fontName="Helvetica-Bold", fontSize=12, textColor=INDACO),
     ))
-    el.append(Spacer(1, 6*mm))
-    refs = ", ".join(d.get("numero", "") for d in ddt_list)
-    if refs:
-        el.append(Paragraph(f"<b>D.D.T. inclusi:</b> {refs}", st["small"]))
     if company.get("iban"):
         el.append(Spacer(1, 4*mm))
         el.append(Paragraph(f"<b>Bonifico su IBAN:</b> {company['iban']}", st["body"]))

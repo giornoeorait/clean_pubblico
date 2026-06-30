@@ -34,6 +34,12 @@ class DDTPatch(BaseModel):
     righe: Optional[List[DDTRigaIn]] = None
 
 
+class DDTOperativiPatch(BaseModel):
+    """Toggle flag operativi autista. NON tocca dati fiscali/contabili."""
+    consegnato: Optional[bool] = None
+    ritirato_sporco: Optional[bool] = None
+
+
 async def _compute_righe(tenant_id: str, listino_id: Optional[str], righe: List[DDTRigaIn]) -> (List[Dict[str, Any]], float):
     """Return enriched rows with auto-pricing + imponibile total."""
     out = []
@@ -207,6 +213,42 @@ async def update_ddt(did: str, body: DDTPatch, user: Dict = Depends(require_role
     await db.ddt.update_one(merge_scope(user, {"id": did}), {"$set": data})
     await log_audit(user, "UPDATE", "ddt", did)
     return {"ok": True}
+
+
+@router.patch("/{did}/operativi")
+async def update_ddt_operativi(did: str, body: DDTOperativiPatch, user: Dict = Depends(require_roles(*_WRITE))):
+    """Toggle flag operativi (consegnato / ritirato_sporco) con timestamp + utente.
+    Non altera dati fiscali/contabili; funziona anche se il DDT è fatturato."""
+    existing = await db.ddt.find_one(merge_scope(user, {"id": did}), {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "DDT non trovato")
+    patch: Dict[str, Any] = {"updated_at": now_utc()}
+    user_label = user.get("name") or user.get("email") or user.get("id", "")
+    if body.consegnato is not None:
+        patch["consegnato"] = bool(body.consegnato)
+        if body.consegnato:
+            patch["consegnato_at"] = now_utc()
+            patch["consegnato_by"] = user_label
+        else:
+            patch["consegnato_at"] = None
+            patch["consegnato_by"] = None
+    if body.ritirato_sporco is not None:
+        patch["ritirato_sporco"] = bool(body.ritirato_sporco)
+        if body.ritirato_sporco:
+            patch["ritirato_sporco_at"] = now_utc()
+            patch["ritirato_sporco_by"] = user_label
+        else:
+            patch["ritirato_sporco_at"] = None
+            patch["ritirato_sporco_by"] = None
+    if len(patch) == 1:
+        raise HTTPException(400, "Nessun flag operativo fornito")
+    await db.ddt.update_one(merge_scope(user, {"id": did}), {"$set": patch})
+    await log_audit(user, "UPDATE_OPERATIVI", "ddt", did, {
+        "consegnato": patch.get("consegnato"),
+        "ritirato_sporco": patch.get("ritirato_sporco"),
+    })
+    doc = await db.ddt.find_one(merge_scope(user, {"id": did}), {"_id": 0})
+    return doc
 
 
 @router.delete("/{did}")

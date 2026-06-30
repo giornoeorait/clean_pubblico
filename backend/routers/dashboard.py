@@ -1,10 +1,15 @@
 """Dashboard KPIs — flusso commerciale (Listini → DDT → Fatture → Sospesi)."""
 from datetime import datetime, timezone, timedelta
-from typing import Dict
+from typing import Dict, Any, List
 from fastapi import APIRouter, Depends
 from core import db, get_current_user, require_roles, tenant_scope
 
 router = APIRouter(tags=["dashboard"])
+
+# Mesi storici "pre-app" che vengono integrati automaticamente nelle statistiche
+# annuali della dashboard. Sono i mesi caricati via Excel prima dell'attivazione
+# completa dell'app (gennaio→marzo 2026).
+STORICO_PREAPP_MONTHS = [(2026, 1), (2026, 2), (2026, 3)]
 
 
 def _today_utc_start() -> datetime:
@@ -12,11 +17,17 @@ def _today_utc_start() -> datetime:
     return datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
 
+def _ddt_sum_imponibile(docs: List[Dict[str, Any]]) -> float:
+    return sum(d.get("imponibile", 0) for d in docs)
+
+
 @router.get("/dashboard/kpi")
 async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     today_start = _today_utc_start()
-    tomorrow_start = today_start + timedelta(days=1)
+    today_end = today_start + timedelta(days=1)
+    tomorrow_start = today_end
     first_day_month = today_start.replace(day=1)
+    first_day_year = today_start.replace(month=1, day=1)
     scope = tenant_scope(user)
 
     clienti_tot = await db.clienti.count_documents(scope)
@@ -24,7 +35,16 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     listini_tot = await db.listini.count_documents({**scope, "attivo": True})
 
     # DDT
-    ddt_mese = await db.ddt.count_documents({**scope, "data": {"$gte": first_day_month}})
+    # Nota: il campo `data` può essere salvato come datetime O come ISO string.
+    # Per il filtro mensile usiamo datetime nativo (cassa di solito sempre datetime).
+    ddt_mese_docs = await db.ddt.find(
+        {**scope, "data": {"$gte": first_day_month}},
+        {"data": 1, "imponibile": 1, "stato_fatturazione": 1, "_id": 0},
+    ).to_list(20000)
+    ddt_mese = len(ddt_mese_docs)
+    ddt_mese_non_fatt = [d for d in ddt_mese_docs if d.get("stato_fatturazione") != "fatturato"]
+    fatturare_mese_importo = round(_ddt_sum_imponibile(ddt_mese_non_fatt), 2)
+
     ddt_non_fatturati = await db.ddt.count_documents({**scope, "stato_fatturazione": "non_fatturato"})
     ddt_oggi = await db.ddt.count_documents({**scope, "created_at": {"$gte": today_start, "$lt": tomorrow_start}})
 
@@ -56,6 +76,63 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         c = await db.ddt.count_documents({**scope, "data": {"$gte": day_start, "$lt": day_end}})
         trend.append({"giorno": day_start.strftime("%m-%d"), "ddt": c})
 
+    # Serie cumulativa "Da fatturare nel mese": valore prodotto giorno per giorno
+    # (DDT non ancora inclusi in fattura), cumulato dall'inizio del mese a oggi.
+    cumul_serie: List[Dict[str, Any]] = []
+    running = 0.0
+    cur = first_day_month
+    def _as_aware(dt):
+        if isinstance(dt, datetime) and dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+    while cur <= today_start:
+        nxt = cur + timedelta(days=1)
+        day_val = sum(
+            d.get("imponibile", 0) for d in ddt_mese_non_fatt
+            if d.get("data") and isinstance(d.get("data"), datetime)
+            and cur <= _as_aware(d["data"]) < nxt
+        )
+        running += day_val
+        cumul_serie.append({
+            "giorno": cur.strftime("%d/%m"),
+            "valore_giorno": round(day_val, 2),
+            "cumulato": round(running, 2),
+        })
+        cur = nxt
+
+    # ---- Storico pre-app integrato in statistiche annuali ----
+    tenant_id = user["tenant_id"]
+    anno_corrente = today_start.year
+    storico_q = {
+        "tenant_id": tenant_id,
+        "anno": anno_corrente,
+    }
+    storico_docs = await db.fatturato_storico.find(storico_q, {"_id": 0}).to_list(5000)
+    # Includi solo mesi pre-app autorizzati (es. gen/feb/mar 2026)
+    months_allowed = {m for (y, m) in STORICO_PREAPP_MONTHS if y == anno_corrente}
+    storico_filtered = [s for s in storico_docs if s.get("mese") in months_allowed]
+    storico_totale_anno = round(sum(s.get("totale_netto", 0) for s in storico_filtered), 2)
+    # mesi inclusi (per badge UI)
+    storico_mesi_inclusi = sorted({s["mese"] for s in storico_filtered})
+
+    # Fatturato anno = somma fatture emesse anno corrente + storico pre-app del medesimo anno
+    fatture_anno_docs = await db.fatture.find(
+        {**scope, "data": {"$gte": first_day_year}}, {"totale": 1, "_id": 0}
+    ).to_list(20000)
+    fatturato_anno_fatture = sum(f.get("totale", 0) for f in fatture_anno_docs)
+    # de-duplicazione: se per un mese pre-app esistono GIÀ fatture vere, non sommiamo
+    # lo storico per quel mese (evita doppi conteggi).
+    fatture_anno_mesi = set()
+    for f in fatture_anno_docs:
+        fd = f.get("data")
+        if isinstance(fd, datetime):
+            fd_aware = fd if fd.tzinfo else fd.replace(tzinfo=timezone.utc)
+            if fd_aware.year == anno_corrente:
+                fatture_anno_mesi.add(fd_aware.month)
+    storico_da_sommare = [s for s in storico_filtered if s["mese"] not in fatture_anno_mesi]
+    storico_aggiunto = round(sum(s.get("totale_netto", 0) for s in storico_da_sommare), 2)
+    fatturato_anno = round(fatturato_anno_fatture + storico_aggiunto, 2)
+
     return {
         "clienti_totali": clienti_tot,
         "articoli_totali": articoli_tot,
@@ -68,6 +145,17 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         "sospesi_totale": round(sospesi_totale, 2),
         "sospesi_count": sospesi_count,
         "trend_ddt_7gg": trend,
+        # Nuovo KPI: DDT del mese ancora da fatturare (importo)
+        "fatturare_mese_importo": fatturare_mese_importo,
+        "fatturare_mese_count": len(ddt_mese_non_fatt),
+        "fatturare_mese_serie_cumul": cumul_serie,
+        # Statistiche annuali integrate con storico pre-app
+        "fatturato_anno": fatturato_anno,
+        "fatturato_anno_fatture": round(fatturato_anno_fatture, 2),
+        "fatturato_anno_storico": storico_aggiunto,
+        "storico_totale_anno": storico_totale_anno,
+        "storico_mesi_inclusi": storico_mesi_inclusi,
+        "anno_corrente": anno_corrente,
     }
 
 
