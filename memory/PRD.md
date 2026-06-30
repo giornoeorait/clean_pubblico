@@ -1,4 +1,27 @@
-# CleanTec - PRD (updated 17 Giu 2026 · Permesso can_edit_dates + ClienteCombobox con ricerca)
+# CleanTec - PRD (updated 30 Giu 2026 · Batch 5 funzionalità operative + statistiche)
+
+## Latest changes (30 Giu 2026)
+- **Punto 1 — Riepilogo cumulativo articoli in fattura**:
+  - `billing.py create_fattura` calcola e salva `ddt_dettagli` (lista DDT inclusi con numero/data/imponibile/righe_count) + `riepilogo_articoli` (aggregato per articolo: qty_totale, prezzo_unitario_medio ponderato, totale).
+  - `GET /api/fatture/{fid}` esegue backfill on-the-fly per fatture vecchie.
+  - `pdf_service.generate_fattura_pdf` ora include due nuove tabelle: "D.D.T. inclusi in fattura" e "Riepilogo cumulativo articoli".
+  - UI `Fatture.jsx` mostra entrambe le sezioni nel dialog di dettaglio (testid `fatt-detail-ddt`, `fatt-detail-riepilogo`).
+- **Punto 2 — Recap cumulativo ordinativi**:
+  - Nuovo endpoint `GET /api/ordinativi/recap` (registrato prima di `/{oid}` per evitare conflict). Esclude `convertito_ddt` e `annullato`. Ritorna items aggregati (qty, conteggi per stato, prima data) + totali.
+  - UI `Ordinativi.jsx` pannello "Carico produzione residuo" (testid `ord-recap-panel`) sotto la tabella, con griglia e BarChart Recharts orizzontale.
+  - Quando un ordinativo viene convertito in DDT lo stato passa a `convertito_ddt` → automaticamente escluso dal recap.
+- **Punto 3 — Flag operativi DDT**:
+  - Nuovo endpoint `PATCH /api/ddt/{id}/operativi` con campi `consegnato` e/o `ritirato_sporco`. Salva timestamp + nome utente. Funziona anche su DDT fatturati senza alterare dati fiscali.
+  - UI `DDT.jsx` colonna "Operativi" con due bottoni toggle (testid `ddt-flag-consegnato-{id}` / `ddt-flag-sporco-{id}`) + tooltip con data/ora/utente.
+- **Punto 4 — Dashboard KPI "Da fatturare mese corrente"**:
+  - Nuovi campi in `/api/dashboard/kpi`: `fatturare_mese_importo`, `fatturare_mese_count`, `fatturare_mese_serie_cumul` (serie giornaliera cumulativa).
+  - UI Dashboard: KPI dedicato + LineChart cumulato giornaliero.
+- **Punto 5 — Integrazione storico pre-app Gen/Feb/Mar 2026**:
+  - Costante `STORICO_PREAPP_MONTHS = [(2026,1),(2026,2),(2026,3)]` in `dashboard.py`.
+  - `/api/dashboard/kpi` nuovi campi: `fatturato_anno`, `fatturato_anno_fatture`, `fatturato_anno_storico`, `storico_totale_anno`, `storico_mesi_inclusi`, `anno_corrente`. De-duplicazione: se per un mese esistono già fatture vere, lo storico di quel mese NON viene sommato (no doppi conteggi).
+  - UI Dashboard: KPI "Fatturato 2026" con badge "incl. storico" + card descrittiva mesi inclusi.
+- **Bug critico fixato in-flight dal testing agent**: TypeError datetime tz mismatch nel cumul cycle di dashboard.py (helper `_as_aware` aggiunto).
+- **Iter 31 testing**: 12/12 pytest backend PASS + UI verificata (Dashboard, Ordinativi recap, DDT toggle, Fattura detail).
 
 ## Latest changes (17 Giu 2026)
 - **Permesso modifica data DDT per-utente** (`can_edit_dates`):
