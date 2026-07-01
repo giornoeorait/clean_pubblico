@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import ClienteCombobox from "../components/ClienteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck, PencilLine, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck, PencilLine, PaperPlaneTilt, Envelope, Warning } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
@@ -18,7 +18,10 @@ export default function Fatture() {
 
   // New fattura dialog
   const [genOpen, setGenOpen] = useState(false);
+  const [genMode, setGenMode] = useState("cliente"); // "cliente" | "ragione_sociale"
   const [genCli, setGenCli] = useState("");
+  const [genRS, setGenRS] = useState(""); // ragione sociale selezionata
+  const [ragioniSociali, setRagioniSociali] = useState([]);
   const [genDdts, setGenDdts] = useState([]);
   const [genSelected, setGenSelected] = useState(new Set());
   const [ivaPct, setIvaPct] = useState(22);
@@ -31,10 +34,19 @@ export default function Fatture() {
   const [renumTarget, setRenumTarget] = useState(null); // fattura selezionata
   const [renumNumero, setRenumNumero] = useState("");
 
+  // Invio email
+  const [emailTarget, setEmailTarget] = useState(null);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+
   const fetchAll = useCallback(async () => {
     const q = filterStato !== "all" ? `?stato_incasso=${filterStato}` : "";
-    const [f, c] = await Promise.all([api.get(`/fatture${q}`), api.get("/clienti")]);
-    setList(f.data); setClienti(c.data);
+    const [f, c, rs] = await Promise.all([
+      api.get(`/fatture${q}`),
+      api.get("/clienti"),
+      api.get("/fatture/ragioni-sociali").catch(() => ({ data: [] })),
+    ]);
+    setList(f.data); setClienti(c.data); setRagioniSociali(rs.data || []);
   }, [filterStato]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -47,7 +59,26 @@ export default function Fatture() {
     } catch { setGenDdts([]); setGenSelected(new Set()); }
   };
 
-  useEffect(() => { if (genCli) loadFatturabili(genCli); else { setGenDdts([]); setGenSelected(new Set()); } }, [genCli]);
+  const loadFatturabiliRS = async (rs) => {
+    try {
+      const { data } = await api.get(`/fatture/fatturabili-rs?ragione_sociale=${encodeURIComponent(rs)}`);
+      setGenDdts(data.ddts);
+      setGenSelected(new Set(data.ddts.map(d => d.id)));
+      // in RS mode il cliente intestatario è il primo dei siblings (denominazione più chiara)
+      const first = (data.clienti || [])[0];
+      if (first) setGenCli(first.id);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore caricamento");
+      setGenDdts([]); setGenSelected(new Set());
+    }
+  };
+
+  useEffect(() => {
+    if (genMode === "cliente" && genCli) loadFatturabili(genCli);
+    else if (genMode === "ragione_sociale" && genRS) loadFatturabiliRS(genRS);
+    else { setGenDdts([]); setGenSelected(new Set()); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genCli, genRS, genMode]);
 
   const toggleDdt = (id) => {
     setGenSelected(s => {
@@ -64,15 +95,45 @@ export default function Fatture() {
   const generate = async () => {
     if (genSelected.size === 0) { toast.error("Seleziona almeno un DDT"); return; }
     try {
-      const { data } = await api.post("/fatture", {
+      const payload = {
         cliente_id: genCli,
         ddt_ids: Array.from(genSelected),
         iva_pct: parseFloat(ivaPct),
         scadenza: scadenza || undefined,
-      });
+      };
+      if (genMode === "ragione_sociale") payload.ragione_sociale_mode = true;
+      const { data } = await api.post("/fatture", payload);
       toast.success(`Fattura ${data.numero} generata — € ${data.totale.toFixed(2)}`);
-      setGenOpen(false); setGenCli(""); setScadenza(""); fetchAll();
+      setGenOpen(false); setGenCli(""); setGenRS(""); setGenMode("cliente"); setScadenza(""); fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
+  };
+
+  const openEmailDialog = (f) => {
+    setEmailTarget(f);
+    // pre-popola con l'email del cliente (fatturazione, o email base)
+    const cli = clienti.find(c => c.id === f.cliente_id) || {};
+    setEmailTo(cli.email_fatturazione || cli.email || cli.pec || "");
+  };
+
+  const submitEmail = async () => {
+    if (!emailTarget) return;
+    if (!emailTo || !emailTo.includes("@")) {
+      toast.error("Inserisci un indirizzo e-mail valido");
+      return;
+    }
+    setEmailSending(true);
+    try {
+      const { data } = await api.post(`/fatture/${emailTarget.id}/send-email`, { to: emailTo.trim() });
+      if (data.status === "sent") toast.success(`E-mail inviata a ${data.to}`);
+      else if (data.status === "logged") toast(`SMTP non configurato — registrata in log (destinatario: ${data.to})`, { icon: "ℹ️" });
+      else toast.error(`Errore invio: ${data.error || "sconosciuto"}`);
+      setEmailTarget(null); setEmailTo("");
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore invio email");
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const openDetail = async (f) => {
@@ -238,11 +299,28 @@ export default function Fatture() {
               <tr key={f.id} className="border-b border-slate-100" data-testid={`fatt-${f.id}`}>
                 <td className="py-2 px-4 font-mono font-bold">
                   {f.numero}
-                  {f.xml_transmitted && (
-                    <div title={`Trasmessa a SDI${f.xml_transmitted_at ? ` il ${new Date(f.xml_transmitted_at).toLocaleDateString("it-IT")}` : ""}`} className="text-[9px] uppercase tracking-widest text-emerald-700 font-semibold flex items-center gap-0.5 mt-0.5">
-                      <PaperPlaneTilt size={9} weight="fill" /> SDI
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {f.xml_transmitted && (
+                      <div title={`Trasmessa a SDI${f.xml_transmitted_at ? ` il ${new Date(f.xml_transmitted_at).toLocaleDateString("it-IT")}` : ""}`} className="text-[9px] uppercase tracking-widest text-emerald-700 font-semibold flex items-center gap-0.5">
+                        <PaperPlaneTilt size={9} weight="fill" /> SDI
+                      </div>
+                    )}
+                    {f.email_last_status === "sent" && (
+                      <div title={`E-mail inviata${f.email_last_at ? ` il ${new Date(f.email_last_at).toLocaleString("it-IT")}` : ""} a ${f.email_last_to || ""}`} className="text-[9px] uppercase tracking-widest text-emerald-700 font-semibold flex items-center gap-0.5" data-testid={`email-badge-sent-${f.id}`}>
+                        <Envelope size={9} weight="fill" /> inviata
+                      </div>
+                    )}
+                    {f.email_last_status === "failed" && (
+                      <div title="Ultimo invio fallito" className="text-[9px] uppercase tracking-widest text-red-600 font-semibold flex items-center gap-0.5" data-testid={`email-badge-failed-${f.id}`}>
+                        <Warning size={9} weight="fill" /> errore
+                      </div>
+                    )}
+                    {f.email_last_status === "logged" && (
+                      <div title="SMTP non configurato: solo log" className="text-[9px] uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-0.5" data-testid={`email-badge-logged-${f.id}`}>
+                        <Envelope size={9} /> log
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="py-2 px-4">{new Date(f.data).toLocaleDateString("it-IT")}</td>
                 <td className="py-2 px-4">
@@ -263,6 +341,7 @@ export default function Fatture() {
                   <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => validateXml(f)} title="Verifica conformità SdI" data-testid={`fatt-validate-${f.id}`}><ShieldCheck size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML Fattura Elettronica" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => openEmailDialog(f)} title="Invia via email" data-testid={`fatt-email-${f.id}`}><Envelope size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)} title="Dettaglio" data-testid={`fatt-detail-${f.id}`}><Eye size={14} /></Button>
                   {!f.xml_transmitted && (
                     <Button variant="ghost" size="icon" onClick={() => openRenum(f)} title="Rinumera fattura" data-testid={`fatt-renum-${f.id}`}><PencilLine size={14} /></Button>
@@ -293,27 +372,77 @@ export default function Fatture() {
         <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Nuova fattura da DDT</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <Label>Cliente *</Label>
-                <ClienteCombobox
-                  clienti={clienti.filter(c => c.attivo !== false)}
-                  value={genCli}
-                  onChange={setGenCli}
-                  testId="fatt-cliente"
-                />
-              </div>
-              <div>
-                <Label>IVA %</Label>
-                <Input type="number" step="1" value={ivaPct} onChange={e => setIvaPct(e.target.value)} data-testid="fatt-iva" />
+            {/* Modalità: per Cliente o per Ragione Sociale */}
+            <div className="flex gap-2 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => { setGenMode("cliente"); setGenRS(""); }}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${genMode === "cliente" ? "bg-indaco text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                data-testid="fatt-mode-cliente"
+              >
+                Fattura per Cliente
+              </button>
+              <button
+                type="button"
+                onClick={() => { setGenMode("ragione_sociale"); setGenCli(""); }}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${genMode === "ragione_sociale" ? "bg-indaco text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                data-testid="fatt-mode-rs"
+              >
+                Fattura per Ragione Sociale
+              </button>
+              <div className="ml-auto text-[11px] text-slate-500 self-center max-w-xs text-right">
+                {genMode === "ragione_sociale" && "Raggruppa i DDT di tutti i clienti che condividono la stessa Ragione Sociale."}
               </div>
             </div>
 
-            {genCli && (
+            <div className="grid grid-cols-3 gap-3">
+              {genMode === "cliente" ? (
+                <div className="col-span-2">
+                  <Label>Cliente *</Label>
+                  <ClienteCombobox
+                    clienti={clienti.filter(c => c.attivo !== false)}
+                    value={genCli}
+                    onChange={setGenCli}
+                    testId="fatt-cliente"
+                  />
+                </div>
+              ) : (
+                <div className="col-span-2">
+                  <Label>Ragione Sociale *</Label>
+                  <select
+                    value={genRS}
+                    onChange={(e) => setGenRS(e.target.value)}
+                    className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm"
+                    data-testid="fatt-rs-select"
+                  >
+                    <option value="">Seleziona ragione sociale…</option>
+                    {ragioniSociali.map(rs => (
+                      <option key={rs.ragione_sociale} value={rs.ragione_sociale}>
+                        {rs.ragione_sociale} · {rs.clienti_count} clienti
+                      </option>
+                    ))}
+                  </select>
+                  {ragioniSociali.length === 0 && (
+                    <div className="text-[11px] text-amber-700 mt-1">
+                      Nessuna Ragione Sociale con 2+ clienti trovata. Le RS con un solo cliente equivalgono alla fattura per cliente.
+                    </div>
+                  )}
+                </div>
+              )}
+              <div>
+                <Label>IVA %</Label>
+                <Input type="number" step="1" value={ivaPct} onChange={e => setIvaPct(e.target.value)} data-testid="fatt-iva" />
+                <div className="text-[10px] text-slate-500 mt-0.5">Suffisso: <b>{Number(ivaPct) === 0 ? "C" : "F"}</b></div>
+              </div>
+            </div>
+
+            {(genCli || genRS) && (
               <div>
                 <Label className="mb-2 block">DDT fatturabili ({genDdts.length})</Label>
                 {genDdts.length === 0 ? (
-                  <div className="text-center text-sm text-slate-400 py-6 border border-dashed border-slate-200 rounded">Nessun DDT da fatturare per questo cliente</div>
+                  <div className="text-center text-sm text-slate-400 py-6 border border-dashed border-slate-200 rounded">
+                    {genMode === "ragione_sociale" ? "Nessun DDT da fatturare per questa Ragione Sociale" : "Nessun DDT da fatturare per questo cliente"}
+                  </div>
                 ) : (
                   <div className="border border-slate-200 rounded max-h-64 overflow-y-auto">
                     {genDdts.map(d => (
@@ -417,6 +546,49 @@ export default function Fatture() {
                 <div className="flex justify-between"><span>Imponibile</span><span className="font-mono">€ {detail.imponibile.toFixed(2)}</span></div>
                 <div className="flex justify-between text-slate-500"><span>IVA {detail.iva_pct}%</span><span className="font-mono">€ {detail.iva.toFixed(2)}</span></div>
                 <div className="flex justify-between font-bold text-lg"><span>Totale</span><span className="font-mono text-indaco">€ {detail.totale.toFixed(2)}</span></div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog invio email */}
+      <Dialog open={!!emailTarget} onOpenChange={(o) => { if (!o) { setEmailTarget(null); setEmailTo(""); } }}>
+        <DialogContent className="max-w-md" data-testid="fatt-email-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Envelope size={18} /> Invia fattura via email</DialogTitle>
+          </DialogHeader>
+          {emailTarget && (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <div className="text-slate-500">Fattura</div>
+                <div className="font-mono font-bold text-base">{emailTarget.numero}</div>
+              </div>
+              <div>
+                <Label>Destinatario</Label>
+                <Input
+                  type="email"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="cliente@example.com"
+                  data-testid="fatt-email-to"
+                />
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Prepopolato dall&apos;email del cliente (fatturazione / principale / PEC).
+                </div>
+              </div>
+              <div className="rounded bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+                <div><b>Oggetto:</b> Fattura n. {emailTarget.numero} del {new Date(emailTarget.data).toLocaleDateString("it-IT")}</div>
+                <div className="mt-2 text-slate-500 italic">
+                  Gentile Cliente, come da riferimenti in oggetto, inviamo in allegato copia cortesia della fattura relativa ai servizi mensili erogati. Cordiali saluti.
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500">Il PDF della fattura viene generato e allegato automaticamente.</div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <Button variant="outline" onClick={() => { setEmailTarget(null); setEmailTo(""); }}>Annulla</Button>
+                <Button className="bg-indaco hover:bg-indaco-dark" onClick={submitEmail} disabled={emailSending} data-testid="fatt-email-send">
+                  {emailSending ? "Invio…" : "Invia"}
+                </Button>
               </div>
             </div>
           )}

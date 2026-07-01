@@ -1,4 +1,14 @@
-# CleanTec - PRD (updated 01 Lug 2026 · Sistema permessi granulari admin → utenti)
+# CleanTec - PRD (updated 01 Lug 2026 · Batch fatturazione: 5/6 modifiche complete)
+
+## Latest changes (01 Lug 2026 - III · Batch 5 modifiche fatturazione)
+- **MOD 1 — Fattura per Ragione Sociale**: nuovi endpoint `GET /fatture/ragioni-sociali` (elenco RS con 2+ clienti) e `GET /fatture/fatturabili-rs?ragione_sociale=…` (DDT non fatturati di tutti i clienti-fratelli). `POST /fatture` accetta `ragione_sociale_mode=true` per validare cross-cliente. UI Fatture: toggle "Cliente / Ragione Sociale" nel dialog Nuova Fattura + dropdown RS.
+- **MOD 2 — Storico Apr+Mag 2026**: aggiunti a `STORICO_PREAPP_MONTHS`; nuovo endpoint `POST /fatturato-storico/aggregato` per registrare totale mensile senza dettaglio cliente. Popolati aprile 30.153,95 € + maggio 34.031,20 € (test verificato: `fatturato_anno` include ora 64.185,15 €).
+- **MOD 3 — Ordinamento cronologico DDT in fattura**: `POST /fatture` ordina i DDT per (data, numero) prima di salvare `ddt_dettagli`. `GET /fatture/{fid}` ri-ordina in output. `pdf_service.generate_fattura_pdf` ordina anche al momento del rendering PDF.
+- **MOD 4 — Invio email**: `smtp_service.send_email` ora supporta `attachments`. Nuovo endpoint `POST /fatture/{fid}/send-email` che genera PDF al volo, lo allega, invia via SMTP configurato e registra su fattura i campi `emails_sent[]`, `email_last_status`, `email_last_at`, `email_last_to`. UI: icona busta nella colonna azioni + dialog con pre-popolamento (email_fatturazione → email → PEC) + badge stato invio (sent/failed/logged) sotto il numero fattura.
+- **MOD 5 — Doppia numerazione F/C**: helper `_iva_suffix` (iva>0 → F, iva=0 → C); `_next_fattura_seq` supporta le due serie indipendenti con riempimento buchi interni + partenza da `max globale + 1`. Nuove fatture producono es. `FT-2026-00067F` / `FT-2026-00066C`. Le fatture pregresse mantengono il format vecchio.
+
+## Modifica 6 (riprogettazione Dipendenti) — RIMANDATA
+Non ricevuta conferma per Fase A/B nel messaggio utente. Da concordare in un batch successivo.
 
 ## Latest changes (01 Lug 2026 - II)
 - **Permessi granulari per-sezione** (Opzione 1: matrice sezione × view/edit):

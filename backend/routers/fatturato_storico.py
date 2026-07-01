@@ -346,3 +346,41 @@ async def delete_storico(rec_id: str, user: Dict = Depends(require_roles("admin"
     if not res.deleted_count:
         raise HTTPException(404, "Record non trovato")
     return {"ok": True}
+
+
+class StoricoAggregatoIn(BaseModel):
+    anno: int
+    mese: int
+    totale_netto: float
+    note: Optional[str] = ""
+
+
+@router.post("/fatturato-storico/aggregato")
+async def upsert_storico_aggregato(body: StoricoAggregatoIn, user: Dict = Depends(require_roles("admin"))):
+    """Registra/aggiorna il fatturato aggregato di un mese storico (senza dettaglio per cliente).
+    Salvato con `cliente_id=None` e `origine='aggregato_manuale'`.
+    Idempotente su (tenant_id, anno, mese, origine='aggregato_manuale').
+    """
+    if body.mese < 1 or body.mese > 12:
+        raise HTTPException(400, "mese deve essere tra 1 e 12")
+    tid = tenant_id_of(user)
+    doc = {
+        "id": new_id(),
+        "tenant_id": tid,
+        "cliente_id": None,
+        "cliente_denominazione": "Aggregato mensile",
+        "anno": int(body.anno),
+        "mese": int(body.mese),
+        "totale_netto": round(float(body.totale_netto), 2),
+        "origine": "aggregato_manuale",
+        "note": body.note or "",
+        "created_at": now_utc(),
+        "updated_at": now_utc(),
+    }
+    await db.fatturato_storico.update_one(
+        {"tenant_id": tid, "anno": doc["anno"], "mese": doc["mese"], "origine": "aggregato_manuale"},
+        {"$set": doc},
+        upsert=True,
+    )
+    await log_audit(user, "UPSERT_AGGREGATO", "fatturato_storico", f"{doc['anno']}-{doc['mese']:02d}", {"totale_netto": doc["totale_netto"]})
+    return doc

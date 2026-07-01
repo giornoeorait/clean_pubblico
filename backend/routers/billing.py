@@ -26,37 +26,81 @@ _WRITE = ("admin", "contabilita")
 _FATT_PREFIX = "FT"
 
 
-async def _next_fattura_seq(tenant_id: str, year: int, kind: str = "fattura") -> int:
-    """Restituisce il prossimo numero di fattura riempiendo i buchi.
+def _iva_suffix(iva_pct: float) -> str:
+    """Suffisso di serie in base all'IVA: F per IVA>0, C per IVA=0. Vuoto = legacy."""
+    try:
+        v = float(iva_pct)
+    except Exception:
+        v = 0.0
+    return "C" if v == 0 else "F"
 
-    Cerca prima il minimo `seq` mancante nella sequenza esistente per il tenant
-    nell'anno corrente. Se non ci sono buchi, incrementa il counter globale.
-    NB: quando riempiamo un buco NON tocchiamo `db.counters` per non perturbare
-    la sequenza principale.
-    """
+
+async def _global_max_fattura_seq(tenant_id: str, year: int) -> int:
+    """Max seq storico considerando tutte le fatture (legacy + F + C) di un tenant/anno."""
     docs = await db.fatture.find(
         {"tenant_id": tenant_id, "numero": {"$regex": rf"^{_FATT_PREFIX}-{year}-"}},
+        {"numero": 1, "_id": 0},
+    ).to_list(200000)
+    max_seq = 0
+    for d in docs:
+        m = re.match(rf"^{_FATT_PREFIX}-{year}-(\d+)[FC]?", d.get("numero", "") or "")
+        if m:
+            s = int(m.group(1))
+            if s > max_seq:
+                max_seq = s
+    return max_seq
+
+
+async def _next_fattura_seq(tenant_id: str, year: int, suffix: str = "", kind: str = "fattura") -> int:
+    """Restituisce il prossimo progressivo di fattura.
+
+    - Se `suffix` è vuoto: comportamento legacy con riempimento buchi su tutte le fatture.
+    - Se `suffix` è "F" o "C": due serie indipendenti. Il primo numero di ciascuna serie parte
+      dal max globale (legacy incluso) + 1; i buchi vengono riempiti solo all'interno della
+      propria serie.
+    """
+    if suffix in ("F", "C"):
+        pattern = rf"^{_FATT_PREFIX}-{year}-(\d+){suffix}$"
+        docs = await db.fatture.find(
+            {"tenant_id": tenant_id, "numero": {"$regex": pattern}},
+            {"numero": 1, "_id": 0},
+        ).to_list(100000)
+        used = set()
+        max_series = 0
+        for d in docs:
+            m = re.match(pattern, d.get("numero", "") or "")
+            if m:
+                s = int(m.group(1))
+                used.add(s)
+                if s > max_series:
+                    max_series = s
+        # Riempi buchi interni alla serie
+        for i in range(1, max_series + 1):
+            if i not in used:
+                return i
+        # Nessun buco: prossimo nella serie MA non minore del max globale (legacy incluso) + 1
+        global_max = await _global_max_fattura_seq(tenant_id, year)
+        return max(max_series + 1, global_max + 1)
+
+    # Legacy: nessun suffisso, riempimento buchi tra le fatture senza suffisso
+    docs = await db.fatture.find(
+        {"tenant_id": tenant_id, "numero": {"$regex": rf"^{_FATT_PREFIX}-{year}-\d+$"}},
         {"numero": 1, "_id": 0},
     ).to_list(100000)
     used = set()
     max_seq = 0
     for d in docs:
-        m = re.match(rf"^{_FATT_PREFIX}-{year}-(\d+)", d.get("numero", "") or "")
+        m = re.match(rf"^{_FATT_PREFIX}-{year}-(\d+)$", d.get("numero", "") or "")
         if m:
             s = int(m.group(1))
             used.add(s)
             if s > max_seq:
                 max_seq = s
-    # cerca il primo buco nella sequenza [1..max_seq]
     for i in range(1, max_seq + 1):
         if i not in used:
             return i
-    # nessun buco: usa contatore globale (safe: fa avanzare la sequenza)
     seq = await next_seq(kind)
-    # per evitare regressione: se il counter globale è dietro rispetto al
-    # numero massimo del DB (per esempio dopo restore/manuale) lo riallineiamo.
     if seq <= max_seq:
-        # riallineiamo il counter al valore corretto
         await db.counters.update_one(
             {"_id": kind}, {"$set": {"seq": max_seq + 1}}, upsert=True
         )
@@ -71,6 +115,10 @@ class FatturaFromDDT(BaseModel):
     scadenza: Optional[str] = None
     iva_pct: Optional[float] = None  # None → usa company.iva_default_pct (fallback 22)
     note: Optional[str] = ""
+    # Se true, i ddt_ids sono relativi a più clienti della stessa Ragione Sociale.
+    # Il `cliente_id` diventa l'intestatario "principale"; gli altri clienti (fratelli
+    # della stessa RS) vengono comunque marcati come fatturati e i loro DDT allegati.
+    ragione_sociale_mode: Optional[bool] = False
 
 
 class IncassoIn(BaseModel):
@@ -109,23 +157,110 @@ async def list_fatturabili(cliente_id: str, user: Dict = Depends(require_roles(*
     return {"ddts": ddts, "count": len(ddts), "totale_imponibile": totale}
 
 
+@router.get("/ragioni-sociali")
+async def list_ragioni_sociali(user: Dict = Depends(require_roles(*_WRITE))):
+    """Elenco delle Ragioni Sociali distinte dei clienti attivi, con contatore struttura.
+    Serve alla nuova modalità 'Fattura per Ragione Sociale'.
+    """
+    clienti = await db.clienti.find(
+        merge_scope(user, {}),
+        {"_id": 0, "id": 1, "ragione_sociale": 1, "denominazione_struttura": 1, "attivo": 1, "partita_iva": 1},
+    ).to_list(20000)
+    rs_map: Dict[str, Dict[str, Any]] = {}
+    for c in clienti:
+        rs = (c.get("ragione_sociale") or "").strip()
+        if not rs:
+            continue
+        key = rs.lower()
+        e = rs_map.setdefault(key, {
+            "ragione_sociale": rs,
+            "clienti_ids": [],
+            "clienti_count": 0,
+            "strutture": [],
+            "partita_iva": c.get("partita_iva") or "",
+        })
+        e["clienti_ids"].append(c["id"])
+        e["clienti_count"] += 1
+        if c.get("denominazione_struttura"):
+            e["strutture"].append(c["denominazione_struttura"])
+    result = list(rs_map.values())
+    # solo RS che raggruppano 2+ clienti (le altre coincidono con "per cliente")
+    result = [r for r in result if r["clienti_count"] >= 2]
+    result.sort(key=lambda x: x["ragione_sociale"].lower())
+    return result
+
+
+@router.get("/fatturabili-rs")
+async def list_fatturabili_by_rs(ragione_sociale: str, user: Dict = Depends(require_roles(*_WRITE))):
+    """DDT non fatturati di TUTTI i clienti con la stessa Ragione Sociale.
+    Include l'elenco dei clienti-fratelli e il totale imponibile aggregato.
+    """
+    rs = ragione_sociale.strip()
+    if not rs:
+        raise HTTPException(400, "ragione_sociale mancante")
+    siblings = await db.clienti.find(
+        merge_scope(user, {"ragione_sociale": {"$regex": f"^{re.escape(rs)}$", "$options": "i"}}),
+        {"_id": 0},
+    ).to_list(500)
+    if not siblings:
+        raise HTTPException(404, f"Nessun cliente con ragione sociale '{rs}'")
+    sib_ids = [s["id"] for s in siblings]
+    ddts = await db.ddt.find(
+        merge_scope(user, {"cliente_id": {"$in": sib_ids}, "stato_fatturazione": "non_fatturato"}),
+        {"_id": 0},
+    ).sort("data", 1).to_list(5000)
+    totale = round(sum(d.get("imponibile", 0) for d in ddts), 2)
+    return {
+        "ragione_sociale": rs,
+        "clienti": siblings,
+        "clienti_count": len(siblings),
+        "ddts": ddts,
+        "count": len(ddts),
+        "totale_imponibile": totale,
+    }
+
+
 @router.post("")
 async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(require_roles(*_WRITE))):
     cliente = await db.clienti.find_one(merge_scope(user, {"id": body.cliente_id}), {"_id": 0})
     if not cliente:
         raise HTTPException(400, "Cliente non trovato")
 
-    # Load DDTs belonging to this cliente AND not already invoiced
-    ddts = await db.ddt.find(
-        merge_scope(user, {
-            "id": {"$in": body.ddt_ids},
-            "cliente_id": body.cliente_id,
-            "stato_fatturazione": "non_fatturato",
-        }),
-        {"_id": 0},
-    ).to_list(len(body.ddt_ids))
+    # Se modalità "Ragione Sociale", i DDT possono appartenere a clienti diversi
+    # ma con la stessa ragione_sociale del cliente intestatario. In tal caso
+    # rimuoviamo il vincolo `cliente_id` sulla query DDT.
+    ddt_query: Dict[str, Any] = {
+        "id": {"$in": body.ddt_ids},
+        "stato_fatturazione": "non_fatturato",
+    }
+    if body.ragione_sociale_mode:
+        rs = (cliente.get("ragione_sociale") or "").strip()
+        if not rs:
+            raise HTTPException(400, "Cliente principale senza ragione sociale")
+        # elenco clienti-fratelli con stessa RS (case-insensitive)
+        siblings = await db.clienti.find(
+            merge_scope(user, {"ragione_sociale": {"$regex": f"^{re.escape(rs)}$", "$options": "i"}}),
+            {"_id": 0, "id": 1},
+        ).to_list(500)
+        sib_ids = [s["id"] for s in siblings] or [body.cliente_id]
+        ddt_query["cliente_id"] = {"$in": sib_ids}
+    else:
+        ddt_query["cliente_id"] = body.cliente_id
+
+    ddts = await db.ddt.find(merge_scope(user, ddt_query), {"_id": 0}).to_list(len(body.ddt_ids))
     if len(ddts) != len(body.ddt_ids):
         raise HTTPException(400, "Uno o più DDT non validi o già fatturati")
+
+    # Ordinamento cronologico crescente per data + numero (Modifica 3)
+    def _sort_key(d):
+        dt = d.get("data")
+        # tratta datetime/date/string uniformemente
+        try:
+            key_dt = dt.isoformat() if hasattr(dt, "isoformat") else str(dt or "")
+        except Exception:
+            key_dt = ""
+        return (key_dt, d.get("numero", ""))
+    ddts.sort(key=_sort_key)
 
     imponibile = round(sum(d.get("imponibile", 0) for d in ddts), 2)
 
@@ -183,9 +318,12 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
     fid = new_id()
     fatt_data = to_dt(body.data) or now_utc()
     year = fatt_data.year if hasattr(fatt_data, "year") else now_utc().year
-    seq = await _next_fattura_seq(user["tenant_id"], year)
+    # Doppia numerazione: suffisso F (IVA>0) / C (IVA=0)
+    suffix = _iva_suffix(iva_pct)
+    seq = await _next_fattura_seq(user["tenant_id"], year, suffix=suffix)
     from core import format_numero
-    numero = await format_numero("fattura", _FATT_PREFIX, seq)
+    base_numero = await format_numero("fattura", _FATT_PREFIX, seq)
+    numero = f"{base_numero}{suffix}"
 
     doc = {
         "id": fid,
@@ -452,6 +590,16 @@ async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
         doc["ddts"] = await db.ddt.find(
             merge_scope(user, {"id": {"$in": doc["ddt_ids"]}}), {"_id": 0}
         ).to_list(100)
+        # Ordinamento cronologico crescente (Mod. 3)
+        def _dsort(d):
+            dt = d.get("data")
+            try:
+                return (dt.isoformat() if hasattr(dt, "isoformat") else str(dt or ""), d.get("numero", ""))
+            except Exception:
+                return ("", d.get("numero", ""))
+        doc["ddts"].sort(key=_dsort)
+        if doc.get("ddt_dettagli"):
+            doc["ddt_dettagli"].sort(key=lambda x: (x.get("data") or "", x.get("numero") or ""))
         # Backfill on-the-fly per fatture vecchie senza ddt_dettagli/riepilogo_articoli
         if not doc.get("ddt_dettagli"):
             dets: List[Dict[str, Any]] = []
@@ -595,6 +743,99 @@ async def annulla_trasmissione(fid: str, user: Dict = Depends(require_roles("adm
     )
     await log_audit(user, "SDI_UNTRANSMITTED", "fattura", fid)
     return await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+
+
+# ---- Modifica 4: invio fattura via e-mail ----
+class InviaEmailIn(BaseModel):
+    to: Optional[str] = None  # se assente, usa l'email del cliente
+    subject: Optional[str] = None
+    body: Optional[str] = None
+
+
+def _client_email(cliente: Dict[str, Any]) -> str:
+    """Ritorna il primo indirizzo email valorizzato tra i possibili campi anagrafica."""
+    for k in ("email_fatturazione", "email", "pec"):
+        v = (cliente.get(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
+@router.post("/{fid}/send-email")
+async def send_fattura_email(fid: str, body: InviaEmailIn, user: Dict = Depends(require_roles(*_WRITE))):
+    """Genera il PDF della fattura, lo allega e invia via SMTP configurato.
+    Registra data/ora/utente ed esito su fattura.emails_sent e su db.email_events.
+    """
+    fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fattura:
+        raise HTTPException(404, "Fattura non trovata")
+    cliente = await db.clienti.find_one(merge_scope(user, {"id": fattura["cliente_id"]}), {"_id": 0})
+    if not cliente:
+        raise HTTPException(400, "Cliente non trovato")
+
+    to_email = (body.to or _client_email(cliente)).strip()
+    if not to_email:
+        raise HTTPException(400, "Nessun indirizzo e-mail disponibile per il cliente")
+
+    # PDF (genera al volo)
+    company = await db.company.find_one(tenant_scope(user), {"_id": 0}) or {}
+    ddt_list = await db.ddt.find(
+        merge_scope(user, {"id": {"$in": fattura.get("ddt_ids") or []}}), {"_id": 0}
+    ).to_list(500)
+    from pdf_service import generate_fattura_pdf
+    try:
+        pdf_bytes = generate_fattura_pdf(fattura, cliente, company, ddt_list)
+    except Exception as e:
+        raise HTTPException(500, f"Errore generazione PDF: {e}")
+
+    fdate = fattura.get("data")
+    fdate_str = fdate.strftime("%d/%m/%Y") if hasattr(fdate, "strftime") else str(fdate or "")
+    subject = body.subject or f"Fattura n. {fattura.get('numero','')} del {fdate_str}"
+    body_text = body.body or (
+        "Gentile Cliente,\n\n"
+        "come da riferimenti in oggetto, inviamo in allegato copia cortesia della fattura\n"
+        "relativa ai servizi mensili erogati.\n\n"
+        "Cordiali saluti."
+    )
+    filename = f"Fattura_{fattura.get('numero','')}.pdf"
+    attachments = [{"filename": filename, "content": pdf_bytes, "mime": "application/pdf"}]
+
+    from smtp_service import send_email
+    event = await send_email(
+        to=to_email,
+        subject=subject,
+        body_text=body_text,
+        tenant_id=user.get("tenant_id"),
+        context={"fattura_id": fid, "fattura_numero": fattura.get("numero")},
+        attachments=attachments,
+    )
+
+    status = event.get("status", "logged")
+    result = "sent" if status == "sent" else ("failed" if status == "failed" else "logged")
+    sent_at = now_utc()
+    user_label = user.get("name") or user.get("email") or user.get("id", "")
+    # append allo storico invii
+    entry = {
+        "at": sent_at,
+        "by": user_label,
+        "to": to_email,
+        "status": result,
+        "error": event.get("error"),
+    }
+    await db.fatture.update_one(
+        merge_scope(user, {"id": fid}),
+        {
+            "$push": {"emails_sent": entry},
+            "$set": {
+                "email_last_status": result,
+                "email_last_at": sent_at,
+                "email_last_to": to_email,
+                "updated_at": now_utc(),
+            },
+        },
+    )
+    await log_audit(user, "SEND_EMAIL", "fattura", fid, {"to": to_email, "status": result})
+    return {"ok": True, "status": result, "to": to_email, "error": event.get("error")}
 
 
 @router.post("/{fid}/incassa")

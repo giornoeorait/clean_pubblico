@@ -75,8 +75,12 @@ async def send_email(
     body_html: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
     tenant_id: Optional[str] = None,
+    attachments: Optional[list] = None,
 ) -> Dict[str, Any]:
-    """Send email via SMTP if configured; otherwise stub (log). Always persists to db.email_events."""
+    """Send email via SMTP if configured; otherwise stub (log). Always persists to db.email_events.
+
+    `attachments`: lista di dict {filename, content (bytes), mime (es 'application/pdf')}.
+    """
     event: Dict[str, Any] = {
         "id": new_id(),
         "to": to,
@@ -106,6 +110,20 @@ async def send_email(
     msg.set_content(body_text)
     if body_html:
         msg.add_alternative(body_html, subtype="html")
+
+    # Allegati
+    for att in (attachments or []):
+        if not att or not att.get("content"):
+            continue
+        mime = att.get("mime") or "application/octet-stream"
+        maintype, _, subtype = mime.partition("/")
+        subtype = subtype or "octet-stream"
+        msg.add_attachment(
+            att["content"],
+            maintype=maintype,
+            subtype=subtype,
+            filename=att.get("filename") or "attachment.bin",
+        )
 
     try:
         host = cfg["host"]

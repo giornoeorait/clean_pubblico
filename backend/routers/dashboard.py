@@ -9,7 +9,7 @@ router = APIRouter(tags=["dashboard"])
 # Mesi storici "pre-app" che vengono integrati automaticamente nelle statistiche
 # annuali della dashboard. Sono i mesi caricati via Excel prima dell'attivazione
 # completa dell'app (gennaio→marzo 2026).
-STORICO_PREAPP_MONTHS = [(2026, 1), (2026, 2), (2026, 3)]
+STORICO_PREAPP_MONTHS = [(2026, 1), (2026, 2), (2026, 3), (2026, 4), (2026, 5)]
 
 
 def _today_utc_start() -> datetime:

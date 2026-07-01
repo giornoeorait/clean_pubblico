@@ -380,6 +380,15 @@ def _riepilogo_articoli_table(riepilogo: List[Dict], st: Dict) -> Table:
 
 def generate_fattura_pdf(fattura: Dict, cliente: Dict, company: Dict, ddt_list: List[Dict]) -> bytes:
     st = _styles()
+    # Ordinamento cronologico crescente dei DDT: data crescente, numero crescente
+    def _dsort(d):
+        dt = d.get("data")
+        try:
+            k = dt.isoformat() if hasattr(dt, "isoformat") else str(dt or "")
+        except Exception:
+            k = ""
+        return (k, d.get("numero", ""))
+    ddt_list = sorted(ddt_list or [], key=_dsort)
     el: List = []
     el.append(_header_table(company, cliente, st))
     el.append(Spacer(1, 2*mm))
