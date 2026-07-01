@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import ClienteCombobox from "../components/ClienteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck } from "@phosphor-icons/react";
+import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck, PencilLine, PaperPlaneTilt } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
@@ -26,6 +26,10 @@ export default function Fatture() {
 
   // Detail
   const [detail, setDetail] = useState(null);
+
+  // Rinumerazione
+  const [renumTarget, setRenumTarget] = useState(null); // fattura selezionata
+  const [renumNumero, setRenumNumero] = useState("");
 
   const fetchAll = useCallback(async () => {
     const q = filterStato !== "all" ? `?stato_incasso=${filterStato}` : "";
@@ -84,6 +88,53 @@ export default function Fatture() {
     if (!window.confirm(`Eliminare ${f.numero}? I DDT torneranno fatturabili.`)) return;
     try { await api.delete(`/fatture/${f.id}`); toast.success("Eliminata"); fetchAll(); }
     catch (e) { toast.error(e.response?.data?.detail); }
+  };
+
+  const openRenum = (f) => {
+    if (f.xml_transmitted) {
+      toast.error("Fattura trasmessa a SDI: numero immutabile per legge");
+      return;
+    }
+    setRenumTarget(f);
+    setRenumNumero(f.numero || "");
+  };
+
+  const submitRenum = async () => {
+    if (!renumTarget) return;
+    if (!renumNumero || !renumNumero.trim()) {
+      toast.error("Inserisci un nuovo numero");
+      return;
+    }
+    try {
+      const { data } = await api.patch(`/fatture/${renumTarget.id}/rinumera`, { numero: renumNumero.trim() });
+      toast.success(`Rinumerata: ${data.numero}`);
+      setRenumTarget(null); setRenumNumero("");
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore rinumerazione");
+    }
+  };
+
+  const segnaTrasmessa = async (f) => {
+    if (!window.confirm(`Confermi che la fattura ${f.numero} è stata inviata a SDI?\nDopo questa azione il numero sarà bloccato.`)) return;
+    try {
+      await api.post(`/fatture/${f.id}/segna-trasmessa`);
+      toast.success(`${f.numero} · marcata come trasmessa a SDI`);
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore");
+    }
+  };
+
+  const sbloccaTrasmissione = async (f) => {
+    if (!window.confirm(`ATTENZIONE: sbloccare la trasmissione a SDI di ${f.numero}?\nUsalo solo se è stato un errore. Riabiliterà la rinumerazione.`)) return;
+    try {
+      await api.post(`/fatture/${f.id}/annulla-trasmissione`);
+      toast.success("Trasmissione SDI annullata");
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore");
+    }
   };
 
   const openPdf = async (f) => {
@@ -185,7 +236,14 @@ export default function Fatture() {
           <tbody>
             {list.map(f => (
               <tr key={f.id} className="border-b border-slate-100" data-testid={`fatt-${f.id}`}>
-                <td className="py-2 px-4 font-mono font-bold">{f.numero}</td>
+                <td className="py-2 px-4 font-mono font-bold">
+                  {f.numero}
+                  {f.xml_transmitted && (
+                    <div title={`Trasmessa a SDI${f.xml_transmitted_at ? ` il ${new Date(f.xml_transmitted_at).toLocaleDateString("it-IT")}` : ""}`} className="text-[9px] uppercase tracking-widest text-emerald-700 font-semibold flex items-center gap-0.5 mt-0.5">
+                      <PaperPlaneTilt size={9} weight="fill" /> SDI
+                    </div>
+                  )}
+                </td>
                 <td className="py-2 px-4">{new Date(f.data).toLocaleDateString("it-IT")}</td>
                 <td className="py-2 px-4">
                   <div>{docPrimary(f)}</div>
@@ -205,14 +263,22 @@ export default function Fatture() {
                   <Button variant="ghost" size="icon" onClick={() => openPdf(f)} title="Scarica PDF" data-testid={`fatt-pdf-${f.id}`}><FilePdf size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => validateXml(f)} title="Verifica conformità SdI" data-testid={`fatt-validate-${f.id}`}><ShieldCheck size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML Fattura Elettronica" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => openDetail(f)}><Eye size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => openDetail(f)} title="Dettaglio" data-testid={`fatt-detail-${f.id}`}><Eye size={14} /></Button>
+                  {!f.xml_transmitted && (
+                    <Button variant="ghost" size="icon" onClick={() => openRenum(f)} title="Rinumera fattura" data-testid={`fatt-renum-${f.id}`}><PencilLine size={14} /></Button>
+                  )}
+                  {!f.xml_transmitted ? (
+                    <Button variant="ghost" size="icon" onClick={() => segnaTrasmessa(f)} title="Segna come trasmessa a SDI (blocca il numero)" data-testid={`fatt-segna-sdi-${f.id}`}><PaperPlaneTilt size={14} className="text-indaco" /></Button>
+                  ) : (
+                    <Button variant="ghost" size="icon" onClick={() => sbloccaTrasmissione(f)} title="Sblocca trasmissione SDI (solo admin, per errori)" data-testid={`fatt-sblocca-sdi-${f.id}`}><PaperPlaneTilt size={14} weight="fill" className="text-emerald-600" /></Button>
+                  )}
                   {f.stato_incasso !== "incassata" && (
                     <Button size="sm" onClick={() => incassa(f)} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`fatt-incassa-${f.id}`}>
                       <CurrencyEur size={12} className="mr-1" />Incassa
                     </Button>
                   )}
-                  {f.stato_incasso !== "incassata" && (
-                    <Button variant="ghost" size="icon" onClick={() => delFattura(f)} className="text-red-600"><Trash size={14} /></Button>
+                  {f.stato_incasso !== "incassata" && !f.xml_transmitted && (
+                    <Button variant="ghost" size="icon" onClick={() => delFattura(f)} className="text-red-600" title="Elimina" data-testid={`fatt-del-${f.id}`}><Trash size={14} /></Button>
                   )}
                 </td>
               </tr>
@@ -351,6 +417,48 @@ export default function Fatture() {
                 <div className="flex justify-between"><span>Imponibile</span><span className="font-mono">€ {detail.imponibile.toFixed(2)}</span></div>
                 <div className="flex justify-between text-slate-500"><span>IVA {detail.iva_pct}%</span><span className="font-mono">€ {detail.iva.toFixed(2)}</span></div>
                 <div className="flex justify-between font-bold text-lg"><span>Totale</span><span className="font-mono text-indaco">€ {detail.totale.toFixed(2)}</span></div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog rinumerazione fattura */}
+      <Dialog open={!!renumTarget} onOpenChange={(o) => { if (!o) { setRenumTarget(null); setRenumNumero(""); } }}>
+        <DialogContent className="max-w-md" data-testid="fatt-renum-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PencilLine size={18} /> Rinumera fattura
+            </DialogTitle>
+          </DialogHeader>
+          {renumTarget && (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <div className="text-slate-500">Numero attuale</div>
+                <div className="font-mono font-bold text-base">{renumTarget.numero}</div>
+              </div>
+              <div>
+                <Label>Nuovo numero</Label>
+                <Input
+                  value={renumNumero}
+                  onChange={(e) => setRenumNumero(e.target.value.toUpperCase())}
+                  placeholder="es. FT-2026-00042"
+                  className="font-mono"
+                  data-testid="fatt-renum-input"
+                />
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Formato accettato: <code>FT-YYYY-NNNNN</code>. L&apos;anno deve coincidere con quello della fattura.
+                </div>
+              </div>
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
+                <b>Attenzione:</b> modifica il numero <b>solo se la fattura NON è stata trasmessa a SDI</b>.
+                Una fattura già inviata al SdI ha numero fiscale immutabile.
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <Button variant="outline" onClick={() => { setRenumTarget(null); setRenumNumero(""); }}>Annulla</Button>
+                <Button className="bg-indaco hover:bg-indaco-dark" onClick={submitRenum} data-testid="fatt-renum-save">
+                  Rinumera
+                </Button>
               </div>
             </div>
           )}

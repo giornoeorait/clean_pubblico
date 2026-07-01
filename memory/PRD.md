@@ -1,4 +1,23 @@
-# CleanTec - PRD (updated 30 Giu 2026 · Batch 5 funzionalità operative + statistiche)
+# CleanTec - PRD (updated 01 Lug 2026 · Numerazione fatture: auto-riempimento buchi + rinumerazione manuale)
+
+## Latest changes (01 Lug 2026)
+- **Auto-riempimento buchi nella numerazione fatture** (opzione A):
+  - `billing.py::_next_fattura_seq` cerca il primo buco nella sequenza `FT-YYYY-NNNNN` del tenant/anno corrente e riutilizza quel numero prima di incrementare il counter globale.
+  - Riallineamento automatico del counter globale se dietro rispetto al max effettivo del DB (safe dopo restore).
+- **Rinumerazione manuale fattura** (opzione B):
+  - Nuovo endpoint `PATCH /api/fatture/{fid}/rinumera` (body: `seq` o `numero` completo).
+  - Validazioni: formato `FT-YYYY-NNNNN`, anno coerente con `fattura.data.year`, univocità per tenant/anno.
+  - Blocco fiscale: rifiuta 409 se `xml_transmitted=true`.
+  - Aggiorna denormalizzazione: DDT collegati vedono il nuovo `fattura_numero`.
+- **Flag "trasmessa a SDI"** per proteggere l'immutabilità fiscale:
+  - Nuovi campi doc fattura: `xml_transmitted`, `xml_transmitted_at`, `xml_transmitted_by`.
+  - Endpoint `POST /api/fatture/{fid}/segna-trasmessa` (blocca il numero).
+  - Endpoint `POST /api/fatture/{fid}/annulla-trasmissione` (SOLO admin, per errori).
+  - Sull'eliminazione: bottone Trash nascosto se `xml_transmitted=true` (impedisce eliminazione di fatture ufficialmente inviate).
+- **UI Fatture.jsx**:
+  - Nuova icona **matita** (`fatt-renum-{id}`) per aprire il dialog "Rinumera fattura" con warning fiscale.
+  - Nuova icona **aeroplanino** (`fatt-segna-sdi-{id}` / `fatt-sblocca-sdi-{id}`) per toggle SDI-trasmesso.
+  - Badge **SDI** sotto il numero fattura quando trasmessa.
 
 ## Latest changes (30 Giu 2026)
 - **Punto 1 — Riepilogo cumulativo articoli in fattura**:

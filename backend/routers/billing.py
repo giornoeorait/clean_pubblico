@@ -6,6 +6,7 @@ Flusso:
 3. POST /fatture/{fid}/incassa -> imposta incasso
 4. GET /sospesi -> fatture da_incassare
 """
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +20,48 @@ from core import (
 
 router = APIRouter(prefix="/fatture", tags=["billing"])
 _WRITE = ("admin", "contabilita")
+
+
+# ---- Numerazione con riempimento automatico dei buchi ----
+_FATT_PREFIX = "FT"
+
+
+async def _next_fattura_seq(tenant_id: str, year: int, kind: str = "fattura") -> int:
+    """Restituisce il prossimo numero di fattura riempiendo i buchi.
+
+    Cerca prima il minimo `seq` mancante nella sequenza esistente per il tenant
+    nell'anno corrente. Se non ci sono buchi, incrementa il counter globale.
+    NB: quando riempiamo un buco NON tocchiamo `db.counters` per non perturbare
+    la sequenza principale.
+    """
+    docs = await db.fatture.find(
+        {"tenant_id": tenant_id, "numero": {"$regex": rf"^{_FATT_PREFIX}-{year}-"}},
+        {"numero": 1, "_id": 0},
+    ).to_list(100000)
+    used = set()
+    max_seq = 0
+    for d in docs:
+        m = re.match(rf"^{_FATT_PREFIX}-{year}-(\d+)", d.get("numero", "") or "")
+        if m:
+            s = int(m.group(1))
+            used.add(s)
+            if s > max_seq:
+                max_seq = s
+    # cerca il primo buco nella sequenza [1..max_seq]
+    for i in range(1, max_seq + 1):
+        if i not in used:
+            return i
+    # nessun buco: usa contatore globale (safe: fa avanzare la sequenza)
+    seq = await next_seq(kind)
+    # per evitare regressione: se il counter globale è dietro rispetto al
+    # numero massimo del DB (per esempio dopo restore/manuale) lo riallineiamo.
+    if seq <= max_seq:
+        # riallineiamo il counter al valore corretto
+        await db.counters.update_one(
+            {"_id": kind}, {"$set": {"seq": max_seq + 1}}, upsert=True
+        )
+        return max_seq + 1
+    return seq
 
 
 class FatturaFromDDT(BaseModel):
@@ -137,10 +180,12 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
     iva = round(imponibile * iva_pct / 100, 2)
     totale = round(imponibile + iva, 2)
 
-    seq = await next_seq("fattura")
     fid = new_id()
+    fatt_data = to_dt(body.data) or now_utc()
+    year = fatt_data.year if hasattr(fatt_data, "year") else now_utc().year
+    seq = await _next_fattura_seq(user["tenant_id"], year)
     from core import format_numero
-    numero = await format_numero("fattura", "FT", seq)
+    numero = await format_numero("fattura", _FATT_PREFIX, seq)
 
     doc = {
         "id": fid,
@@ -148,7 +193,7 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         "cliente_id": body.cliente_id,
         "cliente_nome": cliente.get("ragione_sociale", ""),
         "cliente_denominazione": cliente.get("denominazione_struttura", ""),
-        "data": to_dt(body.data) or now_utc(),
+        "data": fatt_data,
         "scadenza": to_dt(body.scadenza) if body.scadenza else None,
         "iva_pct": iva_pct,
         "imponibile": imponibile,
@@ -162,6 +207,9 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
         "stato_incasso": "da_incassare",
         "data_incasso": None,
         "metodo_incasso": None,
+        "xml_transmitted": False,
+        "xml_transmitted_at": None,
+        "xml_transmitted_by": None,
         "created_at": now_utc(),
         "updated_at": now_utc(),
     }
@@ -440,6 +488,113 @@ async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
                 riep.append(e)
             doc["riepilogo_articoli"] = sorted(riep, key=lambda x: (x.get("codice") or "", x.get("descrizione") or ""))
     return doc
+
+
+class RinumeraIn(BaseModel):
+    """Rinumera una fattura non ancora trasmessa a SDI.
+    L'utente può passare direttamente il progressivo numerico (`seq`) oppure il
+    numero completo (`numero`, che verrà validato contro il pattern
+    `FT-YYYY-NNNNN[suffix]`).
+    """
+    seq: Optional[int] = None
+    numero: Optional[str] = None
+
+
+@router.patch("/{fid}/rinumera")
+async def rinumera_fattura(fid: str, body: RinumeraIn, user: Dict = Depends(require_roles(*_WRITE))):
+    """Modifica manuale del numero fattura (solo per fatture NON trasmesse a SDI)."""
+    fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fattura:
+        raise HTTPException(404, "Fattura non trovata")
+    if fattura.get("xml_transmitted"):
+        raise HTTPException(409, "La fattura risulta già trasmessa a SDI: numero non modificabile per legge. Sblocca la trasmissione se hai fatto un errore.")
+
+    old_numero = fattura.get("numero")
+    fatt_data = fattura.get("data")
+    year = fatt_data.year if hasattr(fatt_data, "year") else now_utc().year
+
+    # Costruzione del nuovo numero
+    if body.numero and body.numero.strip():
+        new_numero = body.numero.strip().upper()
+        # accetta anche solo la parte progressiva ("00003") come fallback
+        m = re.match(rf"^{_FATT_PREFIX}-(\d{{4}})-(\d+)(.*)$", new_numero)
+        if not m:
+            raise HTTPException(400, f"Formato numero non valido. Atteso: {_FATT_PREFIX}-{year}-00001[suffix]")
+        num_year = int(m.group(1))
+        if num_year != year:
+            raise HTTPException(400, f"L'anno del numero ({num_year}) non corrisponde all'anno della fattura ({year})")
+    elif body.seq is not None:
+        if body.seq < 1:
+            raise HTTPException(400, "Il progressivo deve essere >= 1")
+        from core import format_numero
+        new_numero = await format_numero("fattura", _FATT_PREFIX, int(body.seq))
+    else:
+        raise HTTPException(400, "Specificare `seq` (progressivo numerico) oppure `numero` completo")
+
+    if new_numero == old_numero:
+        return fattura
+
+    # univocità nel tenant/anno
+    dup = await db.fatture.find_one({
+        "tenant_id": user["tenant_id"],
+        "numero": new_numero,
+        "id": {"$ne": fid},
+    }, {"_id": 0, "id": 1, "numero": 1})
+    if dup:
+        raise HTTPException(409, f"Il numero {new_numero} è già usato da un'altra fattura di questo anno.")
+
+    await db.fatture.update_one(
+        merge_scope(user, {"id": fid}),
+        {"$set": {"numero": new_numero, "updated_at": now_utc()}},
+    )
+    # aggiorna anche i DDT collegati (denormalizzazione)
+    await db.ddt.update_many(
+        merge_scope(user, {"fattura_id": fid}),
+        {"$set": {"fattura_numero": new_numero, "updated_at": now_utc()}},
+    )
+    await log_audit(user, "RINUMERA", "fattura", fid, {"old": old_numero, "new": new_numero})
+    return await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+
+
+@router.post("/{fid}/segna-trasmessa")
+async def segna_fattura_trasmessa(fid: str, user: Dict = Depends(require_roles(*_WRITE))):
+    """Marca la fattura come inviata a SDI. Dopo questa azione il numero è immutabile."""
+    fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fattura:
+        raise HTTPException(404, "Fattura non trovata")
+    if fattura.get("xml_transmitted"):
+        return fattura
+    user_label = user.get("name") or user.get("email") or user.get("id", "")
+    await db.fatture.update_one(
+        merge_scope(user, {"id": fid}),
+        {"$set": {
+            "xml_transmitted": True,
+            "xml_transmitted_at": now_utc(),
+            "xml_transmitted_by": user_label,
+            "updated_at": now_utc(),
+        }},
+    )
+    await log_audit(user, "SDI_TRANSMITTED", "fattura", fid)
+    return await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+
+
+@router.post("/{fid}/annulla-trasmissione")
+async def annulla_trasmissione(fid: str, user: Dict = Depends(require_roles("admin"))):
+    """Rimuove il flag di trasmissione — SOLO ADMIN (per errori). Non ha effetti fiscali."""
+    fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
+    if not fattura:
+        raise HTTPException(404, "Fattura non trovata")
+    await db.fatture.update_one(
+        merge_scope(user, {"id": fid}),
+        {"$set": {
+            "xml_transmitted": False,
+            "xml_transmitted_at": None,
+            "xml_transmitted_by": None,
+            "updated_at": now_utc(),
+        }},
+    )
+    await log_audit(user, "SDI_UNTRANSMITTED", "fattura", fid)
+    return await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
 
 
 @router.post("/{fid}/incassa")
