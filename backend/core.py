@@ -194,6 +194,87 @@ async def log_audit(user: Dict[str, Any], azione: str, entita: str,
     })
 
 
+# --- Permessi granulari (matrice sezione × view/edit) ---------------------
+# Elenco chiavi valide delle sezioni: ogni chiave ha 2 flag (view, edit).
+# Se un utente non ha `permissions` impostati, si applica il default per ruolo.
+PERMISSION_SECTIONS = [
+    "clienti", "articoli", "listini", "offerte", "ordinativi", "ddt",
+    "fatture", "sospesi", "fornitori", "fatture_fornitore", "ddt_ricevuti",
+    "costi", "dipendenti", "report",
+]
+
+_ROLE_DEFAULT_PERMISSIONS: Dict[str, Dict[str, Dict[str, bool]]] = {
+    "admin": {s: {"view": True, "edit": True} for s in PERMISSION_SECTIONS},
+    "contabilita": {s: {"view": True, "edit": True} for s in PERMISSION_SECTIONS},
+    "logistica": {
+        # Vede + modifica il flusso operativo (clienti/articoli/DDT/ordinativi/DDT ricevuti)
+        "clienti":            {"view": True,  "edit": True},
+        "articoli":           {"view": True,  "edit": True},
+        "listini":            {"view": True,  "edit": False},
+        "offerte":            {"view": True,  "edit": False},
+        "ordinativi":         {"view": True,  "edit": True},
+        "ddt":                {"view": True,  "edit": True},
+        "ddt_ricevuti":       {"view": True,  "edit": True},
+        # No accesso a fatture / sospesi / fornitori / costi / dipendenti / report
+        "fatture":            {"view": False, "edit": False},
+        "sospesi":            {"view": False, "edit": False},
+        "fornitori":          {"view": False, "edit": False},
+        "fatture_fornitore":  {"view": False, "edit": False},
+        "costi":              {"view": False, "edit": False},
+        "dipendenti":         {"view": False, "edit": False},
+        "report":             {"view": False, "edit": False},
+    },
+}
+
+
+def default_permissions_for_role(role: str) -> Dict[str, Dict[str, bool]]:
+    """Restituisce il set di permessi di default per un ruolo (deep copy)."""
+    base = _ROLE_DEFAULT_PERMISSIONS.get(role)
+    if base:
+        return {k: dict(v) for k, v in base.items()}
+    # ruolo sconosciuto → tutto disabilitato di default
+    return {s: {"view": False, "edit": False} for s in PERMISSION_SECTIONS}
+
+
+def resolve_permissions(user: Dict[str, Any]) -> Dict[str, Dict[str, bool]]:
+    """Combina i default del ruolo con l'eventuale override salvato sull'utente.
+    Admin e superadmin ottengono sempre `view=edit=true` su tutto (bypass)."""
+    role = (user or {}).get("role") or ""
+    if role in ("admin", "superadmin"):
+        return {s: {"view": True, "edit": True} for s in PERMISSION_SECTIONS}
+    perms = default_permissions_for_role(role)
+    override = (user or {}).get("permissions") or {}
+    if isinstance(override, dict):
+        for section, flags in override.items():
+            if section not in perms or not isinstance(flags, dict):
+                continue
+            for k in ("view", "edit"):
+                if k in flags:
+                    perms[section][k] = bool(flags[k])
+    return perms
+
+
+def has_permission(user: Dict[str, Any], section: str, action: str = "view") -> bool:
+    """Ritorna True se l'utente ha il permesso `action` (view|edit) sulla `section`."""
+    if action not in ("view", "edit"):
+        return False
+    perms = resolve_permissions(user)
+    entry = perms.get(section, {})
+    return bool(entry.get(action, False))
+
+
+def require_permission(section: str, action: str = "view"):
+    """Dependency FastAPI: rifiuta 403 se l'utente non ha il permesso richiesto."""
+    async def checker(user: Dict[str, Any] = Depends(get_current_user)):
+        if not has_permission(user, section, action):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permessi insufficienti per {action} · sezione '{section}'",
+            )
+        return user
+    return checker
+
+
 # --- Auth dependencies ----------------------------------------------------
 async def get_current_user(request: Request) -> Dict[str, Any]:
     token = request.cookies.get("access_token")

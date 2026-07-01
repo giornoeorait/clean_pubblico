@@ -1,7 +1,7 @@
 """Users management (admin only)."""
 from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
-from core import db, new_id, now_utc, hash_password, require_roles, log_audit, tenant_scope, inject_tenant, merge_scope, enforce_quota
+from core import db, new_id, now_utc, hash_password, require_roles, log_audit, tenant_scope, inject_tenant, merge_scope, enforce_quota, PERMISSION_SECTIONS
 from schemas import UserCreate, PatchUserIn
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -53,6 +53,17 @@ async def update_user(uid: str, body: PatchUserIn, user: Dict = Depends(require_
         data["password_hash"] = hash_password(data.pop("password"))
     else:
         data.pop("password", None)
+    # Sanifica `permissions`: accetta solo chiavi sezione conosciute e coerce boolean
+    if "permissions" in data:
+        raw = data.get("permissions") or {}
+        clean: Dict[str, Dict[str, bool]] = {}
+        for s in PERMISSION_SECTIONS:
+            src = raw.get(s) or {}
+            clean[s] = {
+                "view": bool(src.get("view", False)),
+                "edit": bool(src.get("edit", False)),
+            }
+        data["permissions"] = clean
     if not data:
         return {"ok": True}
     await db.users.update_one(merge_scope(user, {"id": uid}), {"$set": data})

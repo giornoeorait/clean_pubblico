@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useBranding } from "../context/BrandingContext";
+import { usePermissions } from "../lib/permissions";
 import api from "../lib/api";
 import TrialBanner from "./TrialBanner";
 import AlertsBanner from "./AlertsBanner";
@@ -15,21 +16,21 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 const ALL_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: ChartBar, roles: ["admin", "contabilita", "logistica"] },
-  { to: "/clienti", label: "Clienti", icon: Users, roles: ["admin", "contabilita", "logistica"] },
-  { to: "/articoli", label: "Articoli", icon: Package, roles: ["admin", "contabilita"] },
-  { to: "/listini", label: "Listini", icon: Receipt, roles: ["admin", "contabilita"] },
-  { to: "/offerte", label: "Offerte & Preventivi", icon: HandHeart, roles: ["admin", "contabilita"] },
-  { to: "/ordinativi", label: "Ordinativi", icon: ShoppingCart, roles: ["admin", "logistica", "contabilita"] },
-  { to: "/ddt", label: "D.D.T.", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
-  { to: "/fatture", label: "Fatturazione", icon: Receipt, roles: ["admin", "contabilita"] },
-  { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, roles: ["admin", "contabilita"] },
-  { to: "/fornitori", label: "Fornitori", icon: Factory, roles: ["admin", "contabilita"] },
-  { to: "/fornitori/ddt", label: "DDT ricevuti", icon: Truck, roles: ["admin", "logistica", "contabilita"] },
-  { to: "/fornitori/fatture", label: "Fatture fornitore", icon: Receipt, roles: ["admin", "contabilita"] },
-  { to: "/costi", label: "Costi", icon: Wallet, roles: ["admin", "contabilita"] },
-  { to: "/dipendenti", label: "Dipendenti", icon: Users, roles: ["admin", "contabilita"] },
+  { to: "/clienti", label: "Clienti", icon: Users, section: "clienti", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/articoli", label: "Articoli", icon: Package, section: "articoli", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/listini", label: "Listini", icon: Receipt, section: "listini", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/offerte", label: "Offerte & Preventivi", icon: HandHeart, section: "offerte", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/ordinativi", label: "Ordinativi", icon: ShoppingCart, section: "ordinativi", roles: ["admin", "logistica", "contabilita"] },
+  { to: "/ddt", label: "D.D.T.", icon: Truck, section: "ddt", roles: ["admin", "logistica", "contabilita"] },
+  { to: "/fatture", label: "Fatturazione", icon: Receipt, section: "fatture", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, section: "sospesi", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/fornitori", label: "Fornitori", icon: Factory, section: "fornitori", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/fornitori/ddt", label: "DDT ricevuti", icon: Truck, section: "ddt_ricevuti", roles: ["admin", "logistica", "contabilita"] },
+  { to: "/fornitori/fatture", label: "Fatture fornitore", icon: Receipt, section: "fatture_fornitore", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/costi", label: "Costi", icon: Wallet, section: "costi", roles: ["admin", "contabilita", "logistica"] },
+  { to: "/dipendenti", label: "Dipendenti", icon: Users, section: "dipendenti", roles: ["admin", "contabilita", "logistica"] },
   { to: "/automezzi", label: "Automezzi", icon: Truck, roles: ["admin", "contabilita"] },
-  { to: "/report", label: "Report & BI", icon: ChartBar, roles: ["admin", "contabilita"] },
+  { to: "/report", label: "Report & BI", icon: ChartBar, section: "report", roles: ["admin", "contabilita", "logistica"] },
   { to: "/utenti", label: "Utenti & Audit", icon: UserList, roles: ["admin"] },
   { to: "/azienda", label: "Anagrafica azienda", icon: Buildings, roles: ["admin"] },
   { to: "/backup-dati", label: "Backup & Dati", icon: Database, roles: ["admin"] },
@@ -42,6 +43,7 @@ const ALL_ITEMS = [
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
+  const { canView, isAdmin } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -113,7 +115,12 @@ export default function Layout({ children }) {
     if (user.role === "superadmin") return true;
     // Non-superadmin users should NEVER see superadmin-only items, even if admin
     if (i.roles.length === 1 && i.roles[0] === "superadmin") return false;
-    return i.roles.includes(user.role) || user.role === "admin";
+    const roleOk = i.roles.includes(user.role) || user.role === "admin";
+    if (!roleOk) return false;
+    // Se la voce è associata a una `section` di permessi, controlla anche canView
+    // (admin sempre true via `isAdmin`).
+    if (i.section && !isAdmin && !canView(i.section)) return false;
+    return true;
   });
 
   const handleLogout = async () => {

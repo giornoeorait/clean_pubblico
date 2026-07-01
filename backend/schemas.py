@@ -15,6 +15,7 @@ class UserCreate(BaseModel):
     role: str = "contabilita"
     cliente_id: Optional[str] = None
     can_edit_dates: Optional[bool] = False
+    permissions: Optional[Dict[str, Dict[str, bool]]] = None
 
 
 class ClienteIn(BaseModel):
@@ -197,6 +198,7 @@ class PatchUserIn(_PatchBase):
     cliente_id: Optional[str] = None
     password: Optional[str] = None
     can_edit_dates: Optional[bool] = None
+    permissions: Optional[Dict[str, Dict[str, bool]]] = None
 
 
 class PatchClienteIn(_PatchBase):

@@ -1,6 +1,20 @@
-# CleanTec - PRD (updated 01 Lug 2026 · Numerazione fatture: auto-riempimento buchi + rinumerazione manuale)
+# CleanTec - PRD (updated 01 Lug 2026 · Sistema permessi granulari admin → utenti)
 
-## Latest changes (01 Lug 2026)
+## Latest changes (01 Lug 2026 - II)
+- **Permessi granulari per-sezione** (Opzione 1: matrice sezione × view/edit):
+  - Backend `core.py`: costanti `PERMISSION_SECTIONS` (14 sezioni) + `_ROLE_DEFAULT_PERMISSIONS` (default per admin/contabilita/logistica) + helper `resolve_permissions`, `has_permission`, `require_permission`.
+  - Nuovo campo doc user: `permissions: {section: {view, edit}}`. Se assente/null → si applicano i default del ruolo.
+  - `POST /auth/login` e `GET /auth/me` restituiscono ora `user.permissions_resolved` (matrice risolta).
+  - `PATCH /api/users/{uid}` accetta e sanifica `permissions` (accetta solo chiavi sezione conosciute + coerce boolean).
+- **Frontend**:
+  - `lib/permissions.js`: hook `usePermissions()` espone `canView(section)` / `canEdit(section)`. Admin bypassa tutto.
+  - `components/Layout.jsx`: sidebar ora filtra per `canView(section)`, coerentemente con il backend.
+  - `pages/Utenti.jsx`: nuova azione "Sliders" (icona equalizzatore) che apre un **Dialog matrice permessi** con:
+    - Preset rapidi: "Solo lettura", "Tutto attivo", "Logistica standard", "Contabilità standard".
+    - Checkbox per ogni sezione × (Vede / Modifica).
+    - Logica di coerenza: disattivare *Vede* disattiva anche *Modifica*; attivare *Modifica* forza *Vede*.
+
+## Latest changes (01 Lug 2026 - I)
 - **Auto-riempimento buchi nella numerazione fatture** (opzione A):
   - `billing.py::_next_fattura_seq` cerca il primo buco nella sequenza `FT-YYYY-NNNNN` del tenant/anno corrente e riutilizza quel numero prima di incrementare il counter globale.
   - Riallineamento automatico del counter globale se dietro rispetto al max effettivo del DB (safe dopo restore).
