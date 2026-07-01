@@ -4,11 +4,11 @@ import PageHeader from "../components/PageHeader";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import ClienteCombobox from "../components/ClienteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, Package, CalendarBlank, ShieldCheck } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
-import { clientePrimary, docPrimary, docSecondary } from "../lib/clienteLabel";
+import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
 
 export default function Fatture() {
@@ -230,12 +230,12 @@ export default function Fatture() {
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <Label>Cliente *</Label>
-                <Select value={genCli} onValueChange={setGenCli}>
-                  <SelectTrigger data-testid="fatt-cliente"><SelectValue placeholder="Seleziona cliente…" /></SelectTrigger>
-                  <SelectContent>
-                    {clienti.filter(c => c.attivo !== false).map(c => <SelectItem key={c.id} value={c.id}>{clientePrimary(c)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <ClienteCombobox
+                  clienti={clienti.filter(c => c.attivo !== false)}
+                  value={genCli}
+                  onChange={setGenCli}
+                  testId="fatt-cliente"
+                />
               </div>
               <div>
                 <Label>IVA %</Label>
