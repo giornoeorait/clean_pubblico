@@ -17,7 +17,7 @@ Schema:
 """
 import secrets
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -150,6 +150,30 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
         await _notify_new_order(tenant_id, doc, cli)
     except Exception:
         pass
+    # Conferma ordine al CLIENTE (email cliente) — best-effort
+    try:
+        cres = await _send_order_confirmation_to_client(tenant_id, doc, cli)
+        if cres.get("status") != "skipped":
+            entry = {
+                "at": now_utc(),
+                "by": "system",
+                "to": cres.get("to"),
+                "status": cres.get("status"),
+                "error": cres.get("error"),
+            }
+            await db.ordinativi.update_one(
+                {"id": doc["id"]},
+                {
+                    "$push": {"client_emails_sent": entry},
+                    "$set": {
+                        "client_email_last_status": cres.get("status"),
+                        "client_email_last_at": now_utc(),
+                        "client_email_last_to": cres.get("to"),
+                    },
+                },
+            )
+    except Exception:
+        pass
     return doc
 
 
@@ -197,6 +221,89 @@ async def _notify_new_order(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Non
         except Exception:
             # Skip individual failures
             pass
+
+
+async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Dict[str, Any]:
+    """Invia al CLIENTE (indirizzo `email` in anagrafica) la conferma dell'ordine
+    con il riepilogo articoli, data consegna, totale ed eventuale ritiro lavanderia.
+
+    Ritorna dict {status, to, error} così l'endpoint di reinvio può segnalarlo.
+    Se l'email del cliente non è presente, ritorna status='skipped'.
+    """
+    to_email = (cliente.get("email") or "").strip()
+    if not to_email:
+        return {"status": "skipped", "to": "", "error": "Nessuna email cliente"}
+
+    from smtp_service import send_email
+    cli_label = (cliente.get("denominazione_struttura")
+                 or cliente.get("ragione_sociale") or "Cliente")
+    righe = ord_doc.get("righe") or []
+
+    def _qty_fmt(q):
+        try:
+            qn = float(q)
+            return int(qn) if qn == int(qn) else qn
+        except Exception:
+            return q
+
+    righe_lines = "\n".join(
+        f"  · {r.get('descrizione') or r.get('codice') or '—'} × {_qty_fmt(r.get('quantita'))}"
+        for r in righe
+    ) or "  (nessuna riga)"
+
+    d_consegna = ord_doc.get("data_consegna_richiesta") or "non specificata"
+    if hasattr(d_consegna, "strftime"):
+        d_consegna_str = d_consegna.strftime("%d/%m/%Y")
+    else:
+        # può essere ISO string YYYY-MM-DD
+        try:
+            d_consegna_str = str(d_consegna)[:10]
+            # normalize YYYY-MM-DD → DD/MM/YYYY
+            if len(d_consegna_str) == 10 and d_consegna_str[4] == "-":
+                y, m, d = d_consegna_str.split("-")
+                d_consegna_str = f"{d}/{m}/{y}"
+        except Exception:
+            d_consegna_str = str(d_consegna)
+
+    totale = ord_doc.get("totale", 0)
+    numero = ord_doc.get("numero")
+    ritiro_lav = ord_doc.get("ritiro_lavanderia", False)
+    note_c = (ord_doc.get("note_cliente") or "").strip()
+
+    subject = f"Conferma ordine {numero} - CleanTec"
+    lines = [
+        f"Gentile {cli_label},",
+        "",
+        "la ringraziamo per il suo ordine.",
+        "Le confermiamo di aver ricevuto le seguenti richieste:",
+        "",
+        f"Numero ordine: {numero}",
+        f"Data consegna richiesta: {d_consegna_str}",
+        "",
+        "Articoli:",
+        righe_lines,
+        "",
+        f"Totale stimato: € {float(totale):.2f}",
+    ]
+    if ritiro_lav:
+        lines += ["", "L'ordine sarà ritirato in lavanderia."]
+    if note_c:
+        lines += ["", f"Note: {note_c}"]
+    lines += ["", "Cordiali saluti,", "CleanTec"]
+    body_text = "\n".join(lines)
+
+    try:
+        event = await send_email(
+            to=to_email,
+            subject=subject,
+            body_text=body_text,
+            tenant_id=tenant_id,
+            context={"type": "order_confirmation_to_client", "numero": numero, "ordinativo_id": ord_doc.get("id")},
+        )
+        status = event.get("status", "logged")
+        return {"status": status, "to": to_email, "error": event.get("error")}
+    except Exception as e:
+        return {"status": "failed", "to": to_email, "error": str(e)[:500]}
 
 
 # ---------- Internal endpoints ----------
@@ -361,6 +468,41 @@ async def delete_ord(oid: str, user: Dict = Depends(require_roles("admin", "logi
         raise HTTPException(409, "Ordinativo già convertito — impossibile eliminare")
     await db.ordinativi.delete_one(merge_scope(user, {"id": oid}))
     return {"ok": True}
+
+
+@router.post("/ordinativi/{oid}/reinvia-conferma")
+async def reinvia_conferma_ordine(oid: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
+    """Reinvia manualmente l'email di conferma ordine all'indirizzo `email` del cliente."""
+    cur = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
+    if not cur:
+        raise HTTPException(404, "Ordinativo non trovato")
+    cli = await db.clienti.find_one(merge_scope(user, {"id": cur["cliente_id"]}), {"_id": 0})
+    if not cli:
+        raise HTTPException(400, "Cliente non trovato")
+    if not (cli.get("email") or "").strip():
+        raise HTTPException(400, "Il cliente non ha un indirizzo email in anagrafica")
+    res = await _send_order_confirmation_to_client(user["tenant_id"], cur, cli)
+    user_label = user.get("name") or user.get("email") or user.get("id", "")
+    entry = {
+        "at": now_utc(),
+        "by": user_label,
+        "to": res.get("to"),
+        "status": res.get("status"),
+        "error": res.get("error"),
+    }
+    await db.ordinativi.update_one(
+        merge_scope(user, {"id": oid}),
+        {
+            "$push": {"client_emails_sent": entry},
+            "$set": {
+                "client_email_last_status": res.get("status"),
+                "client_email_last_at": now_utc(),
+                "client_email_last_to": res.get("to"),
+                "updated_at": now_utc(),
+            },
+        },
+    )
+    return {"ok": True, **res}
 
 
 @router.post("/ordinativi/{oid}/converti-ddt")

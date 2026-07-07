@@ -1,4 +1,13 @@
-# CleanTec - PRD (updated 01 Lug 2026 · Batch fatturazione: 5/6 modifiche complete)
+# CleanTec - PRD (updated 07 Lug 2026 · Email conferma ordine al cliente)
+
+## Latest changes (07 Lug 2026)
+- **Email conferma ordine al cliente** (portale B2B):
+  - Quando un cliente conferma un ordine dal portale pubblico, il sistema invia automaticamente una **email di conferma AL CLIENTE** all'indirizzo `email` in anagrafica (in aggiunta alla notifica interna preesistente).
+  - Testo: intestazione cliente, numero ordine, data consegna richiesta, elenco articoli, totale stimato, eventuale "ritiro in lavanderia", eventuali note. Oggetto: `Conferma ordine {numero} - CleanTec`.
+  - Registrazione stato: nuovi campi ordinativo `client_emails_sent[]`, `client_email_last_status`, `client_email_last_at`, `client_email_last_to`.
+  - Nuovo endpoint `POST /api/ordinativi/{oid}/reinvia-conferma` per invio manuale (accessibile ad admin/logistica/contabilita).
+  - UI Ordinativi: nuova icona **Envelope** nella colonna Azioni + badge stato (sent/failed/logged) sotto il numero.
+  - Robusto contro cliente senza email (status='skipped', no errore).
 
 ## Latest changes (01 Lug 2026 - III · Batch 5 modifiche fatturazione)
 - **MOD 1 — Fattura per Ragione Sociale**: nuovi endpoint `GET /fatture/ragioni-sociali` (elenco RS con 2+ clienti) e `GET /fatture/fatturabili-rs?ragione_sociale=…` (DDT non fatturati di tutti i clienti-fratelli). `POST /fatture` accetta `ragione_sociale_mode=true` per validare cross-cliente. UI Fatture: toggle "Cliente / Ragione Sociale" nel dialog Nuova Fattura + dropdown RS.

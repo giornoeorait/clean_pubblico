@@ -11,7 +11,7 @@ import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import { usePermissions } from "../lib/permissions";
 import ClienteCombobox from "../components/ClienteCombobox";
 import { Plus, Trash, FloppyDisk, Truck, CalendarBlank, Clipboard, ArrowSquareOut,
-  Note, CheckCircle, XCircle, FilePdf, ChartBar, Factory,
+  Note, CheckCircle, XCircle, FilePdf, ChartBar, Factory, Envelope, Warning,
 } from "@phosphor-icons/react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { toast } from "sonner";
@@ -136,6 +136,19 @@ export default function Ordinativi() {
     catch (e) { toast.error(e.response?.data?.detail || "Errore"); }
   };
 
+  const reinviaConferma = async (o) => {
+    try {
+      const { data } = await api.post(`/ordinativi/${o.id}/reinvia-conferma`);
+      if (data.status === "sent") toast.success(`Conferma inviata a ${data.to}`);
+      else if (data.status === "logged") toast(`SMTP non configurato — registrata in log (${data.to})`, { icon: "ℹ️" });
+      else if (data.status === "skipped") toast.error("Il cliente non ha email in anagrafica");
+      else toast.error(`Errore invio: ${data.error || "sconosciuto"}`);
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore invio conferma");
+    }
+  };
+
   const downloadPdf = async (o) => {
     try {
       const res = await api.get(`/ordinativi/${o.id}/pdf`, { responseType: "blob" });
@@ -210,6 +223,21 @@ export default function Ordinativi() {
                       <div className="font-mono font-bold">{o.numero}</div>
                       {o.ddt_numero && <div className="text-[11px] text-emerald-700 font-mono">→ {o.ddt_numero}</div>}
                       {o.ritiro_lavanderia && <div className="text-[10px] text-amber-700 font-mono mt-0.5">↳ Ritiro lavanderia</div>}
+                      {o.client_email_last_status === "sent" && (
+                        <div title={`Conferma inviata al cliente${o.client_email_last_at ? ` il ${new Date(o.client_email_last_at).toLocaleString("it-IT")}` : ""} a ${o.client_email_last_to || ""}`} className="text-[9px] uppercase tracking-widest text-emerald-700 font-semibold flex items-center gap-0.5 mt-0.5" data-testid={`ord-email-badge-sent-${o.id}`}>
+                          <Envelope size={9} weight="fill" /> inviata
+                        </div>
+                      )}
+                      {o.client_email_last_status === "failed" && (
+                        <div title="Ultimo invio fallito" className="text-[9px] uppercase tracking-widest text-red-600 font-semibold flex items-center gap-0.5 mt-0.5" data-testid={`ord-email-badge-failed-${o.id}`}>
+                          <Warning size={9} weight="fill" /> errore
+                        </div>
+                      )}
+                      {o.client_email_last_status === "logged" && (
+                        <div title="SMTP non configurato: solo log" className="text-[9px] uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-0.5 mt-0.5" data-testid={`ord-email-badge-logged-${o.id}`}>
+                          <Envelope size={9} /> log
+                        </div>
+                      )}
                     </td>
                     <td className="text-xs">{o.data_richiesta ? new Date(o.data_richiesta).toLocaleDateString("it-IT") : "—"}</td>
                     <td className="text-sm">
@@ -232,6 +260,7 @@ export default function Ordinativi() {
                         {o.stato !== "convertito_ddt" && (
                           <>
                             <Button variant="ghost" size="icon" onClick={() => downloadPdf(o)} title="Scarica PDF" data-testid={`ord-pdf-${o.id}`}><FilePdf size={13} /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => reinviaConferma(o)} title="Reinvia conferma email al cliente" data-testid={`ord-email-${o.id}`}><Envelope size={13} /></Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(o)} title="Modifica"><Note size={13} /></Button>
                             {o.stato === "nuovo" && (
                               <Button variant="ghost" size="icon" onClick={() => cambiaStato(o, "in_lavorazione")} title="In lavorazione" className="text-amber-600"><Clipboard size={13} /></Button>
