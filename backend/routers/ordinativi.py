@@ -226,19 +226,18 @@ async def _notify_new_order(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Non
 
 
 async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Dict[str, Any]:
-    """Invia al CLIENTE (indirizzo `email` in anagrafica, con fallback su `pec`)
-    la conferma dell'ordine con riepilogo articoli, data consegna, totale
-    e eventuale ritiro-lavanderia.
+    """Invia al CLIENTE (indirizzo `email` in anagrafica) la conferma dell'ordine
+    con riepilogo articoli, data consegna, totale e eventuale ritiro-lavanderia.
 
+    Legge SOLO il campo `email` dell'anagrafica cliente (il campo `pec` è riservato
+    alla fatturazione elettronica e non deve essere usato per invii commerciali).
     Supporta indirizzi multipli separati da virgola, punto-virgola o whitespace.
     Ritorna dict {status, to, error}. status='skipped' se nessuna email valida.
     """
-    # Raccolta candidati email da tutti i campi utili
+    # Raccolta candidati email dal solo campo `email` (esclusa la PEC)
     raw_email = (cliente.get("email") or "").strip()
-    raw_pec = (cliente.get("pec") or "").strip()
-    candidates_raw = f"{raw_email} {raw_pec}"
     # Split su virgola, punto-virgola, newline, whitespace
-    parts = re.split(r"[,;\s]+", candidates_raw)
+    parts = re.split(r"[,;\s]+", raw_email)
     recipients: List[str] = []
     seen = set()
     for p in parts:
@@ -252,7 +251,7 @@ async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, clie
         recipients.append(p)
 
     if not recipients:
-        return {"status": "skipped", "to": "", "error": "Nessuna email valida trovata (né 'email' né 'pec') nell'anagrafica cliente"}
+        return {"status": "skipped", "to": "", "error": "Nessuna email valida nell'anagrafica cliente (campo 'email' vuoto o non valido)"}
 
     from smtp_service import send_email
     cli_label = (cliente.get("denominazione_struttura")

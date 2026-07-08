@@ -1,5 +1,8 @@
 # CleanTec - PRD (updated 07 Lug 2026 · Email conferma ordine al cliente)
 
+## Latest changes (08 Lug 2026 - II)
+- **Fix email conferma ordine — rimozione fallback PEC**: la funzione `_send_order_confirmation_to_client` ora usa esclusivamente il campo `email` dell'anagrafica cliente. Il campo `pec` è riservato alla fatturazione elettronica e non deve mai essere usato per comunicazioni commerciali/ordini. Test verificato: cliente con `email=""` e `pec` valorizzata → `skipped` con motivazione, PEC ignorata.
+
 ## Latest changes (08 Lug 2026)
 - **Fix email conferma ordine al cliente** (`_send_order_confirmation_to_client`):
   - Ora **parsifica indirizzi multipli** separati da virgola/punto-virgola/spazio: es. `"a@x.it, b@x.it; c@x.it"` → invio a tutti e 3.
