@@ -1,5 +1,14 @@
 # CleanTec - PRD (updated 07 Lug 2026 · Email conferma ordine al cliente)
 
+## Latest changes (08 Lug 2026)
+- **Fix email conferma ordine al cliente** (`_send_order_confirmation_to_client`):
+  - Ora **parsifica indirizzi multipli** separati da virgola/punto-virgola/spazio: es. `"a@x.it, b@x.it; c@x.it"` → invio a tutti e 3.
+  - **Fallback su PEC**: se il campo `email` è vuoto, usa `pec` (comune per strutture italiane che hanno solo PEC).
+  - Deduplica indirizzi (case-insensitive), valida presenza `@` e TLD.
+  - Log persistente **sempre attivo**, incluso status `skipped` (con motivazione errore): permette diagnostica in produzione anche quando nessuna email viene trovata.
+  - Nuovo campo `client_email_last_error` per il messaggio d'errore.
+  - Se anche un solo destinatario riceve OK, status = "sent"; altrimenti "failed" o "logged".
+
 ## Latest changes (07 Lug 2026)
 - **Email conferma ordine al cliente** (portale B2B):
   - Quando un cliente conferma un ordine dal portale pubblico, il sistema invia automaticamente una **email di conferma AL CLIENTE** all'indirizzo `email` in anagrafica (in aggiunta alla notifica interna preesistente).

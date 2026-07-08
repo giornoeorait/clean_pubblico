@@ -15,6 +15,7 @@ Schema:
   origine: 'interno' | 'portale'
   note_cliente, note_interne
 """
+import re
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Literal
@@ -153,25 +154,26 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
     # Conferma ordine al CLIENTE (email cliente) — best-effort
     try:
         cres = await _send_order_confirmation_to_client(tenant_id, doc, cli)
-        if cres.get("status") != "skipped":
-            entry = {
-                "at": now_utc(),
-                "by": "system",
-                "to": cres.get("to"),
-                "status": cres.get("status"),
-                "error": cres.get("error"),
-            }
-            await db.ordinativi.update_one(
-                {"id": doc["id"]},
-                {
-                    "$push": {"client_emails_sent": entry},
-                    "$set": {
-                        "client_email_last_status": cres.get("status"),
-                        "client_email_last_at": now_utc(),
-                        "client_email_last_to": cres.get("to"),
-                    },
+        entry = {
+            "at": now_utc(),
+            "by": "system",
+            "to": cres.get("to"),
+            "status": cres.get("status"),
+            "error": cres.get("error"),
+            "recipients_count": cres.get("recipients_count", 0),
+        }
+        await db.ordinativi.update_one(
+            {"id": doc["id"]},
+            {
+                "$push": {"client_emails_sent": entry},
+                "$set": {
+                    "client_email_last_status": cres.get("status"),
+                    "client_email_last_at": now_utc(),
+                    "client_email_last_to": cres.get("to"),
+                    "client_email_last_error": cres.get("error"),
                 },
-            )
+            },
+        )
     except Exception:
         pass
     return doc
@@ -224,15 +226,33 @@ async def _notify_new_order(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Non
 
 
 async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, cliente: Dict) -> Dict[str, Any]:
-    """Invia al CLIENTE (indirizzo `email` in anagrafica) la conferma dell'ordine
-    con il riepilogo articoli, data consegna, totale ed eventuale ritiro lavanderia.
+    """Invia al CLIENTE (indirizzo `email` in anagrafica, con fallback su `pec`)
+    la conferma dell'ordine con riepilogo articoli, data consegna, totale
+    e eventuale ritiro-lavanderia.
 
-    Ritorna dict {status, to, error} così l'endpoint di reinvio può segnalarlo.
-    Se l'email del cliente non è presente, ritorna status='skipped'.
+    Supporta indirizzi multipli separati da virgola, punto-virgola o whitespace.
+    Ritorna dict {status, to, error}. status='skipped' se nessuna email valida.
     """
-    to_email = (cliente.get("email") or "").strip()
-    if not to_email:
-        return {"status": "skipped", "to": "", "error": "Nessuna email cliente"}
+    # Raccolta candidati email da tutti i campi utili
+    raw_email = (cliente.get("email") or "").strip()
+    raw_pec = (cliente.get("pec") or "").strip()
+    candidates_raw = f"{raw_email} {raw_pec}"
+    # Split su virgola, punto-virgola, newline, whitespace
+    parts = re.split(r"[,;\s]+", candidates_raw)
+    recipients: List[str] = []
+    seen = set()
+    for p in parts:
+        p = p.strip().strip("<>").strip()
+        if not p or "@" not in p or "." not in p.split("@")[-1]:
+            continue
+        low = p.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        recipients.append(p)
+
+    if not recipients:
+        return {"status": "skipped", "to": "", "error": "Nessuna email valida trovata (né 'email' né 'pec') nell'anagrafica cliente"}
 
     from smtp_service import send_email
     cli_label = (cliente.get("denominazione_struttura")
@@ -255,10 +275,8 @@ async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, clie
     if hasattr(d_consegna, "strftime"):
         d_consegna_str = d_consegna.strftime("%d/%m/%Y")
     else:
-        # può essere ISO string YYYY-MM-DD
         try:
             d_consegna_str = str(d_consegna)[:10]
-            # normalize YYYY-MM-DD → DD/MM/YYYY
             if len(d_consegna_str) == 10 and d_consegna_str[4] == "-":
                 y, m, d = d_consegna_str.split("-")
                 d_consegna_str = f"{d}/{m}/{y}"
@@ -292,18 +310,42 @@ async def _send_order_confirmation_to_client(tenant_id: str, ord_doc: Dict, clie
     lines += ["", "Cordiali saluti,", "CleanTec"]
     body_text = "\n".join(lines)
 
-    try:
-        event = await send_email(
-            to=to_email,
-            subject=subject,
-            body_text=body_text,
-            tenant_id=tenant_id,
-            context={"type": "order_confirmation_to_client", "numero": numero, "ordinativo_id": ord_doc.get("id")},
-        )
-        status = event.get("status", "logged")
-        return {"status": status, "to": to_email, "error": event.get("error")}
-    except Exception as e:
-        return {"status": "failed", "to": to_email, "error": str(e)[:500]}
+    # Invia a ciascun destinatario (uno alla volta per tracciare gli esiti)
+    last_status = "logged"
+    sent_ok = False
+    failures = []
+    for r in recipients:
+        try:
+            event = await send_email(
+                to=r,
+                subject=subject,
+                body_text=body_text,
+                tenant_id=tenant_id,
+                context={"type": "order_confirmation_to_client", "numero": numero, "ordinativo_id": ord_doc.get("id")},
+            )
+            st = event.get("status", "logged")
+            if st == "sent":
+                sent_ok = True
+                last_status = "sent"
+            elif st == "logged":
+                if last_status != "sent":
+                    last_status = "logged"
+            else:  # failed
+                failures.append(f"{r}: {event.get('error') or 'invio fallito'}")
+                if last_status != "sent":
+                    last_status = "failed"
+        except Exception as e:
+            failures.append(f"{r}: {str(e)[:200]}")
+            if last_status != "sent":
+                last_status = "failed"
+
+    return {
+        "status": last_status,
+        "to": ", ".join(recipients),
+        "sent_ok": sent_ok,
+        "recipients_count": len(recipients),
+        "error": " · ".join(failures) if failures and not sent_ok else None,
+    }
 
 
 # ---------- Internal endpoints ----------
@@ -479,8 +521,6 @@ async def reinvia_conferma_ordine(oid: str, user: Dict = Depends(require_roles("
     cli = await db.clienti.find_one(merge_scope(user, {"id": cur["cliente_id"]}), {"_id": 0})
     if not cli:
         raise HTTPException(400, "Cliente non trovato")
-    if not (cli.get("email") or "").strip():
-        raise HTTPException(400, "Il cliente non ha un indirizzo email in anagrafica")
     res = await _send_order_confirmation_to_client(user["tenant_id"], cur, cli)
     user_label = user.get("name") or user.get("email") or user.get("id", "")
     entry = {
@@ -489,6 +529,7 @@ async def reinvia_conferma_ordine(oid: str, user: Dict = Depends(require_roles("
         "to": res.get("to"),
         "status": res.get("status"),
         "error": res.get("error"),
+        "recipients_count": res.get("recipients_count", 0),
     }
     await db.ordinativi.update_one(
         merge_scope(user, {"id": oid}),
@@ -498,10 +539,13 @@ async def reinvia_conferma_ordine(oid: str, user: Dict = Depends(require_roles("
                 "client_email_last_status": res.get("status"),
                 "client_email_last_at": now_utc(),
                 "client_email_last_to": res.get("to"),
+                "client_email_last_error": res.get("error"),
                 "updated_at": now_utc(),
             },
         },
     )
+    if res.get("status") == "skipped":
+        raise HTTPException(400, res.get("error") or "Nessuna email cliente disponibile")
     return {"ok": True, **res}
 
 
