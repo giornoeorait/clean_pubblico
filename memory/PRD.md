@@ -1,5 +1,13 @@
 # CleanTec - PRD (updated 07 Lug 2026 · Email conferma ordine al cliente)
 
+## Latest changes (14 Lug 2026)
+- **CLIENTI · Ordinamento alfabetico permanente**: `GET /api/clienti` ora ordina sempre per `ragione_sociale` ASC con **collation `it` strength 1** (case-insensitive, gestisce accenti/spazi/caratteri speciali). Applicato lato query MongoDB, non nel browser. Filtro `q` mantiene l'ordinamento.
+- **CLIENTI · Export Excel/PDF**: nuovo router `clienti_export.py` con endpoint `GET /api/clienti/export/excel` e `GET /api/clienti/export/pdf`, rispettivamente:
+  - Excel (.xlsx via openpyxl): 18 colonne, intestazioni in grassetto colorate, autofilter, colonne testo per P.IVA/CF/CAP/SDI, larghezza auto, freeze pane, filename `Anagrafica_Clienti_YYYY-MM-DD.xlsx`.
+  - PDF (via reportlab, landscape A4): 10 colonne compatte, titolo + data/ora + totale clienti, ripetizione header su ogni pagina, zebra rows, filename `Anagrafica_Clienti_YYYY-MM-DD.pdf`.
+- Entrambi gli export rispettano il filtro `q` corrente della griglia e mantengono l'ordinamento alfabetico. Registrato in `server.py`.
+- UI: due nuovi bottoni "Esporta Excel" / "Esporta PDF" nel `PageHeader` di `/clienti` (testid `export-clienti-excel-btn` / `export-clienti-pdf-btn`).
+
 ## Latest changes (08 Lug 2026 - II)
 - **Fix email conferma ordine — rimozione fallback PEC**: la funzione `_send_order_confirmation_to_client` ora usa esclusivamente il campo `email` dell'anagrafica cliente. Il campo `pec` è riservato alla fatturazione elettronica e non deve mai essere usato per comunicazioni commerciali/ordini. Test verificato: cliente con `email=""` e `pec` valorizzata → `skipped` con motivazione, PEC ignorata.
 

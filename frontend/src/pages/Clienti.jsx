@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit, EnvelopeSimple, MapPin } from "@phosphor-icons/react";
+import { Plus, MagnifyingGlass, Buildings, PencilSimple, Trash, Eye, CheckCircle, Warning, Receipt, Truck, CurrencyEur, Link as LinkIcon, Copy, Prohibit, EnvelopeSimple, MapPin, FilePdf, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const EMPTY = {
@@ -40,6 +40,32 @@ export default function Clienti() {
   };
   useEffect(() => { fetchList(); }, [q]);
   useEffect(() => { fetchListini(); }, []);
+
+  const downloadExport = async (format) => {
+    // format: 'excel' | 'pdf'
+    try {
+      const url = `/clienti/export/${format}${q ? `?q=${encodeURIComponent(q)}` : ""}`;
+      const res = await api.get(url, { responseType: "blob" });
+      const ext = format === "excel" ? "xlsx" : "pdf";
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `Anagrafica_Clienti_${today}.${ext}`;
+      const blob = new Blob([res.data], {
+        type: format === "excel"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/pdf",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      toast.success(`Esportati ${format === "excel" ? "Excel" : "PDF"}: ${filename}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || `Errore esportazione ${format}`);
+    }
+  };
 
   const missingReq = REQUIRED_RS.filter(k => !(form[k] || "").trim());
   const canSave = missingReq.length === 0;
@@ -134,7 +160,13 @@ export default function Clienti() {
         title="Clienti"
         subtitle="Hotel, ospedali, ristoranti, industrie. Identificazione fiscale e denominazione struttura operativa."
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => downloadExport("excel")} data-testid="export-clienti-excel-btn" title="Esporta anagrafica clienti in Excel">
+            <FileXls size={16} weight="duotone" className="mr-1 text-emerald-600" /> Esporta Excel
+          </Button>
+          <Button variant="outline" onClick={() => downloadExport("pdf")} data-testid="export-clienti-pdf-btn" title="Esporta anagrafica clienti in PDF">
+            <FilePdf size={16} weight="duotone" className="mr-1 text-red-600" /> Esporta PDF
+          </Button>
           <ImportClientiDialog onImported={fetchList} />
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm(EMPTY); } }}>
             <DialogTrigger asChild>

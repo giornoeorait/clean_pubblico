@@ -7,7 +7,7 @@ from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
 from core import client
-from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts, imports, fatturato_storico
+from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts, imports, fatturato_storico, clienti_export
 from seed import run_all as run_seed
 from storage import init_storage
 from backup_service import start_scheduler, stop_scheduler
@@ -53,6 +53,7 @@ async def get_version():
 api.include_router(auth.router)
 api.include_router(users.router)
 api.include_router(catalog.router)
+api.include_router(clienti_export.router)
 api.include_router(billing.router)
 api.include_router(billing.sospesi_router)
 api.include_router(listini.router)

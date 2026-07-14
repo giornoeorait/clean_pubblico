@@ -38,8 +38,16 @@ def _register(path: str, coll_name: str, Model: Type[BaseModel], PatchModel: Typ
                 {"descrizione": {"$regex": q, "$options": "i"}},
                 {"codice": {"$regex": q, "$options": "i"}},
                 {"ragione_sociale": {"$regex": q, "$options": "i"}},
+                {"denominazione_struttura": {"$regex": q, "$options": "i"}},
             ]
-        items = await coll.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+        # Ordinamento: per clienti alfabetico A-Z case-insensitive, altrimenti created_at desc
+        cursor = coll.find(query, {"_id": 0})
+        if coll_name == "clienti":
+            # collation IT case-insensitive per gestire accenti, lettere maiuscole, ecc.
+            cursor = cursor.collation({"locale": "it", "strength": 1}).sort("ragione_sociale", 1)
+        else:
+            cursor = cursor.sort("created_at", -1)
+        items = await cursor.to_list(limit)
         return items
 
     @router.post(f"/{path}")
