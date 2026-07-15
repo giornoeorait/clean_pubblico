@@ -361,9 +361,12 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 ## Next Action Items
 - 🎉 **Tutte le fasi P0/P1/P2/P3 completate** (1, 2a, 2b, 3a, 3b, 4, 5, P3 HR+Alerts+PDF export+Quality)
 - ✅ **Backup Automatici Cloud** (13 Mag 2026) — snapshot giornalieri 03:00 UTC su Emergent Object Storage, retention 7, manuale + auto, restore merge/replace, multi-tenant isolation. Iter 24: 12/12 backend + 100% frontend ✅
-- (P2 / Future) Generazione XML FatturaPA (B2B/PA elettronica)
+- ✅ **Fatturazione avanzata + Analisi Chilogrammi** (15 Lug 2026) — filtri fatture (data/piva/cliente) con totali dinamici tfoot, rinumera+ridata con motivazione obbligatoria + audit log non alterabile (`RINUMERA_RIDATA`); Report Produzione (kg) esteso con filtri date/cliente/categoria, aggregati per_categoria/per_anno/per_ddt (fino a 500 DDT), endpoint `/reports/produzione/articoli-check` per validazione peso_medio, export Excel `/reports/produzione/xlsx` (7 sheet). Iter32: 17/17 backend + 100% frontend ✅
+- (P1) **Modifica 6 — Riprogettazione Dipendenti** (Messaggio 598): Trasformare la sezione Dipendenti in un cost center integrato con Costi. Tracking mensile costo lordo/netto, ferie/malattia, sync bidirezionale con Costi e Dashboard.
+- (P2) **Self-signup SaaS + Email Verification + SMTP admin UI + Legal & Cookie banner** (Messaggio 802/805)
+- (P2 / Future) Generazione XML FatturaPA (B2B/PA elettronica) — parzialmente già presente
+- (P3) Customizzazione template email per tenant
 - (P4 / Future) Migrazione Report a react-query/SWR per cache automatica invece di useState locale
-- (P4 / Future) Export Excel (openpyxl) dei report oltre al PDF
 - (P4 / Future) Cron/scheduled task per invio email notifica alert critici (richiede integrazione Resend/SendGrid)
 - (P4 / Future) Dashboard widget "Alert attivi" con contatore badge in sidebar
 - (P4 / Future) Allegare PDF report al profilo cliente/fornitore per archiviazione storica
