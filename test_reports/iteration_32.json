@@ -1,0 +1,35 @@
+{
+  "summary": "Iter32 — Tested CleanTec batch: (1) Fatturazione filtri avanzati + totali dinamici + rinumera/ridata con motivazione obbligatoria, (2) Report Produzione (kg) esteso con nuovi aggregati per_categoria/per_anno/per_ddt, endpoint articoli-check e export xlsx. Backend: 17/17 pytest PASS. Frontend: tutte le verifiche UI OK — filtri Fatture, tfoot totali live, dialog rinumera con validazione motivazione (disabled <10 char, enabled >=10 char), tab Produzione (kg) con filtri Periodo Per anno/Intervallo date, cliente, categoria, bottone Excel, alert giallo 'Attenzione: dati Articoli da verificare' visibile, tutte le tabelle (categoria, anno, cliente, articolo, DDT) presenti.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_fatture_produzione.py",
+    "/app/test_reports/pytest/iter32_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/billing.py L138-194 _build_fatture_query: la normalizzazione P.IVA (rimuove spazi/punti/trattini/zeri iniziali) fa un pre-fetch di TUTTI i clienti del tenant per confronto in Python. Su tenant con molte anagrafiche potrebbe essere lento. Consigliato aggiungere un campo `piva_normalizzata` denormalizzato in db.clienti (indice), oppure limitare la ricerca con $regex direttamente. Non bloccante allo stato attuale.",
+    "routers/billing.py L758-866 rinumera_fattura: audit log scritto correttamente con action='RINUMERA_RIDATA'. Denormalizzazione fattura_numero sui DDT collegati verificata (L840-844). Motivazione validata da Pydantic (min_length=10, max_length=500). Verifica no-op (L813-818) ritorna la fattura invariata invece che 400 — comportamento voluto ma UI mostra sempre 'Modifica almeno il numero o la data' quindi il caso non si triggera dal client normale. OK.",
+    "routers/reports.py L116-270 report_produzione: nuovi aggregati per_categoria/per_anno/per_ddt integrati bene. per_ddt limitato a 500 elementi (buono per performance UI). ddt_count è il totale reale prima del limit. Il filtro categoria filtra a livello di RIGA articolo (non DDT intero), quindi un DDT misto verrà incluso con solo le righe della categoria selezionata — comportamento corretto per l'analisi kg. OK.",
+    "routers/reports.py L315-404 report_produzione_xlsx: chiama la funzione report_produzione riutilizzando la stessa logica. Sheet corretti: Sommario, Per mese, Per anno, Per cliente, Per categoria, Per articolo, Per DDT. Filtri passati correttamente. OK.",
+    "Frontend Fatture.jsx submitRenum L195-235: la validazione lato client (min 10 char + almeno un cambio) è coerente con backend. Payload include `motivazione` sempre, `numero` solo se numeroDiverso, `nuova_data` solo se dataDiversa. OK.",
+    "Frontend Report.jsx: tab-produzione carica tutti gli aggregati richiesti. Alert 'Attenzione: dati Articoli da verificare' compare quando articoli-check.senza_peso_count>0. Bottone Excel scarica il file correttamente. OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_fatture_produzione.py (NEW: 17 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 — OK",
+  "seed_data_creation": "Il test TestRinumeraFattura::test_cambio_solo_data cambia la data di una fattura non trasmessa e la ripristina alla fine dell'esecuzione. Nessun dato residuo lasciato.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter32 = Fatture filtri avanzati + Rinumera/Ridata + Produzione (kg) esteso. Endpoints verificati: GET /api/fatture (filtri data_inizio/data_fine/piva/cliente_id), GET /api/fatture/summary, PATCH /api/fatture/{fid}/rinumera (motivazione min 10 obbligatoria — 422; nessun cambio — 400; solo data OK con ripristino; audit log scritto), GET /api/reports/produzione (nuovi aggregati per_categoria/per_anno/per_ddt/ddt_count), GET /api/reports/produzione/articoli-check, GET /api/reports/produzione/xlsx (magic bytes PK verificati). UI testid: fatt-filter-data-inizio/fine/piva/cliente, fatt-filter-reset, fatt-totali-row, fatt-tot-imponibile/documento/iva; fatt-renum-{id} bottone matita, fatt-renum-dialog, fatt-renum-input/data/motivazione/save (save disabled se motivazione<10); prod-mode-anno/range, prod-data-inizio/fine, prod-cliente, prod-categoria, prod-xlsx, prod-articoli-check, prod-tab-categoria/anno/cliente/articolo/ddt. Tutti OK.",
+  "rca_of_the_issue": "Nessun bug trovato in questo ciclo. Le due feature (Fatturazione filtri+rinumera e Report Produzione esteso) sono implementate correttamente sia lato backend sia lato UI."
+}

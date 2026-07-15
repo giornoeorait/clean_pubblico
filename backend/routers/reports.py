@@ -100,28 +100,72 @@ async def report_fatturato(anno: Optional[int] = None, user: Dict = Depends(get_
 
 # ======================== PRODUZIONE (kg) ========================
 
+def _parse_date(s: Optional[str]) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        # accetta YYYY-MM-DD
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    except Exception:
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+
 @router.get("/reports/produzione")
-async def report_produzione(anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_produzione(
+    anno: Optional[int] = None,
+    data_inizio: Optional[str] = None,  # YYYY-MM-DD
+    data_fine: Optional[str] = None,    # YYYY-MM-DD
+    cliente_id: Optional[str] = None,
+    categoria: Optional[str] = None,    # categoria articolo
+    user: Dict = Depends(get_current_user),
+):
     """Volume prodotto in kg = Σ (quantita riga DDT × peso_medio articolo).
 
-    Usa i DDT emessi (vendite) come proxy del volume trattato.
+    Filtri opzionali: anno, intervallo date, cliente, categoria articolo.
+    Restituisce anche breakdown per mese, cliente, articolo, categoria, anno e DDT.
     """
     tenant_id = tenant_id_of(user)
-    # Mappa articoli → peso_medio
-    pesi: Dict[str, float] = {}
-    async for a in db.articoli.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "peso_medio": 1, "codice": 1, "descrizione": 1}):
-        pesi[a["id"]] = float(a.get("peso_medio") or 0)
+    # Mappa articoli: id → {peso_medio, categoria, codice, descrizione}
+    articoli_map: Dict[str, Dict] = {}
+    async for a in db.articoli.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "peso_medio": 1, "codice": 1, "descrizione": 1, "categoria": 1},
+    ):
+        articoli_map[a["id"]] = {
+            "peso_medio": float(a.get("peso_medio") or 0),
+            "categoria": (a.get("categoria") or "—") or "—",
+            "codice": a.get("codice", ""),
+            "descrizione": a.get("descrizione", ""),
+        }
 
-    # Carica DDT dell'anno (data è BSON datetime nei DDT)
+    # Match DDT
     match: Dict = {"tenant_id": tenant_id}
-    if anno:
+    dt_start = _parse_date(data_inizio)
+    dt_end = _parse_date(data_fine)
+    if dt_start or dt_end:
+        date_q: Dict = {}
+        if dt_start:
+            date_q["$gte"] = dt_start
+        if dt_end:
+            # include tutto il giorno finale
+            date_q["$lte"] = dt_end.replace(hour=23, minute=59, second=59)
+        match["data"] = date_q
+    elif anno:
         start = datetime(anno, 1, 1, tzinfo=timezone.utc)
         end = datetime(anno + 1, 1, 1, tzinfo=timezone.utc)
         match["data"] = {"$gte": start, "$lt": end}
+    if cliente_id:
+        match["cliente_id"] = cliente_id
 
-    per_mese: Dict[str, Dict] = {}          # mese -> {kg, pezzi}
-    per_cliente: Dict[str, Dict] = {}       # cliente_id -> {nome, kg, pezzi}
-    per_articolo: Dict[str, Dict] = {}      # articolo_id -> {codice, descr, kg, pezzi}
+    per_mese: Dict[str, Dict] = {}
+    per_anno: Dict[str, Dict] = {}
+    per_cliente: Dict[str, Dict] = {}
+    per_articolo: Dict[str, Dict] = {}
+    per_categoria: Dict[str, Dict] = {}
+    per_ddt: List[Dict] = []
     tot_kg = 0.0
     tot_pz = 0.0
 
@@ -129,52 +173,235 @@ async def report_produzione(anno: Optional[int] = None, user: Dict = Depends(get
         data_val = d.get("data")
         if isinstance(data_val, datetime):
             mese = data_val.strftime("%Y-%m")
+            year_str = data_val.strftime("%Y")
+            data_iso = data_val.isoformat()
         elif isinstance(data_val, str):
             mese = data_val[:7]
+            year_str = data_val[:4]
+            data_iso = data_val
         else:
             continue
         cli_id = d.get("cliente_id") or ""
         cli_nome = d.get("cliente_nome") or "—"
 
+        ddt_kg = 0.0
+        ddt_pz = 0.0
+
         for r in d.get("righe", []):
             aid = r.get("articolo_id")
+            art = articoli_map.get(aid or "", {})
+            cat = art.get("categoria", "—")
+            # Filtro per categoria (se richiesto)
+            if categoria and cat != categoria:
+                continue
             qta = float(r.get("quantita") or 0)
-            peso = pesi.get(aid, 0)
+            peso = float(art.get("peso_medio", 0) or 0)
             kg = qta * peso
             tot_kg += kg
             tot_pz += qta
+            ddt_kg += kg
+            ddt_pz += qta
             # mese
             slot = per_mese.setdefault(mese, {"mese": mese, "kg": 0.0, "pezzi": 0.0})
-            slot["kg"] += kg
-            slot["pezzi"] += qta
+            slot["kg"] += kg; slot["pezzi"] += qta
+            # anno
+            slot_y = per_anno.setdefault(year_str, {"anno": year_str, "kg": 0.0, "pezzi": 0.0})
+            slot_y["kg"] += kg; slot_y["pezzi"] += qta
             # cliente
             slot_c = per_cliente.setdefault(cli_id, {"cliente_id": cli_id, "cliente_nome": cli_nome, "kg": 0.0, "pezzi": 0.0})
-            slot_c["kg"] += kg
-            slot_c["pezzi"] += qta
+            slot_c["kg"] += kg; slot_c["pezzi"] += qta
             # articolo
             slot_a = per_articolo.setdefault(aid or "nd", {
-                "articolo_id": aid, "codice": r.get("codice", ""),
-                "descrizione": r.get("descrizione", ""),
+                "articolo_id": aid, "codice": r.get("codice", "") or art.get("codice", ""),
+                "descrizione": r.get("descrizione", "") or art.get("descrizione", ""),
+                "categoria": cat,
                 "kg": 0.0, "pezzi": 0.0,
             })
-            slot_a["kg"] += kg
-            slot_a["pezzi"] += qta
+            slot_a["kg"] += kg; slot_a["pezzi"] += qta
+            # categoria
+            slot_cat = per_categoria.setdefault(cat, {"categoria": cat, "kg": 0.0, "pezzi": 0.0, "articoli": 0})
+            slot_cat["kg"] += kg; slot_cat["pezzi"] += qta
+
+        # per DDT (solo se c'è produzione)
+        if ddt_kg > 0 or ddt_pz > 0:
+            per_ddt.append({
+                "ddt_id": d.get("id"),
+                "numero": d.get("numero"),
+                "data": data_iso,
+                "cliente_id": cli_id,
+                "cliente_nome": cli_nome,
+                "kg": round(ddt_kg, 2),
+                "pezzi": round(ddt_pz, 2),
+            })
+
+    # Numero di articoli distinti per categoria
+    art_per_cat: Dict[str, set] = {}
+    for a in per_articolo.values():
+        art_per_cat.setdefault(a.get("categoria") or "—", set()).add(a.get("articolo_id"))
+    for cat, s in art_per_cat.items():
+        if cat in per_categoria:
+            per_categoria[cat]["articoli"] = len(s)
 
     def _round(items, keys=("kg", "pezzi")):
         return [{**it, **{k: round(it[k], 2) for k in keys if k in it}} for it in items]
 
     per_mese_list = _round(sorted(per_mese.values(), key=lambda x: x["mese"]))
-    per_cliente_list = _round(sorted(per_cliente.values(), key=lambda x: x["kg"], reverse=True)[:20])
-    per_articolo_list = _round(sorted(per_articolo.values(), key=lambda x: x["kg"], reverse=True)[:20])
+    per_anno_list = _round(sorted(per_anno.values(), key=lambda x: x["anno"]))
+    per_cliente_list = _round(sorted(per_cliente.values(), key=lambda x: x["kg"], reverse=True))
+    per_articolo_list = _round(sorted(per_articolo.values(), key=lambda x: x["kg"], reverse=True))
+    per_categoria_list = _round(sorted(per_categoria.values(), key=lambda x: x["kg"], reverse=True))
+    per_ddt.sort(key=lambda x: x["data"], reverse=True)
 
     return {
         "anno": anno,
+        "data_inizio": data_inizio,
+        "data_fine": data_fine,
+        "cliente_id": cliente_id,
+        "categoria": categoria,
         "totale_kg": round(tot_kg, 2),
         "totale_pezzi": round(tot_pz, 2),
         "per_mese": per_mese_list,
-        "per_cliente": per_cliente_list,
-        "per_articolo": per_articolo_list,
+        "per_anno": per_anno_list,
+        "per_cliente": per_cliente_list[:50],
+        "per_articolo": per_articolo_list[:50],
+        "per_categoria": per_categoria_list,
+        "per_ddt": per_ddt[:500],  # limita per performance UI
+        "ddt_count": len(per_ddt),
     }
+
+
+@router.get("/reports/produzione/articoli-check")
+async def articoli_peso_check(user: Dict = Depends(get_current_user)):
+    """Controllo dati Articoli per l'analisi kg.
+    Restituisce elenco articoli con peso_medio mancante / zero / plausibilmente in grammi.
+    """
+    tenant_id = tenant_id_of(user)
+    tot_articoli = 0
+    senza_peso: List[Dict] = []
+    sospetti_grammi: List[Dict] = []
+    async for a in db.articoli.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "codice": 1, "descrizione": 1, "categoria": 1, "peso_medio": 1},
+    ):
+        tot_articoli += 1
+        pm = a.get("peso_medio")
+        try:
+            pmv = float(pm) if pm is not None else 0
+        except Exception:
+            pmv = 0
+        if pmv <= 0:
+            senza_peso.append({
+                "id": a["id"], "codice": a.get("codice", ""),
+                "descrizione": a.get("descrizione", ""),
+                "categoria": a.get("categoria", ""),
+                "peso_medio": pmv,
+            })
+        elif pmv >= 50:  # verosimilmente grammi salvati come kg
+            sospetti_grammi.append({
+                "id": a["id"], "codice": a.get("codice", ""),
+                "descrizione": a.get("descrizione", ""),
+                "peso_medio": pmv,
+            })
+    return {
+        "totale_articoli": tot_articoli,
+        "senza_peso_count": len(senza_peso),
+        "senza_peso": senza_peso[:200],
+        "sospetti_grammi": sospetti_grammi[:50],
+        "unita": "kg",
+        "note": "Peso medio in chilogrammi. Valori >= 50 possono indicare un errore (dato in grammi).",
+    }
+
+
+@router.get("/reports/produzione/xlsx")
+async def report_produzione_xlsx(
+    anno: Optional[int] = None,
+    data_inizio: Optional[str] = None,
+    data_fine: Optional[str] = None,
+    cliente_id: Optional[str] = None,
+    categoria: Optional[str] = None,
+    user: Dict = Depends(get_current_user),
+):
+    """Export Excel dell'analisi produzione kg con tutti gli aggregati."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    d = await report_produzione(
+        anno=anno, data_inizio=data_inizio, data_fine=data_fine,
+        cliente_id=cliente_id, categoria=categoria, user=user,
+    )
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4F46E5")
+
+    def _write(ws, headers, rows):
+        for i, h in enumerate(headers, 1):
+            c = ws.cell(row=1, column=i, value=h)
+            c.font = header_font; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center")
+        for ri, row in enumerate(rows, 2):
+            for ci, val in enumerate(row, 1):
+                ws.cell(row=ri, column=ci, value=val)
+        for i in range(1, len(headers) + 1):
+            ws.column_dimensions[chr(64 + i)].width = 22
+
+    # Sommario
+    ws0 = wb.active; ws0.title = "Sommario"
+    filtro_desc = []
+    if data_inizio or data_fine:
+        filtro_desc.append(f"Periodo: {data_inizio or '…'} → {data_fine or '…'}")
+    elif anno:
+        filtro_desc.append(f"Anno: {anno}")
+    if cliente_id:
+        filtro_desc.append(f"Cliente ID: {cliente_id}")
+    if categoria:
+        filtro_desc.append(f"Categoria: {categoria}")
+    _write(ws0,
+        ["Metrica", "Valore"],
+        [
+            ("Totale kg prodotti", d["totale_kg"]),
+            ("Totale pezzi", d["totale_pezzi"]),
+            ("Peso medio kg/pz", round(d["totale_kg"] / d["totale_pezzi"], 3) if d["totale_pezzi"] else 0),
+            ("N° DDT nel periodo", d["ddt_count"]),
+            ("Filtri", "; ".join(filtro_desc) or "Nessuno"),
+        ],
+    )
+
+    # Per mese
+    ws1 = wb.create_sheet("Per mese")
+    _write(ws1, ["Mese", "Kg", "Pezzi"], [(r["mese"], r["kg"], r["pezzi"]) for r in d["per_mese"]])
+
+    # Per anno
+    ws1b = wb.create_sheet("Per anno")
+    _write(ws1b, ["Anno", "Kg", "Pezzi"], [(r["anno"], r["kg"], r["pezzi"]) for r in d["per_anno"]])
+
+    # Per cliente
+    ws2 = wb.create_sheet("Per cliente")
+    _write(ws2, ["Cliente", "Kg", "Pezzi"], [(r["cliente_nome"], r["kg"], r["pezzi"]) for r in d["per_cliente"]])
+
+    # Per categoria
+    ws3 = wb.create_sheet("Per categoria")
+    _write(ws3, ["Categoria", "Kg", "Pezzi", "N° articoli"],
+        [(r["categoria"], r["kg"], r["pezzi"], r["articoli"]) for r in d["per_categoria"]])
+
+    # Per articolo
+    ws4 = wb.create_sheet("Per articolo")
+    _write(ws4, ["Codice", "Descrizione", "Categoria", "Kg", "Pezzi"],
+        [(r["codice"], r["descrizione"], r["categoria"], r["kg"], r["pezzi"]) for r in d["per_articolo"]])
+
+    # Per DDT
+    ws5 = wb.create_sheet("Per DDT")
+    _write(ws5, ["Numero", "Data", "Cliente", "Kg", "Pezzi"],
+        [(r["numero"], (r["data"] or "")[:10], r["cliente_nome"], r["kg"], r["pezzi"]) for r in d["per_ddt"]])
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    period = data_inizio and data_fine and f"{data_inizio}_{data_fine}" or (anno and str(anno)) or "tutto"
+    filename = f"Analisi_kg_{period}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ======================== COSTO PER KG ========================

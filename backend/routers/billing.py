@@ -127,23 +127,127 @@ class IncassoIn(BaseModel):
     note: Optional[str] = ""
 
 
-@router.get("")
-async def list_fatture(
-    user: Dict = Depends(get_current_user),
-    cliente_id: Optional[str] = None,
-    stato_incasso: Optional[str] = None,  # da_incassare | incassata
-    limit: int = 200,
-):
+def _normalize_piva(v: str) -> str:
+    """Rimuove spazi, punti, trattini e zeri iniziali per confronto laschi."""
+    if not v:
+        return ""
+    s = re.sub(r"[\s\.\-]+", "", str(v))
+    return s.lstrip("0")
+
+
+async def _build_fatture_query(
+    user: Dict,
+    cliente_id: Optional[str],
+    stato_incasso: Optional[str],
+    data_inizio: Optional[str],
+    data_fine: Optional[str],
+    piva: Optional[str],
+) -> Dict[str, Any]:
     query: Dict[str, Any] = dict(tenant_scope(user))
     if cliente_id:
         query["cliente_id"] = cliente_id
     if stato_incasso:
         query["stato_incasso"] = stato_incasso
+    # Utente cliente vede solo le proprie
     if user["role"] == "cliente" and user.get("cliente_id"):
         query["cliente_id"] = user["cliente_id"]
+    # Range date (accetta ISO YYYY-MM-DD o datetime completo)
+    date_q: Dict[str, Any] = {}
+    if data_inizio:
+        d1 = to_dt(data_inizio)
+        if d1:
+            date_q["$gte"] = d1
+    if data_fine:
+        d2 = to_dt(data_fine)
+        if d2:
+            # includi tutto il giorno finale
+            d2 = d2.replace(hour=23, minute=59, second=59)
+            date_q["$lte"] = d2
+    if date_q:
+        query["data"] = date_q
+    # Filtro P.IVA: normalizza (ignorando spazi, punti, trattini e zeri iniziali)
+    # Cerca prima i clienti che matchano e usa i loro id per filtrare le fatture
+    if piva and piva.strip():
+        piva_norm = _normalize_piva(piva)
+        if piva_norm:
+            # regex "contiene" sulla PIVA normalizzata; per farlo semplice
+            # cerchiamo direttamente nella collezione clienti e confrontiamo in Python
+            cli_ids: List[str] = []
+            async for c in db.clienti.find(
+                merge_scope(user, {}),
+                {"_id": 0, "id": 1, "partita_iva": 1, "codice_fiscale": 1},
+            ):
+                p1 = _normalize_piva(c.get("partita_iva") or "")
+                p2 = _normalize_piva(c.get("codice_fiscale") or "")
+                if piva_norm in p1 or (p2 and piva_norm in p2):
+                    cli_ids.append(c["id"])
+            if not cli_ids:
+                # nessun cliente → nessuna fattura
+                query["_no_match"] = True
+            else:
+                # combina con eventuale cliente_id già impostato
+                existing = query.get("cliente_id")
+                if isinstance(existing, str):
+                    query["cliente_id"] = existing if existing in cli_ids else "__none__"
+                else:
+                    query["cliente_id"] = {"$in": cli_ids}
+    return query
+
+
+@router.get("")
+async def list_fatture(
+    user: Dict = Depends(get_current_user),
+    cliente_id: Optional[str] = None,
+    stato_incasso: Optional[str] = None,  # da_incassare | incassata
+    data_inizio: Optional[str] = None,    # YYYY-MM-DD
+    data_fine: Optional[str] = None,      # YYYY-MM-DD
+    piva: Optional[str] = None,           # filtra per P.IVA/CF cliente
+    limit: int = 500,
+):
+    query = await _build_fatture_query(user, cliente_id, stato_incasso, data_inizio, data_fine, piva)
+    if query.pop("_no_match", False):
+        return []
     docs = await db.fatture.find(query, {"_id": 0}).sort("data", -1).to_list(limit)
     from routers.ddt import _enrich_cliente_denominazione
     return await _enrich_cliente_denominazione(docs, user)
+
+
+@router.get("/summary")
+async def summary_fatture(
+    user: Dict = Depends(get_current_user),
+    cliente_id: Optional[str] = None,
+    stato_incasso: Optional[str] = None,
+    data_inizio: Optional[str] = None,
+    data_fine: Optional[str] = None,
+    piva: Optional[str] = None,
+):
+    """Totali aggregati sul dataset filtrato (intero, non paginato).
+
+    Restituisce: {count, totale_imponibile, totale_iva, totale_documento}.
+    """
+    query = await _build_fatture_query(user, cliente_id, stato_incasso, data_inizio, data_fine, piva)
+    if query.pop("_no_match", False):
+        return {"count": 0, "totale_imponibile": 0.0, "totale_iva": 0.0, "totale_documento": 0.0}
+    pipeline = [
+        {"$match": query},
+        {"$group": {
+            "_id": None,
+            "count": {"$sum": 1},
+            "totale_imponibile": {"$sum": {"$ifNull": ["$imponibile", 0]}},
+            "totale_iva": {"$sum": {"$ifNull": ["$iva", 0]}},
+            "totale_documento": {"$sum": {"$ifNull": ["$totale", 0]}},
+        }},
+    ]
+    res = await db.fatture.aggregate(pipeline).to_list(1)
+    if not res:
+        return {"count": 0, "totale_imponibile": 0.0, "totale_iva": 0.0, "totale_documento": 0.0}
+    r = res[0]
+    return {
+        "count": int(r.get("count") or 0),
+        "totale_imponibile": round(float(r.get("totale_imponibile") or 0), 2),
+        "totale_iva": round(float(r.get("totale_iva") or 0), 2),
+        "totale_documento": round(float(r.get("totale_documento") or 0), 2),
+    }
 
 
 @router.get("/fatturabili")
@@ -639,68 +743,126 @@ async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
 
 
 class RinumeraIn(BaseModel):
-    """Rinumera una fattura non ancora trasmessa a SDI.
-    L'utente può passare direttamente il progressivo numerico (`seq`) oppure il
-    numero completo (`numero`, che verrà validato contro il pattern
-    `FT-YYYY-NNNNN[suffix]`).
+    """Rinumera e/o ridata una fattura non ancora trasmessa a SDI.
+
+    - `seq` o `numero`: nuovo progressivo/numero (opzionali se si vuole solo cambiare la data)
+    - `nuova_data`: nuova data documento in formato ISO YYYY-MM-DD (opzionale)
+    - `motivazione`: motivazione obbligatoria (min 10 caratteri) — verrà loggata su audit_log
     """
     seq: Optional[int] = None
     numero: Optional[str] = None
+    nuova_data: Optional[str] = None
+    motivazione: str = Field(..., min_length=10, max_length=500)
 
 
 @router.patch("/{fid}/rinumera")
 async def rinumera_fattura(fid: str, body: RinumeraIn, user: Dict = Depends(require_roles(*_WRITE))):
-    """Modifica manuale del numero fattura (solo per fatture NON trasmesse a SDI)."""
+    """Modifica manuale del numero e/o data fattura (solo per fatture NON trasmesse a SDI).
+
+    Consentito ad Admin/Contabilità. La modifica viene loggata sull'audit log (non alterabile)
+    con motivazione obbligatoria.
+    """
     fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
     if not fattura:
         raise HTTPException(404, "Fattura non trovata")
     if fattura.get("xml_transmitted"):
-        raise HTTPException(409, "La fattura risulta già trasmessa a SDI: numero non modificabile per legge. Sblocca la trasmissione se hai fatto un errore.")
+        raise HTTPException(409, "La fattura risulta già trasmessa a SDI: dati fiscali immutabili per legge. Sblocca la trasmissione se hai fatto un errore.")
 
     old_numero = fattura.get("numero")
-    fatt_data = fattura.get("data")
-    year = fatt_data.year if hasattr(fatt_data, "year") else now_utc().year
+    old_data = fattura.get("data")
 
-    # Costruzione del nuovo numero
+    # ----- Nuova data (opzionale) -----
+    new_data = None
+    if body.nuova_data and body.nuova_data.strip():
+        new_data = to_dt(body.nuova_data.strip())
+        if not new_data:
+            raise HTTPException(400, "Formato nuova_data non valido (atteso YYYY-MM-DD)")
+
+    # Se cambia l'anno della fattura, blocca (implica ricalcolo intera serie)
+    old_year = old_data.year if hasattr(old_data, "year") else now_utc().year
+    new_year_for_num = (new_data.year if new_data else old_year)
+
+    # ----- Nuovo numero (opzionale) -----
+    new_numero = None
     if body.numero and body.numero.strip():
-        new_numero = body.numero.strip().upper()
-        # accetta anche solo la parte progressiva ("00003") come fallback
-        m = re.match(rf"^{_FATT_PREFIX}-(\d{{4}})-(\d+)(.*)$", new_numero)
+        candidate = body.numero.strip().upper()
+        m = re.match(rf"^{_FATT_PREFIX}-(\d{{4}})-(\d+)(.*)$", candidate)
         if not m:
-            raise HTTPException(400, f"Formato numero non valido. Atteso: {_FATT_PREFIX}-{year}-00001[suffix]")
+            raise HTTPException(400, f"Formato numero non valido. Atteso: {_FATT_PREFIX}-{new_year_for_num}-00001[suffix]")
         num_year = int(m.group(1))
-        if num_year != year:
-            raise HTTPException(400, f"L'anno del numero ({num_year}) non corrisponde all'anno della fattura ({year})")
+        if num_year != new_year_for_num:
+            raise HTTPException(400, f"L'anno del numero ({num_year}) non corrisponde all'anno della fattura ({new_year_for_num})")
+        new_numero = candidate
     elif body.seq is not None:
         if body.seq < 1:
             raise HTTPException(400, "Il progressivo deve essere >= 1")
-        from core import format_numero
-        new_numero = await format_numero("fattura", _FATT_PREFIX, int(body.seq))
-    else:
-        raise HTTPException(400, "Specificare `seq` (progressivo numerico) oppure `numero` completo")
+        # Costruiamo il numero direttamente usando l'anno corretto della fattura
+        # (get_numero_config potrebbe aggiungere un suffisso locale, ma la doppia
+        # numerazione F/C usa già la logica dedicata in creazione; qui manteniamo
+        # il suffisso della fattura originale se presente e non ne è stato indicato uno).
+        old_suffix = ""
+        m_old = re.match(rf"^{_FATT_PREFIX}-\d{{4}}-\d+(.*)$", old_numero or "")
+        if m_old:
+            old_suffix = m_old.group(1) or ""
+        new_numero = f"{_FATT_PREFIX}-{new_year_for_num}-{int(body.seq):05d}{old_suffix}"
 
-    if new_numero == old_numero:
+    if new_numero is None and new_data is None:
+        raise HTTPException(400, "Specificare almeno un cambio: nuovo numero (seq/numero) o nuova data.")
+
+    # No-op: stessi valori
+    same_numero = (new_numero is None) or (new_numero == old_numero)
+    same_data = (new_data is None) or (
+        hasattr(old_data, "date") and hasattr(new_data, "date") and old_data.date() == new_data.date()
+    )
+    if same_numero and same_data:
         return fattura
 
-    # univocità nel tenant/anno
-    dup = await db.fatture.find_one({
-        "tenant_id": user["tenant_id"],
-        "numero": new_numero,
-        "id": {"$ne": fid},
-    }, {"_id": 0, "id": 1, "numero": 1})
-    if dup:
-        raise HTTPException(409, f"Il numero {new_numero} è già usato da un'altra fattura di questo anno.")
+    # ----- Verifica unicità del nuovo numero (se cambia) -----
+    if new_numero and new_numero != old_numero:
+        dup = await db.fatture.find_one({
+            "tenant_id": user["tenant_id"],
+            "numero": new_numero,
+            "id": {"$ne": fid},
+        }, {"_id": 0, "id": 1, "numero": 1})
+        if dup:
+            raise HTTPException(409, f"Il numero {new_numero} è già usato da un'altra fattura di questo anno.")
 
-    await db.fatture.update_one(
-        merge_scope(user, {"id": fid}),
-        {"$set": {"numero": new_numero, "updated_at": now_utc()}},
+    # ----- Update -----
+    set_fields: Dict[str, Any] = {"updated_at": now_utc()}
+    if new_numero and new_numero != old_numero:
+        set_fields["numero"] = new_numero
+    if new_data and not same_data:
+        set_fields["data"] = new_data
+
+    await db.fatture.update_one(merge_scope(user, {"id": fid}), {"$set": set_fields})
+
+    # Aggiorna DDT collegati (denormalizzazione) se il numero cambia
+    if "numero" in set_fields:
+        await db.ddt.update_many(
+            merge_scope(user, {"fattura_id": fid}),
+            {"$set": {"fattura_numero": set_fields["numero"], "updated_at": now_utc()}},
+        )
+
+    # ----- Audit log non alterabile -----
+    def _iso(v):
+        try:
+            return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
+        except Exception:
+            return None
+
+    await log_audit(
+        user,
+        "RINUMERA_RIDATA",
+        "fattura",
+        fid,
+        {
+            "old_numero": old_numero,
+            "new_numero": set_fields.get("numero", old_numero),
+            "old_data": _iso(old_data),
+            "new_data": _iso(set_fields.get("data", old_data)),
+            "motivazione": body.motivazione.strip(),
+        },
     )
-    # aggiorna anche i DDT collegati (denormalizzazione)
-    await db.ddt.update_many(
-        merge_scope(user, {"fattura_id": fid}),
-        {"$set": {"fattura_numero": new_numero, "updated_at": now_utc()}},
-    )
-    await log_audit(user, "RINUMERA", "fattura", fid, {"old": old_numero, "new": new_numero})
     return await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
 
 

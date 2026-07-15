@@ -34,6 +34,46 @@ export default function Report() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Filtri avanzati produzione (kg)
+  const [prodFilters, setProdFilters] = useState({
+    data_inizio: "",
+    data_fine: "",
+    cliente_id: "",
+    categoria: "",
+    use_range: false,   // se true, usa range date invece di anno
+  });
+  const [clienti, setClienti] = useState([]);
+  const [articoloCategorie, setArticoloCategorie] = useState([]);
+  const [articoliCheck, setArticoliCheck] = useState(null);
+
+  useEffect(() => {
+    if (tab !== "produzione") return;
+    // Carica clienti + categorie articoli
+    Promise.all([
+      api.get("/clienti").catch(() => ({ data: [] })),
+      api.get("/articoli").catch(() => ({ data: [] })),
+      api.get("/reports/produzione/articoli-check").catch(() => ({ data: null })),
+    ]).then(([c, a, ck]) => {
+      setClienti(c.data || []);
+      const cats = Array.from(new Set((a.data || []).map(x => x.categoria).filter(Boolean))).sort();
+      setArticoloCategorie(cats);
+      setArticoliCheck(ck.data);
+    });
+  }, [tab]);
+
+  const buildProduzioneQuery = () => {
+    const params = new URLSearchParams();
+    if (prodFilters.use_range) {
+      if (prodFilters.data_inizio) params.set("data_inizio", prodFilters.data_inizio);
+      if (prodFilters.data_fine) params.set("data_fine", prodFilters.data_fine);
+    } else {
+      params.set("anno", String(anno));
+    }
+    if (prodFilters.cliente_id) params.set("cliente_id", prodFilters.cliente_id);
+    if (prodFilters.categoria) params.set("categoria", prodFilters.categoria);
+    return params.toString();
+  };
+
   const fetchReport = async () => {
     if (tab === "storico") { setLoading(false); return; }
     setLoading(true); setData(null);
@@ -42,13 +82,13 @@ export default function Report() {
                    tab === "km" ? `/reports/km-automezzi?anno=${anno}` :
                    tab === "costo_kg" ? `/reports/costo-kg?anno=${anno}` :
                    tab === "fatturato" ? `/reports/fatturato?anno=${anno}` :
-                   tab === "produzione" ? `/reports/produzione?anno=${anno}` :
+                   tab === "produzione" ? `/reports/produzione?${buildProduzioneQuery()}` :
                    `/reports/marginalita?anno=${anno}`;
       const { data: d } = await api.get(path);
       setData(d);
     } finally { setLoading(false); }
   };
-  useEffect(() => { fetchReport(); }, [tab, anno]);
+  useEffect(() => { fetchReport(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, anno, prodFilters]);
 
   return (
     <div>
@@ -103,7 +143,18 @@ export default function Report() {
 
       <ErrorBoundary resetKeys={[tab, anno]}>
         {!loading && data && tab === "fatturato" && <FatturatoView d={data} />}
-        {!loading && data && tab === "produzione" && <ProduzioneView d={data} />}
+        {!loading && data && tab === "produzione" && (
+          <ProduzioneView
+            d={data}
+            filters={prodFilters}
+            setFilters={setProdFilters}
+            clienti={clienti}
+            categorie={articoloCategorie}
+            articoliCheck={articoliCheck}
+            anno={anno}
+            buildQuery={buildProduzioneQuery}
+          />
+        )}
         {!loading && data && tab === "costo_kg" && <CostoKgView d={data} />}
         {!loading && data && tab === "marginalita" && <MarginalitaView d={data} />}
         {!loading && data && tab === "aging" && <AgingView d={data} />}
@@ -167,15 +218,136 @@ function FatturatoView({ d }) {
 }
 
 // ============== PRODUZIONE ==============
-function ProduzioneView({ d }) {
+function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCheck, anno, buildQuery }) {
+  const downloadXlsx = async () => {
+    try {
+      const res = await api.get(`/reports/produzione/xlsx?${buildQuery()}`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      const period = filters.use_range ? `${filters.data_inizio}_${filters.data_fine}` : String(anno);
+      a.download = `Analisi_kg_${period}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel scaricato");
+    } catch (e) {
+      toast.error("Errore export Excel");
+    }
+  };
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Kpi label="Totale kg prodotti" value={fmtK(d.totale_kg)} sub={`anno ${d.anno || "—"}`} />
-        <Kpi label="Totale pezzi" value={(d.totale_pezzi || 0).toFixed(0)} color="text-slate-900" />
-        <Kpi label="Peso medio" value={d.totale_pezzi ? `${(d.totale_kg / d.totale_pezzi).toFixed(2)} kg/pz` : "—"} color="text-celeste" />
+      {/* Filtri avanzati produzione */}
+      <div className="kpi-card p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Modalità periodo */}
+          <div>
+            <Label className="text-[11px] uppercase tracking-wide text-slate-500">Periodo</Label>
+            <div className="flex gap-1 mt-1">
+              <button
+                onClick={() => setFilters(f => ({ ...f, use_range: false }))}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${!filters.use_range ? "bg-indaco text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+                data-testid="prod-mode-anno"
+              >Per anno</button>
+              <button
+                onClick={() => setFilters(f => ({ ...f, use_range: true }))}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${filters.use_range ? "bg-indaco text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+                data-testid="prod-mode-range"
+              >Intervallo date</button>
+            </div>
+          </div>
+          {filters.use_range && (
+            <>
+              <div>
+                <Label className="text-[11px] uppercase tracking-wide text-slate-500">Data dal</Label>
+                <Input type="date" value={filters.data_inizio} onChange={e => setFilters(f => ({ ...f, data_inizio: e.target.value }))} className="h-9 w-40" data-testid="prod-data-inizio" />
+              </div>
+              <div>
+                <Label className="text-[11px] uppercase tracking-wide text-slate-500">Data al</Label>
+                <Input type="date" value={filters.data_fine} onChange={e => setFilters(f => ({ ...f, data_fine: e.target.value }))} className="h-9 w-40" data-testid="prod-data-fine" />
+              </div>
+            </>
+          )}
+          <div className="min-w-[220px] flex-1">
+            <Label className="text-[11px] uppercase tracking-wide text-slate-500">Cliente</Label>
+            <select
+              value={filters.cliente_id}
+              onChange={e => setFilters(f => ({ ...f, cliente_id: e.target.value }))}
+              className="h-9 px-2 border border-slate-200 rounded-md text-sm w-full"
+              data-testid="prod-cliente"
+            >
+              <option value="">Tutti i clienti</option>
+              {clienti.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.denominazione_struttura || c.ragione_sociale || c.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-[11px] uppercase tracking-wide text-slate-500">Categoria</Label>
+            <select
+              value={filters.categoria}
+              onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
+              className="h-9 px-2 border border-slate-200 rounded-md text-sm w-40"
+              data-testid="prod-categoria"
+            >
+              <option value="">Tutte</option>
+              {categorie.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="ml-auto flex gap-2">
+            {(filters.cliente_id || filters.categoria || filters.use_range) && (
+              <Button variant="outline" size="sm" onClick={() => setFilters(f => ({ ...f, cliente_id: "", categoria: "", use_range: false, data_inizio: "", data_fine: "" }))} data-testid="prod-reset">Azzera</Button>
+            )}
+            <Button className="bg-emerald-600 hover:bg-emerald-700" size="sm" onClick={downloadXlsx} data-testid="prod-xlsx">
+              <FileArrowDown size={14} className="mr-1" /> Excel
+            </Button>
+          </div>
+        </div>
       </div>
 
+      {/* Warning articoli senza peso */}
+      {articoliCheck && (articoliCheck.senza_peso_count > 0 || articoliCheck.sospetti_grammi?.length > 0) && (
+        <div className="kpi-card p-4 border-l-4 border-amber-400 bg-amber-50" data-testid="prod-articoli-check">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 text-amber-600 font-bold text-lg">!</div>
+            <div className="flex-1">
+              <div className="font-display font-bold text-amber-900 text-sm">Attenzione: dati Articoli da verificare</div>
+              {articoliCheck.senza_peso_count > 0 && (
+                <div className="text-xs text-amber-800 mt-1">
+                  {articoliCheck.senza_peso_count} articolo/i senza <b>peso medio</b> impostato — i loro pezzi non contribuiscono al calcolo dei kg.
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-amber-700">Mostra elenco</summary>
+                    <ul className="mt-1 ml-4 list-disc">
+                      {articoliCheck.senza_peso.slice(0, 20).map(a => (
+                        <li key={a.id}><span className="font-mono">{a.codice}</span> — {a.descrizione} {a.categoria && <span className="text-slate-500">({a.categoria})</span>}</li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
+              {articoliCheck.sospetti_grammi?.length > 0 && (
+                <div className="text-xs text-amber-800 mt-1">
+                  {articoliCheck.sospetti_grammi.length} articolo/i con peso &ge; 50 kg (potrebbe essere dato in grammi, verifica).
+                </div>
+              )}
+              <div className="text-[11px] text-slate-500 mt-1 italic">
+                {articoliCheck.note} — unità standard: {articoliCheck.unita}.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KPI principali */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Kpi label="Totale kg prodotti" value={fmtK(d.totale_kg)} sub={d.data_inizio ? `${d.data_inizio} → ${d.data_fine}` : `anno ${d.anno || "—"}`} />
+        <Kpi label="Totale pezzi" value={(d.totale_pezzi || 0).toFixed(0)} color="text-slate-900" />
+        <Kpi label="Peso medio" value={d.totale_pezzi ? `${(d.totale_kg / d.totale_pezzi).toFixed(2)} kg/pz` : "—"} color="text-celeste" />
+        <Kpi label="N° DDT" value={d.ddt_count || 0} color="text-amber-600" />
+      </div>
+
+      {/* Grafico mensile */}
       <div className="kpi-card p-4">
         <h4 className="font-display font-bold mb-3">Andamento kg per mese</h4>
         <ResponsiveContainer width="100%" height={260}>
@@ -184,20 +356,58 @@ function ProduzioneView({ d }) {
             <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v, n) => n === "kg" ? fmtK(v) : v} />
-            <Line type="monotone" dataKey="kg" stroke="#4f46e5" strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="pezzi" stroke="#0ea5e9" strokeDasharray="4 4" />
+            <Line type="monotone" dataKey="kg" stroke="#4f46e5" strokeWidth={2} dot={{ r: 4 }} name="kg" />
+            <Line type="monotone" dataKey="pezzi" stroke="#0ea5e9" strokeDasharray="4 4" name="pezzi" />
             <Legend wrapperStyle={{ fontSize: 12 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
+      {/* Per categoria + Per anno */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="kpi-card p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b"><h4 className="font-display font-bold">Per categoria articolo</h4></div>
+          <div className="overflow-x-auto"><table className="data-table" data-testid="prod-tab-categoria">
+            <thead><tr><th>Categoria</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th><th className="text-right">Articoli</th></tr></thead>
+            <tbody>
+              {(d.per_categoria || []).map((c, i) => (
+                <tr key={c.categoria || i}>
+                  <td>{c.categoria || "—"}</td>
+                  <td className="text-right font-mono font-bold">{fmtK(c.kg)}</td>
+                  <td className="text-right text-xs">{(c.pezzi || 0).toFixed(0)}</td>
+                  <td className="text-right text-xs">{c.articoli || 0}</td>
+                </tr>
+              ))}
+              {(d.per_categoria || []).length === 0 && <tr><td colSpan={4} className="text-center py-6 text-slate-400">Nessun dato</td></tr>}
+            </tbody>
+          </table></div>
+        </div>
+        <div className="kpi-card p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b"><h4 className="font-display font-bold">Per anno</h4></div>
+          <div className="overflow-x-auto"><table className="data-table" data-testid="prod-tab-anno">
+            <thead><tr><th>Anno</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
+            <tbody>
+              {(d.per_anno || []).map((y, i) => (
+                <tr key={y.anno || i}>
+                  <td className="font-semibold">{y.anno}</td>
+                  <td className="text-right font-mono">{fmtK(y.kg)}</td>
+                  <td className="text-right text-xs">{(y.pezzi || 0).toFixed(0)}</td>
+                </tr>
+              ))}
+              {(d.per_anno || []).length === 0 && <tr><td colSpan={3} className="text-center py-6 text-slate-400">Nessun dato</td></tr>}
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      {/* Per cliente + Per articolo */}
       <div className="grid md:grid-cols-2 gap-4">
         <div className="kpi-card p-0 overflow-hidden">
           <div className="px-4 py-3 border-b"><h4 className="font-display font-bold">Top clienti (kg)</h4></div>
-          <div className="overflow-x-auto"><table className="data-table">
+          <div className="overflow-x-auto max-h-96"><table className="data-table" data-testid="prod-tab-cliente">
             <thead><tr><th>Cliente</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
-              {(d.per_cliente || []).map((c, i) => (
+              {(d.per_cliente || []).slice(0, 30).map((c, i) => (
                 <tr key={c.cliente_id || i}><td>{c.cliente_nome}</td><td className="text-right font-mono">{fmtK(c.kg)}</td><td className="text-right text-xs">{(c.pezzi || 0).toFixed(0)}</td></tr>
               ))}
             </tbody>
@@ -205,15 +415,51 @@ function ProduzioneView({ d }) {
         </div>
         <div className="kpi-card p-0 overflow-hidden">
           <div className="px-4 py-3 border-b"><h4 className="font-display font-bold">Top articoli (kg)</h4></div>
-          <div className="overflow-x-auto"><table className="data-table">
-            <thead><tr><th>Articolo</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
+          <div className="overflow-x-auto max-h-96"><table className="data-table" data-testid="prod-tab-articolo">
+            <thead><tr><th>Articolo</th><th>Categoria</th><th className="text-right">Kg</th><th className="text-right">Pezzi</th></tr></thead>
             <tbody>
-              {(d.per_articolo || []).map((a, i) => (
-                <tr key={a.articolo_id || i}><td><div className="text-xs font-mono">{a.codice}</div><div className="text-sm">{a.descrizione}</div></td><td className="text-right font-mono">{fmtK(a.kg)}</td><td className="text-right text-xs">{(a.pezzi || 0).toFixed(0)}</td></tr>
+              {(d.per_articolo || []).slice(0, 30).map((a, i) => (
+                <tr key={a.articolo_id || i}>
+                  <td><div className="text-xs font-mono">{a.codice}</div><div className="text-sm">{a.descrizione}</div></td>
+                  <td className="text-xs text-slate-500">{a.categoria || "—"}</td>
+                  <td className="text-right font-mono">{fmtK(a.kg)}</td>
+                  <td className="text-right text-xs">{(a.pezzi || 0).toFixed(0)}</td>
+                </tr>
               ))}
             </tbody>
           </table></div>
         </div>
+      </div>
+
+      {/* Per singolo DDT */}
+      <div className="kpi-card p-0 overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <h4 className="font-display font-bold">Dettaglio per singolo DDT</h4>
+          <span className="text-xs text-slate-500">{d.ddt_count || 0} DDT (visualizzati {(d.per_ddt || []).length})</span>
+        </div>
+        <div className="overflow-x-auto max-h-[500px]"><table className="data-table" data-testid="prod-tab-ddt">
+          <thead className="sticky top-0 bg-white">
+            <tr>
+              <th>Numero</th>
+              <th>Data</th>
+              <th>Cliente</th>
+              <th className="text-right">Kg</th>
+              <th className="text-right">Pezzi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(d.per_ddt || []).map((r) => (
+              <tr key={r.ddt_id}>
+                <td className="font-mono text-xs">{r.numero}</td>
+                <td className="text-xs">{r.data ? new Date(r.data).toLocaleDateString("it-IT") : "—"}</td>
+                <td>{r.cliente_nome}</td>
+                <td className="text-right font-mono font-bold">{fmtK(r.kg)}</td>
+                <td className="text-right text-xs">{(r.pezzi || 0).toFixed(0)}</td>
+              </tr>
+            ))}
+            {(d.per_ddt || []).length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nessun DDT nel periodo</td></tr>}
+          </tbody>
+        </table></div>
       </div>
     </div>
   );

@@ -15,6 +15,11 @@ export default function Fatture() {
   const [list, setList] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [filterStato, setFilterStato] = useState("all");
+  const [filterDataInizio, setFilterDataInizio] = useState("");
+  const [filterDataFine, setFilterDataFine] = useState("");
+  const [filterPiva, setFilterPiva] = useState("");
+  const [filterCliId, setFilterCliId] = useState("");
+  const [totali, setTotali] = useState({ count: 0, totale_imponibile: 0, totale_iva: 0, totale_documento: 0 });
 
   // New fattura dialog
   const [genOpen, setGenOpen] = useState(false);
@@ -30,9 +35,12 @@ export default function Fatture() {
   // Detail
   const [detail, setDetail] = useState(null);
 
-  // Rinumerazione
+  // Rinumerazione + Ridata
   const [renumTarget, setRenumTarget] = useState(null); // fattura selezionata
   const [renumNumero, setRenumNumero] = useState("");
+  const [renumData, setRenumData] = useState("");
+  const [renumMotivazione, setRenumMotivazione] = useState("");
+  const [renumSaving, setRenumSaving] = useState(false);
 
   // Invio email
   const [emailTarget, setEmailTarget] = useState(null);
@@ -40,14 +48,20 @@ export default function Fatture() {
   const [emailSending, setEmailSending] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    const q = filterStato !== "all" ? `?stato_incasso=${filterStato}` : "";
-    const [f, c, rs] = await Promise.all([
-      api.get(`/fatture${q}`),
+    const params = {};
+    if (filterStato !== "all") params.stato_incasso = filterStato;
+    if (filterDataInizio) params.data_inizio = filterDataInizio;
+    if (filterDataFine) params.data_fine = filterDataFine;
+    if (filterPiva && filterPiva.trim()) params.piva = filterPiva.trim();
+    if (filterCliId) params.cliente_id = filterCliId;
+    const [f, c, rs, t] = await Promise.all([
+      api.get(`/fatture`, { params }),
       api.get("/clienti"),
       api.get("/fatture/ragioni-sociali").catch(() => ({ data: [] })),
+      api.get("/fatture/summary", { params }).catch(() => ({ data: { count: 0, totale_imponibile: 0, totale_iva: 0, totale_documento: 0 } })),
     ]);
-    setList(f.data); setClienti(c.data); setRagioniSociali(rs.data || []);
-  }, [filterStato]);
+    setList(f.data); setClienti(c.data); setRagioniSociali(rs.data || []); setTotali(t.data);
+  }, [filterStato, filterDataInizio, filterDataFine, filterPiva, filterCliId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -153,26 +167,70 @@ export default function Fatture() {
 
   const openRenum = (f) => {
     if (f.xml_transmitted) {
-      toast.error("Fattura trasmessa a SDI: numero immutabile per legge");
+      toast.error("Fattura trasmessa a SDI: dati fiscali immutabili per legge");
       return;
     }
     setRenumTarget(f);
     setRenumNumero(f.numero || "");
+    // pre-popola data corrente della fattura (YYYY-MM-DD)
+    const d = f.data ? new Date(f.data) : null;
+    if (d && !isNaN(d)) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      setRenumData(`${yyyy}-${mm}-${dd}`);
+    } else {
+      setRenumData("");
+    }
+    setRenumMotivazione("");
+  };
+
+  const closeRenum = () => {
+    setRenumTarget(null);
+    setRenumNumero("");
+    setRenumData("");
+    setRenumMotivazione("");
   };
 
   const submitRenum = async () => {
     if (!renumTarget) return;
-    if (!renumNumero || !renumNumero.trim()) {
-      toast.error("Inserisci un nuovo numero");
+    const nuovoNumero = (renumNumero || "").trim();
+    const nuovaData = (renumData || "").trim();
+    const motivazione = (renumMotivazione || "").trim();
+    // Valida motivazione
+    if (motivazione.length < 10) {
+      toast.error("La motivazione è obbligatoria (min 10 caratteri) e verrà registrata nell'audit log");
       return;
     }
+    // Valida che almeno un cambio sia stato fatto
+    const origData = renumTarget.data ? new Date(renumTarget.data) : null;
+    const origDataIso = origData && !isNaN(origData)
+      ? `${origData.getFullYear()}-${String(origData.getMonth() + 1).padStart(2, "0")}-${String(origData.getDate()).padStart(2, "0")}`
+      : "";
+    const numeroDiverso = nuovoNumero && nuovoNumero !== renumTarget.numero;
+    const dataDiversa = nuovaData && nuovaData !== origDataIso;
+    if (!numeroDiverso && !dataDiversa) {
+      toast.error("Modifica almeno il numero o la data prima di salvare");
+      return;
+    }
+    setRenumSaving(true);
     try {
-      const { data } = await api.patch(`/fatture/${renumTarget.id}/rinumera`, { numero: renumNumero.trim() });
-      toast.success(`Rinumerata: ${data.numero}`);
-      setRenumTarget(null); setRenumNumero("");
+      const payload = { motivazione };
+      if (numeroDiverso) payload.numero = nuovoNumero;
+      if (dataDiversa) payload.nuova_data = nuovaData;
+      const { data } = await api.patch(`/fatture/${renumTarget.id}/rinumera`, payload);
+      const parts = [];
+      if (numeroDiverso) parts.push(`num: ${data.numero}`);
+      if (dataDiversa) parts.push(`data: ${new Date(data.data).toLocaleDateString("it-IT")}`);
+      toast.success(`Fattura aggiornata (${parts.join(", ")})`);
+      closeRenum();
       fetchAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Errore rinumerazione");
+      const d = e.response?.data?.detail;
+      const msg = typeof d === "string" ? d : (Array.isArray(d) ? d.map(x => x.msg).join("; ") : "Errore rinumerazione");
+      toast.error(msg);
+    } finally {
+      setRenumSaving(false);
     }
   };
 
@@ -274,10 +332,77 @@ export default function Fatture() {
         }
       />
 
-      <div className="flex gap-2 mb-4">
-        {[["all", "Tutte"], ["da_incassare", "Da incassare"], ["incassata", "Incassate"]].map(([k, l]) => (
-          <button key={k} onClick={() => setFilterStato(k)} className={`px-3 py-1.5 text-xs font-semibold rounded-md ${filterStato === k ? "bg-indaco text-white" : "bg-white border border-slate-200 text-slate-600"}`} data-testid={`fatt-filter-${k}`}>{l}</button>
-        ))}
+      <div className="kpi-card p-4 mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Stato */}
+          <div className="flex gap-1">
+            {[["all", "Tutte"], ["da_incassare", "Da incassare"], ["incassata", "Incassate"]].map(([k, l]) => (
+              <button
+                key={k}
+                onClick={() => setFilterStato(k)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${filterStato === k ? "bg-indaco text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+                data-testid={`fatt-filter-${k}`}
+              >{l}</button>
+            ))}
+          </div>
+
+          {/* Range date */}
+          <div>
+            <Label className="text-[11px] text-slate-500 uppercase tracking-wide">Data dal</Label>
+            <Input
+              type="date"
+              value={filterDataInizio}
+              onChange={(e) => setFilterDataInizio(e.target.value)}
+              className="h-9 w-40"
+              data-testid="fatt-filter-data-inizio"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px] text-slate-500 uppercase tracking-wide">Data al</Label>
+            <Input
+              type="date"
+              value={filterDataFine}
+              onChange={(e) => setFilterDataFine(e.target.value)}
+              className="h-9 w-40"
+              data-testid="fatt-filter-data-fine"
+            />
+          </div>
+
+          {/* Cliente */}
+          <div className="min-w-[220px] flex-1">
+            <Label className="text-[11px] text-slate-500 uppercase tracking-wide">Cliente</Label>
+            <ClienteCombobox
+              value={filterCliId || "all"}
+              onChange={(v) => setFilterCliId(v === "all" ? "" : v)}
+              clienti={clienti}
+              allowAll
+              allLabel="Tutti i clienti"
+              testId="fatt-filter-cliente"
+            />
+          </div>
+
+          {/* PIVA */}
+          <div>
+            <Label className="text-[11px] text-slate-500 uppercase tracking-wide">P.IVA / CF</Label>
+            <Input
+              value={filterPiva}
+              onChange={(e) => setFilterPiva(e.target.value)}
+              placeholder="es. 01234567890"
+              className="h-9 w-44 font-mono"
+              data-testid="fatt-filter-piva"
+            />
+          </div>
+
+          {/* Reset */}
+          {(filterDataInizio || filterDataFine || filterPiva || filterCliId || filterStato !== "all") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setFilterStato("all"); setFilterDataInizio(""); setFilterDataFine(""); setFilterPiva(""); setFilterCliId(""); }}
+              data-testid="fatt-filter-reset"
+            >Azzera filtri</Button>
+          )}
+        </div>
       </div>
 
       <div className="kpi-card p-0 overflow-x-auto">
@@ -344,7 +469,7 @@ export default function Fatture() {
                   <Button variant="ghost" size="icon" onClick={() => openEmailDialog(f)} title="Invia via email" data-testid={`fatt-email-${f.id}`}><Envelope size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)} title="Dettaglio" data-testid={`fatt-detail-${f.id}`}><Eye size={14} /></Button>
                   {!f.xml_transmitted && (
-                    <Button variant="ghost" size="icon" onClick={() => openRenum(f)} title="Rinumera fattura" data-testid={`fatt-renum-${f.id}`}><PencilLine size={14} /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => openRenum(f)} title="Rinumera e ridata fattura" data-testid={`fatt-renum-${f.id}`}><PencilLine size={14} /></Button>
                   )}
                   {!f.xml_transmitted ? (
                     <Button variant="ghost" size="icon" onClick={() => segnaTrasmessa(f)} title="Segna come trasmessa a SDI (blocca il numero)" data-testid={`fatt-segna-sdi-${f.id}`}><PaperPlaneTilt size={14} className="text-indaco" /></Button>
@@ -364,6 +489,27 @@ export default function Fatture() {
             ))}
             {list.length === 0 && <tr><td colSpan="8" className="text-center py-12 text-slate-400">Nessuna fattura</td></tr>}
           </tbody>
+          {totali.count > 0 && (
+            <tfoot className="border-t-2 border-slate-300 bg-slate-50" data-testid="fatt-totali-row">
+              <tr>
+                <td className="py-3 px-4 font-semibold text-slate-700 uppercase text-xs tracking-widest" colSpan={3}>
+                  Totali · {totali.count} fatture
+                </td>
+                <td className="py-3 px-4"></td>
+                <td className="py-3 px-4 text-right font-mono font-bold text-slate-800" data-testid="fatt-tot-imponibile">
+                  € {totali.totale_imponibile.toFixed(2)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono font-bold text-indaco text-base" data-testid="fatt-tot-documento">
+                  € {totali.totale_documento.toFixed(2)}
+                </td>
+                <td className="py-3 px-4 text-center text-[11px] text-slate-500">
+                  <div>IVA</div>
+                  <div className="font-mono font-semibold text-slate-700" data-testid="fatt-tot-iva">€ {totali.totale_iva.toFixed(2)}</div>
+                </td>
+                <td className="py-3 px-4"></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
@@ -595,41 +741,79 @@ export default function Fatture() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog rinumerazione fattura */}
-      <Dialog open={!!renumTarget} onOpenChange={(o) => { if (!o) { setRenumTarget(null); setRenumNumero(""); } }}>
-        <DialogContent className="max-w-md" data-testid="fatt-renum-dialog">
+      {/* Dialog Rinumera e Ridata fattura */}
+      <Dialog open={!!renumTarget} onOpenChange={(o) => { if (!o) closeRenum(); }}>
+        <DialogContent className="max-w-lg" data-testid="fatt-renum-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <PencilLine size={18} /> Rinumera fattura
+              <PencilLine size={18} /> Rinumera e ridata fattura
             </DialogTitle>
           </DialogHeader>
           {renumTarget && (
             <div className="space-y-3">
-              <div className="text-sm">
-                <div className="text-slate-500">Numero attuale</div>
-                <div className="font-mono font-bold text-base">{renumTarget.numero}</div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-slate-500 text-[11px] uppercase tracking-wide">Numero attuale</div>
+                  <div className="font-mono font-bold text-base">{renumTarget.numero}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-[11px] uppercase tracking-wide">Data attuale</div>
+                  <div className="font-mono font-bold text-base">{new Date(renumTarget.data).toLocaleDateString("it-IT")}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Nuovo numero</Label>
+                  <Input
+                    value={renumNumero}
+                    onChange={(e) => setRenumNumero(e.target.value.toUpperCase())}
+                    placeholder="es. FT-2026-00042F"
+                    className="font-mono"
+                    data-testid="fatt-renum-input"
+                  />
+                  <div className="text-[10px] text-slate-500 mt-1">Formato: <code>FT-YYYY-NNNNN[F/C]</code></div>
+                </div>
+                <div>
+                  <Label>Nuova data</Label>
+                  <Input
+                    type="date"
+                    value={renumData}
+                    onChange={(e) => setRenumData(e.target.value)}
+                    data-testid="fatt-renum-data"
+                  />
+                  <div className="text-[10px] text-slate-500 mt-1">L&apos;anno del numero deve coincidere con l&apos;anno della data.</div>
+                </div>
               </div>
               <div>
-                <Label>Nuovo numero</Label>
-                <Input
-                  value={renumNumero}
-                  onChange={(e) => setRenumNumero(e.target.value.toUpperCase())}
-                  placeholder="es. FT-2026-00042"
-                  className="font-mono"
-                  data-testid="fatt-renum-input"
+                <Label>
+                  Motivazione <span className="text-red-600">*</span>
+                  <span className="text-[10px] text-slate-500 ml-2 normal-case">(obbligatoria — registrata in audit log non alterabile)</span>
+                </Label>
+                <textarea
+                  value={renumMotivazione}
+                  onChange={(e) => setRenumMotivazione(e.target.value)}
+                  placeholder="es. Correzione errore materiale in fase di emissione (min. 10 caratteri)"
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indaco/20 focus:border-indaco"
+                  data-testid="fatt-renum-motivazione"
                 />
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Formato accettato: <code>FT-YYYY-NNNNN</code>. L&apos;anno deve coincidere con quello della fattura.
+                <div className={`text-[10px] mt-1 ${renumMotivazione.trim().length < 10 ? "text-red-600" : "text-emerald-700"}`}>
+                  {renumMotivazione.trim().length}/10 caratteri minimi
                 </div>
               </div>
               <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
-                <b>Attenzione:</b> modifica il numero <b>solo se la fattura NON è stata trasmessa a SDI</b>.
-                Una fattura già inviata al SdI ha numero fiscale immutabile.
+                <b>Attenzione:</b> puoi modificare numero e/o data <b>solo se la fattura NON è stata trasmessa a SDI</b>.
+                La modifica verrà registrata nell&apos;audit log con la tua motivazione, utente e timestamp.
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
-                <Button variant="outline" onClick={() => { setRenumTarget(null); setRenumNumero(""); }}>Annulla</Button>
-                <Button className="bg-indaco hover:bg-indaco-dark" onClick={submitRenum} data-testid="fatt-renum-save">
-                  Rinumera
+                <Button variant="outline" onClick={closeRenum} disabled={renumSaving}>Annulla</Button>
+                <Button
+                  className="bg-indaco hover:bg-indaco-dark"
+                  onClick={submitRenum}
+                  disabled={renumSaving || renumMotivazione.trim().length < 10}
+                  data-testid="fatt-renum-save"
+                >
+                  {renumSaving ? "Salvataggio…" : "Rinumera e ridata"}
                 </Button>
               </div>
             </div>
@@ -735,7 +919,7 @@ function BulkXmlExport() {
           <div>
             <div className="overline text-slate-400">Esportazione massiva</div>
             <h3 className="font-display font-bold text-base text-slate-900">XML Fatture Elettroniche</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Scarica un ZIP con tutti gli XML del periodo (uno per fattura) pronti per l'invio allo SdI.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Scarica un ZIP con tutti gli XML del periodo (uno per fattura) pronti per l&apos;invio allo SdI.</p>
           </div>
 
           {/* Mode tabs */}
