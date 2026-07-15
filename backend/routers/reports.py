@@ -128,15 +128,16 @@ async def report_produzione(
     Restituisce anche breakdown per mese, cliente, articolo, categoria, anno e DDT.
     """
     tenant_id = tenant_id_of(user)
-    # Mappa articoli: id → {peso_medio, categoria, codice, descrizione}
+    # Mappa articoli: id → {peso_medio, categoria, categoria_peso, codice, descrizione}
     articoli_map: Dict[str, Dict] = {}
     async for a in db.articoli.find(
         {"tenant_id": tenant_id},
-        {"_id": 0, "id": 1, "peso_medio": 1, "codice": 1, "descrizione": 1, "categoria": 1},
+        {"_id": 0, "id": 1, "peso_medio": 1, "codice": 1, "descrizione": 1, "categoria": 1, "categoria_peso": 1},
     ):
         articoli_map[a["id"]] = {
             "peso_medio": float(a.get("peso_medio") or 0),
             "categoria": (a.get("categoria") or "—") or "—",
+            "categoria_peso": (a.get("categoria_peso") or "NON_CLASSIFICATO"),
             "codice": a.get("codice", ""),
             "descrizione": a.get("descrizione", ""),
         }
@@ -165,6 +166,12 @@ async def report_produzione(
     per_cliente: Dict[str, Dict] = {}
     per_articolo: Dict[str, Dict] = {}
     per_categoria: Dict[str, Dict] = {}
+    per_categoria_peso: Dict[str, Dict] = {
+        "BIANCHERIA_PIANA": {"categoria_peso": "BIANCHERIA_PIANA", "label": "Biancheria piana", "kg": 0.0, "pezzi": 0.0},
+        "SPUGNA": {"categoria_peso": "SPUGNA", "label": "Spugna", "kg": 0.0, "pezzi": 0.0},
+        "VARIE": {"categoria_peso": "VARIE", "label": "Varie", "kg": 0.0, "pezzi": 0.0},
+        "NON_CLASSIFICATO": {"categoria_peso": "NON_CLASSIFICATO", "label": "Non classificato", "kg": 0.0, "pezzi": 0.0},
+    }
     per_ddt: List[Dict] = []
     tot_kg = 0.0
     tot_pz = 0.0
@@ -186,11 +193,13 @@ async def report_produzione(
 
         ddt_kg = 0.0
         ddt_pz = 0.0
+        ddt_by_catpeso = {"BIANCHERIA_PIANA": 0.0, "SPUGNA": 0.0, "VARIE": 0.0, "NON_CLASSIFICATO": 0.0}
 
         for r in d.get("righe", []):
             aid = r.get("articolo_id")
             art = articoli_map.get(aid or "", {})
             cat = art.get("categoria", "—")
+            cat_peso = art.get("categoria_peso", "NON_CLASSIFICATO") or "NON_CLASSIFICATO"
             # Filtro per categoria (se richiesto)
             if categoria and cat != categoria:
                 continue
@@ -201,6 +210,7 @@ async def report_produzione(
             tot_pz += qta
             ddt_kg += kg
             ddt_pz += qta
+            ddt_by_catpeso[cat_peso if cat_peso in ddt_by_catpeso else "NON_CLASSIFICATO"] += kg
             # mese
             slot = per_mese.setdefault(mese, {"mese": mese, "kg": 0.0, "pezzi": 0.0})
             slot["kg"] += kg; slot["pezzi"] += qta
@@ -215,12 +225,17 @@ async def report_produzione(
                 "articolo_id": aid, "codice": r.get("codice", "") or art.get("codice", ""),
                 "descrizione": r.get("descrizione", "") or art.get("descrizione", ""),
                 "categoria": cat,
+                "categoria_peso": cat_peso,
                 "kg": 0.0, "pezzi": 0.0,
             })
             slot_a["kg"] += kg; slot_a["pezzi"] += qta
-            # categoria
+            # categoria (free-text)
             slot_cat = per_categoria.setdefault(cat, {"categoria": cat, "kg": 0.0, "pezzi": 0.0, "articoli": 0})
             slot_cat["kg"] += kg; slot_cat["pezzi"] += qta
+            # categoria_peso (strutturato)
+            key = cat_peso if cat_peso in per_categoria_peso else "NON_CLASSIFICATO"
+            per_categoria_peso[key]["kg"] += kg
+            per_categoria_peso[key]["pezzi"] += qta
 
         # per DDT (solo se c'è produzione)
         if ddt_kg > 0 or ddt_pz > 0:
@@ -232,6 +247,10 @@ async def report_produzione(
                 "cliente_nome": cli_nome,
                 "kg": round(ddt_kg, 2),
                 "pezzi": round(ddt_pz, 2),
+                "kg_biancheria_piana": round(ddt_by_catpeso["BIANCHERIA_PIANA"], 2),
+                "kg_spugna": round(ddt_by_catpeso["SPUGNA"], 2),
+                "kg_varie": round(ddt_by_catpeso["VARIE"], 2),
+                "kg_non_classificato": round(ddt_by_catpeso["NON_CLASSIFICATO"], 2),
             })
 
     # Numero di articoli distinti per categoria
@@ -250,6 +269,8 @@ async def report_produzione(
     per_cliente_list = _round(sorted(per_cliente.values(), key=lambda x: x["kg"], reverse=True))
     per_articolo_list = _round(sorted(per_articolo.values(), key=lambda x: x["kg"], reverse=True))
     per_categoria_list = _round(sorted(per_categoria.values(), key=lambda x: x["kg"], reverse=True))
+    # Elenco ordinato biancheria/spugna/varie/non_classificato (ordine fisso)
+    per_catpeso_list = _round([per_categoria_peso[k] for k in ("BIANCHERIA_PIANA", "SPUGNA", "VARIE", "NON_CLASSIFICATO")])
     per_ddt.sort(key=lambda x: x["data"], reverse=True)
 
     return {
@@ -265,6 +286,7 @@ async def report_produzione(
         "per_cliente": per_cliente_list[:50],
         "per_articolo": per_articolo_list[:50],
         "per_categoria": per_categoria_list,
+        "per_categoria_peso": per_catpeso_list,
         "per_ddt": per_ddt[:500],  # limita per performance UI
         "ddt_count": len(per_ddt),
     }
@@ -273,15 +295,19 @@ async def report_produzione(
 @router.get("/reports/produzione/articoli-check")
 async def articoli_peso_check(user: Dict = Depends(get_current_user)):
     """Controllo dati Articoli per l'analisi kg.
-    Restituisce elenco articoli con peso_medio mancante / zero / plausibilmente in grammi.
+
+    - senza_peso: articoli con peso_medio mancante/zero
+    - sospetti_grammi: articoli con peso >= 50 (probabile errore unità)
+    - non_classificati: articoli con categoria_peso = NON_CLASSIFICATO (o mancante)
     """
     tenant_id = tenant_id_of(user)
     tot_articoli = 0
     senza_peso: List[Dict] = []
     sospetti_grammi: List[Dict] = []
+    non_classificati: List[Dict] = []
     async for a in db.articoli.find(
         {"tenant_id": tenant_id},
-        {"_id": 0, "id": 1, "codice": 1, "descrizione": 1, "categoria": 1, "peso_medio": 1},
+        {"_id": 0, "id": 1, "codice": 1, "descrizione": 1, "categoria": 1, "categoria_peso": 1, "peso_medio": 1},
     ):
         tot_articoli += 1
         pm = a.get("peso_medio")
@@ -289,26 +315,37 @@ async def articoli_peso_check(user: Dict = Depends(get_current_user)):
             pmv = float(pm) if pm is not None else 0
         except Exception:
             pmv = 0
+        cat_peso = (a.get("categoria_peso") or "NON_CLASSIFICATO").upper()
         if pmv <= 0:
             senza_peso.append({
                 "id": a["id"], "codice": a.get("codice", ""),
                 "descrizione": a.get("descrizione", ""),
                 "categoria": a.get("categoria", ""),
+                "categoria_peso": cat_peso,
                 "peso_medio": pmv,
             })
-        elif pmv >= 50:  # verosimilmente grammi salvati come kg
+        elif pmv >= 50:
             sospetti_grammi.append({
                 "id": a["id"], "codice": a.get("codice", ""),
                 "descrizione": a.get("descrizione", ""),
                 "peso_medio": pmv,
+            })
+        if cat_peso == "NON_CLASSIFICATO":
+            non_classificati.append({
+                "id": a["id"], "codice": a.get("codice", ""),
+                "descrizione": a.get("descrizione", ""),
+                "categoria": a.get("categoria", ""),
             })
     return {
         "totale_articoli": tot_articoli,
         "senza_peso_count": len(senza_peso),
         "senza_peso": senza_peso[:200],
         "sospetti_grammi": sospetti_grammi[:50],
+        "non_classificati_count": len(non_classificati),
+        "non_classificati": non_classificati[:200],
         "unita": "kg",
-        "note": "Peso medio in chilogrammi. Valori >= 50 possono indicare un errore (dato in grammi).",
+        "categorie_peso": list(("BIANCHERIA_PIANA", "SPUGNA", "VARIE", "NON_CLASSIFICATO")),
+        "note": "Peso medio in chilogrammi. Valori >= 50 possono indicare un errore (dato in grammi). Classifica ogni articolo in una categoria peso (biancheria piana/spugna/varie).",
     }
 
 
@@ -378,20 +415,30 @@ async def report_produzione_xlsx(
     ws2 = wb.create_sheet("Per cliente")
     _write(ws2, ["Cliente", "Kg", "Pezzi"], [(r["cliente_nome"], r["kg"], r["pezzi"]) for r in d["per_cliente"]])
 
-    # Per categoria
+    # Per categoria (free-text)
     ws3 = wb.create_sheet("Per categoria")
     _write(ws3, ["Categoria", "Kg", "Pezzi", "N° articoli"],
         [(r["categoria"], r["kg"], r["pezzi"], r["articoli"]) for r in d["per_categoria"]])
+
+    # Per categoria peso (strutturata)
+    ws3b = wb.create_sheet("Per categoria peso")
+    _write(ws3b, ["Categoria peso", "Kg", "Pezzi"],
+        [(r["label"], r["kg"], r["pezzi"]) for r in d["per_categoria_peso"]])
 
     # Per articolo
     ws4 = wb.create_sheet("Per articolo")
     _write(ws4, ["Codice", "Descrizione", "Categoria", "Kg", "Pezzi"],
         [(r["codice"], r["descrizione"], r["categoria"], r["kg"], r["pezzi"]) for r in d["per_articolo"]])
 
-    # Per DDT
+    # Per DDT (con subtotali per categoria_peso)
     ws5 = wb.create_sheet("Per DDT")
-    _write(ws5, ["Numero", "Data", "Cliente", "Kg", "Pezzi"],
-        [(r["numero"], (r["data"] or "")[:10], r["cliente_nome"], r["kg"], r["pezzi"]) for r in d["per_ddt"]])
+    _write(ws5,
+        ["Numero", "Data", "Cliente", "Kg biancheria", "Kg spugna", "Kg varie", "Kg non class.", "Kg totale", "Pezzi"],
+        [(
+            r["numero"], (r["data"] or "")[:10], r["cliente_nome"],
+            r.get("kg_biancheria_piana", 0), r.get("kg_spugna", 0), r.get("kg_varie", 0),
+            r.get("kg_non_classificato", 0), r["kg"], r["pezzi"],
+        ) for r in d["per_ddt"]])
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)

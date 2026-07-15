@@ -1,0 +1,32 @@
+{
+  "summary": "Iter33 — Testata la feature 'Categoria peso articoli' (BIANCHERIA_PIANA/SPUGNA/VARIE/NON_CLASSIFICATO). Backend: 17/17 pytest PASS su POST/PATCH articoli (case-insensitive + 422 su valori invalidi), migration seed (tutti gli articoli hanno categoria_peso valida), report/produzione (per_categoria_peso array ordinato di 4 elementi, somma kg = totale_kg, per_ddt con subtotali kg_biancheria_piana/spugna/varie/non_classificato coerenti), articoli-check (non_classificati_count + array), xlsx (8 sheet incluso 'Per categoria peso' + colonne DDT). Frontend: banner 'art-nonclass-banner' visibile con 5 non classificati, 5 cards con ring-amber-300 + badge 'Non classificato', 1 card 'Biancheria piana' (LEN-MAT), dropdown 'art-categoria-peso' con 4 opzioni. Report → tab Produzione → sezione 'prod-tab-catpeso' visibile, tabella DDT con colonne [Numero, Data, Cliente, Bianch., Spugna, Varie, N.class., Kg totali, Pezzi], banner 'prod-articoli-check' con elenco non classificati (LEN-SIN, ASC-VIS, TEL-BA, ACCAP, TAP).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_categoria_peso.py",
+    "/app/test_reports/pytest/iter33_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/schemas.py L71-79 e L259-267: validator field_validator('categoria_peso') implementato correttamente con normalizzazione uppercase + strip + verifica enum. PatchArticoloIn ritorna None su stringa vuota (skip campo) — comportamento voluto. OK.",
+    "backend/seed.py L382-388 migrate_phase2: backfill idempotente su articoli senza campo (update_many con filter categoria_peso $exists=false). Log 'categoria_peso=NON_CLASSIFICATO applicata a N articoli' viene emesso solo se modified_count>0. OK.",
+    "backend/routers/reports.py L169-174: per_categoria_peso inizializzato come dict con 4 chiavi fisse, sempre ritornato in ordine [BIANCHERIA_PIANA, SPUGNA, VARIE, NON_CLASSIFICATO] via lista finale L273. Comportamento robusto anche quando non ci sono DDT (ritorna 4 elementi con kg=0/pezzi=0). OK.",
+    "backend/routers/reports.py L213 ddt_by_catpeso: usa fallback 'NON_CLASSIFICATO' se il valore letto dall'articolo non è nel dict (es. valore corrotto/legacy). Difesa in profondità. OK.",
+    "backend/routers/reports.py L436-441 sheet 'Per DDT' xlsx: contiene tutte le 9 colonne richieste (Numero, Data, Cliente, Kg biancheria, Kg spugna, Kg varie, Kg non class., Kg totale, Pezzi). Ordine + subtotali corretti. OK.",
+    "frontend/src/pages/Articoli.jsx L145-164 banner: filtra list.filter(a => (a.categoria_peso || 'NON_CLASSIFICATO') === 'NON_CLASSIFICATO'). Fallback su NON_CLASSIFICATO se il campo manca — robusto. Banner nascosto se count===0. OK.",
+    "frontend/src/pages/Articoli.jsx L170: ring-amber-300 solo su cards NON_CLASSIFICATO. catPesoBadge (L21-30) rende 4 varianti colorate coerenti con Report. OK.",
+    "frontend/src/pages/Report.jsx L379-401 sezione prod-tab-catpeso: 4 card colorate (sky/emerald/violet/amber) con label + kg + pezzi + percentuale. Colore amber su NON_CLASSIFICATO evidenzia la mancanza di classificazione. OK.",
+    "frontend/src/pages/Report.jsx L482-490 header DDT table: label 'Bianch./Spugna/Varie/N.class./Kg totali/Pezzi' con title tooltip su Bianch. e N.class. per accessibilità. OK.",
+    "Warning minore: DialogContent in Articoli.jsx emette warning 'Missing Description or aria-describedby' — non bloccante ma miglioria per accessibilità. Aggiungere <DialogDescription> nel DialogHeader."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter33_categoria_peso.py (NEW: 17 pytest test cases)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 — OK",
+  "seed_data_creation": "Nessun dato residuo lasciato. Tutti gli articoli TEST_* creati durante i test vengono eliminati (cleanup nel try/finally e dopo ogni assertion).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter33 = Categoria peso articoli. Backend: /api/articoli accetta categoria_peso case-insensitive (biancheria_piana/spugna/varie/non_classificato lowercase → uppercase); valore invalido = 422. /api/reports/produzione ritorna per_categoria_peso[4] ordinato + per_ddt con subtotali kg_biancheria_piana/kg_spugna/kg_varie/kg_non_classificato (somma = kg tot DDT). /api/reports/produzione/articoli-check ritorna non_classificati_count + non_classificati[]. /api/reports/produzione/xlsx = 8 sheet (Sommario, Per mese, Per anno, Per cliente, Per categoria, 'Per categoria peso', Per articolo, Per DDT). UI: data-testid principali = art-categoria-peso (Select in dialog), art-nonclass-banner (alert giallo su /articoli), prod-tab-catpeso (sezione con 4 card colorate), prod-tab-ddt (tabella con colonne bianch./spugna/varie/n.class), prod-articoli-check (banner report). Stato attuale seed: 6 articoli totali, 1 BIANCHERIA_PIANA (LEN-MAT), 5 NON_CLASSIFICATO (LEN-SIN, ASC-VIS, TEL-BA, ACCAP, TAP).",
+  "rca_of_the_issue": "Nessun bug trovato. Feature implementata correttamente sia backend sia frontend. Copertura test: 17 pytest + 6 verifiche UI (banner articoli, ring cards, badge, dropdown 4 opzioni, sezione catpeso report, tabella DDT con nuove colonne, banner articoli-check con elenco non classificati)."
+}

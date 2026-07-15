@@ -306,16 +306,29 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
         </div>
       </div>
 
-      {/* Warning articoli senza peso */}
-      {articoliCheck && (articoliCheck.senza_peso_count > 0 || articoliCheck.sospetti_grammi?.length > 0) && (
+      {/* Warning articoli senza peso / non classificati */}
+      {articoliCheck && (articoliCheck.senza_peso_count > 0 || (articoliCheck.non_classificati_count || 0) > 0 || articoliCheck.sospetti_grammi?.length > 0) && (
         <div className="kpi-card p-4 border-l-4 border-amber-400 bg-amber-50" data-testid="prod-articoli-check">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 text-amber-600 font-bold text-lg">!</div>
             <div className="flex-1">
               <div className="font-display font-bold text-amber-900 text-sm">Attenzione: dati Articoli da verificare</div>
+              {(articoliCheck.non_classificati_count || 0) > 0 && (
+                <div className="text-xs text-amber-800 mt-1">
+                  <b>{articoliCheck.non_classificati_count}</b> articolo/i <b>non classificato/i per peso</b> — assegna la categoria (Biancheria piana / Spugna / Varie) nella sezione Articoli.
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-amber-700">Mostra elenco</summary>
+                    <ul className="mt-1 ml-4 list-disc">
+                      {(articoliCheck.non_classificati || []).slice(0, 20).map(a => (
+                        <li key={a.id}><span className="font-mono">{a.codice}</span> — {a.descrizione}</li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
               {articoliCheck.senza_peso_count > 0 && (
                 <div className="text-xs text-amber-800 mt-1">
-                  {articoliCheck.senza_peso_count} articolo/i senza <b>peso medio</b> impostato — i loro pezzi non contribuiscono al calcolo dei kg.
+                  <b>{articoliCheck.senza_peso_count}</b> articolo/i senza <b>peso medio</b> impostato — i loro pezzi non contribuiscono al calcolo dei kg.
                   <details className="mt-1">
                     <summary className="cursor-pointer text-amber-700">Mostra elenco</summary>
                     <ul className="mt-1 ml-4 list-disc">
@@ -361,6 +374,30 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
             <Legend wrapperStyle={{ fontSize: 12 }} />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Per categoria peso (biancheria piana / spugna / varie / non classificato) */}
+      <div className="kpi-card p-0 overflow-hidden" data-testid="prod-tab-catpeso">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <h4 className="font-display font-bold">Per categoria peso (biancheria piana / spugna / varie)</h4>
+          <span className="text-[11px] text-slate-500 italic">Somma coerente con il totale DDT</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-t">
+          {(d.per_categoria_peso || []).map((c) => {
+            const perc = d.totale_kg ? (c.kg / d.totale_kg * 100) : 0;
+            const color = c.categoria_peso === "BIANCHERIA_PIANA" ? "bg-sky-50 text-sky-800 border-sky-200" :
+                          c.categoria_peso === "SPUGNA" ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                          c.categoria_peso === "VARIE" ? "bg-violet-50 text-violet-800 border-violet-200" :
+                          "bg-amber-50 text-amber-800 border-amber-300";
+            return (
+              <div key={c.categoria_peso} className={`p-4 border-r last:border-r-0 border-b md:border-b-0 ${color}`}>
+                <div className="text-[11px] uppercase font-semibold tracking-wide opacity-80">{c.label}</div>
+                <div className="text-2xl font-display font-bold mt-1">{fmtK(c.kg)}</div>
+                <div className="text-xs opacity-70 mt-1">{(c.pezzi || 0).toFixed(0)} pz · {perc.toFixed(1)}%</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Per categoria + Per anno */}
@@ -443,7 +480,11 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
               <th>Numero</th>
               <th>Data</th>
               <th>Cliente</th>
-              <th className="text-right">Kg</th>
+              <th className="text-right" title="Biancheria piana">Bianch.</th>
+              <th className="text-right">Spugna</th>
+              <th className="text-right">Varie</th>
+              <th className="text-right" title="Non classificato">N.class.</th>
+              <th className="text-right">Kg totali</th>
               <th className="text-right">Pezzi</th>
             </tr>
           </thead>
@@ -453,11 +494,15 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
                 <td className="font-mono text-xs">{r.numero}</td>
                 <td className="text-xs">{r.data ? new Date(r.data).toLocaleDateString("it-IT") : "—"}</td>
                 <td>{r.cliente_nome}</td>
+                <td className="text-right text-xs font-mono text-sky-700">{r.kg_biancheria_piana ? fmtK(r.kg_biancheria_piana) : "—"}</td>
+                <td className="text-right text-xs font-mono text-emerald-700">{r.kg_spugna ? fmtK(r.kg_spugna) : "—"}</td>
+                <td className="text-right text-xs font-mono text-violet-700">{r.kg_varie ? fmtK(r.kg_varie) : "—"}</td>
+                <td className="text-right text-xs font-mono text-amber-700">{r.kg_non_classificato ? fmtK(r.kg_non_classificato) : "—"}</td>
                 <td className="text-right font-mono font-bold">{fmtK(r.kg)}</td>
                 <td className="text-right text-xs">{(r.pezzi || 0).toFixed(0)}</td>
               </tr>
             ))}
-            {(d.per_ddt || []).length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nessun DDT nel periodo</td></tr>}
+            {(d.per_ddt || []).length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nessun DDT nel periodo</td></tr>}
           </tbody>
         </table></div>
       </div>

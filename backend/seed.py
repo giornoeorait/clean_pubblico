@@ -379,6 +379,13 @@ async def migrate_phase2():
         {"attivo": {"$exists": False}},
         {"$set": {"attivo": True}},
     )
+    # NUOVO: categoria_peso = NON_CLASSIFICATO su articoli esistenti senza campo
+    res_catpeso = await db.articoli.update_many(
+        {"categoria_peso": {"$exists": False}},
+        {"$set": {"categoria_peso": "NON_CLASSIFICATO"}},
+    )
+    if res_catpeso.modified_count:
+        logger.info(f"[SEED] categoria_peso=NON_CLASSIFICATO applicata a {res_catpeso.modified_count} articoli")
 
 
 async def run_all():

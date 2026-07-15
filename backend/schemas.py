@@ -1,6 +1,9 @@
 """Pydantic schemas for CleanTec API."""
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional, Dict, Any, Literal
+from pydantic import BaseModel, Field, EmailStr, field_validator
+
+
+CATEGORIE_PESO = ("BIANCHERIA_PIANA", "SPUGNA", "VARIE", "NON_CLASSIFICATO")
 
 
 class LoginIn(BaseModel):
@@ -55,6 +58,7 @@ class ArticoloIn(BaseModel):
     temperatura: int = 60
     barcode: Optional[str] = ""
     peso_medio: float = 0.5
+    categoria_peso: str = "NON_CLASSIFICATO"  # BIANCHERIA_PIANA | SPUGNA | VARIE | NON_CLASSIFICATO
     # Valore convenzionale singolo prodotto IVA esclusa
     prezzo: float = 0.0
     prezzo_tipo: str = "capo"
@@ -63,6 +67,16 @@ class ArticoloIn(BaseModel):
     prezzo_lavaggio: float = 0.0
     giacenza: int = 0
     multiplo_quantita: int = 1  # 1 = unitario; 5/10/25 = ordini solo a multipli
+
+    @field_validator("categoria_peso")
+    @classmethod
+    def _val_catpeso(cls, v):
+        if v is None or v == "":
+            return "NON_CLASSIFICATO"
+        v = str(v).upper().strip()
+        if v not in CATEGORIE_PESO:
+            raise ValueError(f"categoria_peso deve essere una tra: {', '.join(CATEGORIE_PESO)}")
+        return v
 
 
 class MacchinaIn(BaseModel):
@@ -234,12 +248,23 @@ class PatchArticoloIn(_PatchBase):
     temperatura: Optional[int] = None
     barcode: Optional[str] = None
     peso_medio: Optional[float] = None
+    categoria_peso: Optional[str] = None
     prezzo: Optional[float] = None
     prezzo_tipo: Optional[str] = None
     prezzo_noleggio: Optional[float] = None
     prezzo_lavaggio: Optional[float] = None
     giacenza: Optional[int] = None
     multiplo_quantita: Optional[int] = None
+
+    @field_validator("categoria_peso")
+    @classmethod
+    def _val_catpeso_patch(cls, v):
+        if v is None or v == "":
+            return None
+        v = str(v).upper().strip()
+        if v not in CATEGORIE_PESO:
+            raise ValueError(f"categoria_peso deve essere una tra: {', '.join(CATEGORIE_PESO)}")
+        return v
 
 
 class PatchMacchinaIn(_PatchBase):

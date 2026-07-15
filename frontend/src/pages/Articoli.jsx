@@ -9,7 +9,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Plus, Package, Barcode, PencilSimple, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const EMPTY = { codice: "", descrizione: "", categoria: "biancheria", tipo: "capo", materiale: "", lavaggio: "standard", temperatura: 60, barcode: "", peso_medio: 0.5, prezzo: 0, prezzo_tipo: "capo", prezzo_noleggio: 0, prezzo_lavaggio: 0, giacenza: 0, multiplo_quantita: 1 };
+const EMPTY = { codice: "", descrizione: "", categoria: "biancheria", categoria_peso: "NON_CLASSIFICATO", tipo: "capo", materiale: "", lavaggio: "standard", temperatura: 60, barcode: "", peso_medio: 0.5, prezzo: 0, prezzo_tipo: "capo", prezzo_noleggio: 0, prezzo_lavaggio: 0, giacenza: 0, multiplo_quantita: 1 };
+
+const CATEGORIE_PESO = [
+  { value: "BIANCHERIA_PIANA", label: "Biancheria piana" },
+  { value: "SPUGNA", label: "Spugna" },
+  { value: "VARIE", label: "Varie" },
+  { value: "NON_CLASSIFICATO", label: "Non classificato" },
+];
+
+const catPesoBadge = (v) => {
+  const map = {
+    BIANCHERIA_PIANA: { label: "Biancheria piana", cls: "bg-sky-100 text-sky-700" },
+    SPUGNA: { label: "Spugna", cls: "bg-emerald-100 text-emerald-700" },
+    VARIE: { label: "Varie", cls: "bg-violet-100 text-violet-700" },
+    NON_CLASSIFICATO: { label: "Non classificato", cls: "bg-amber-100 text-amber-800 border border-amber-300" },
+  };
+  const m = map[v] || map.NON_CLASSIFICATO;
+  return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${m.cls}`}>{m.label}</span>;
+};
 
 export default function Articoli() {
   const [list, setList] = useState([]);
@@ -62,7 +80,19 @@ export default function Articoli() {
                 <div><Label>Materiale</Label><Input value={form.materiale} onChange={e => setForm({...form, materiale: e.target.value})} /></div>
                 <div><Label>Lavaggio</Label><Input value={form.lavaggio} onChange={e => setForm({...form, lavaggio: e.target.value})} /></div>
                 <div><Label>Temperatura (°C)</Label><Input type="number" value={form.temperatura} onChange={e => setForm({...form, temperatura: parseInt(e.target.value)})} /></div>
-                <div><Label>Peso medio (kg)</Label><Input type="number" step="0.1" value={form.peso_medio} onChange={e => setForm({...form, peso_medio: parseFloat(e.target.value)})} /></div>
+                <div><Label>Peso medio (kg)</Label><Input type="number" step="0.1" value={form.peso_medio} onChange={e => setForm({...form, peso_medio: parseFloat(e.target.value)})} data-testid="art-peso-medio" /></div>
+                <div>
+                  <Label>Categoria peso <span className="text-red-500">*</span></Label>
+                  <Select value={form.categoria_peso || "NON_CLASSIFICATO"} onValueChange={v => setForm({...form, categoria_peso: v})}>
+                    <SelectTrigger data-testid="art-categoria-peso"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIE_PESO.map(c => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Usata per subtotali kg su DDT (biancheria piana / spugna / varie)</p>
+                </div>
                 <div className="hidden md:block" />
                 <div className="col-span-2 md:col-span-3 border-t border-slate-200 pt-2 mt-1">
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Valori economici</div>
@@ -112,9 +142,34 @@ export default function Articoli() {
         }
       />
 
+      {(() => {
+        const nonClass = list.filter(a => (a.categoria_peso || "NON_CLASSIFICATO") === "NON_CLASSIFICATO");
+        if (nonClass.length === 0) return null;
+        return (
+          <div className="kpi-card p-4 mb-4 border-l-4 border-amber-400 bg-amber-50" data-testid="art-nonclass-banner">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 text-amber-600 font-bold text-lg">!</div>
+              <div className="flex-1 text-sm">
+                <div className="font-display font-bold text-amber-900">
+                  {nonClass.length} articolo/i non classificato/i per peso
+                </div>
+                <div className="text-xs text-amber-800 mt-0.5">
+                  Ogni articolo deve avere una <b>Categoria peso</b> (Biancheria piana / Spugna / Varie) per il corretto calcolo dei subtotali kg su DDT e report.
+                  Modifica gli articoli evidenziati in giallo per assegnare la categoria.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {list.map(a => (
-          <div key={a.id} className="kpi-card group" data-testid={`articolo-${a.id}`}>
+          <div
+            key={a.id}
+            className={`kpi-card group ${(a.categoria_peso || "NON_CLASSIFICATO") === "NON_CLASSIFICATO" ? "ring-2 ring-amber-300" : ""}`}
+            data-testid={`articolo-${a.id}`}
+          >
             <div className="flex items-start justify-between">
               <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-azzurro/20 to-indaco/20 flex items-center justify-center">
                 <Package size={20} className="text-indaco" weight="duotone" />
@@ -125,9 +180,13 @@ export default function Articoli() {
               </div>
             </div>
             <div className="mt-4">
-              <div className="overline">{a.categoria} · {a.tipo?.replace("_", " ")}</div>
+              <div className="overline flex items-center gap-2">
+                <span>{a.categoria} · {a.tipo?.replace("_", " ")}</span>
+                {catPesoBadge(a.categoria_peso)}
+              </div>
               <div className="font-display text-lg font-bold mt-1">{a.descrizione}</div>
               <div className="text-xs text-slate-500 font-mono mt-1">{a.codice}</div>
+              <div className="text-[11px] text-slate-500 mt-1">Peso: <span className="font-mono">{(a.peso_medio || 0).toFixed(2)} kg</span></div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div><div className="text-slate-400 text-[10px] uppercase tracking-wider">Noleggio</div><div className="font-mono font-semibold text-indaco">€ {(a.prezzo_noleggio || 0).toFixed(2)}</div></div>
