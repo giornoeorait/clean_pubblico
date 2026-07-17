@@ -189,19 +189,52 @@ export default function DDT() {
                   </div>
                   {rows.length === 0 && <div className="text-center text-sm text-slate-400 py-4 border border-dashed border-slate-200 rounded">Aggiungi una riga</div>}
                   <div className="space-y-2">
-                    {rows.map((r, i) => (
-                      <div key={i} className="flex items-center gap-2" data-testid={`ddt-row-${i}`}>
-                        <Select value={r.articolo_id} onValueChange={v => updateRow(i, "articolo_id", v)}>
-                          <SelectTrigger className="flex-1"><SelectValue placeholder="Articolo…" /></SelectTrigger>
-                          <SelectContent>
-                            {articoli.map(a => <SelectItem key={a.id} value={a.id}>{a.codice} — {a.descrizione}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <Input type="number" step="1" min="1" className="w-24" placeholder="Qta" value={r.quantita} onChange={e => updateRow(i, "quantita", parseInt(e.target.value) || 0)} />
-                        <Button type="button" variant="outline" size="icon" onClick={() => removeRow(i)}><Trash size={14} /></Button>
-                      </div>
-                    ))}
+                    {rows.map((r, i) => {
+                      const art = articoli.find(a => a.id === r.articolo_id);
+                      const pesoRiga = art ? (parseFloat(r.quantita) || 0) * (parseFloat(art.peso_medio) || 0) : 0;
+                      const cp = (art?.categoria_peso || "NON_CLASSIFICATO");
+                      const cpLabel = { BIANCHERIA_PIANA: "Bianch.", SPUGNA: "Spugna", VARIE: "Varie", NON_CLASSIFICATO: "N.class." }[cp] || cp;
+                      return (
+                        <div key={i} className="flex items-center gap-2" data-testid={`ddt-row-${i}`}>
+                          <Select value={r.articolo_id} onValueChange={v => updateRow(i, "articolo_id", v)}>
+                            <SelectTrigger className="flex-1"><SelectValue placeholder="Articolo…" /></SelectTrigger>
+                            <SelectContent>
+                              {articoli.map(a => <SelectItem key={a.id} value={a.id}>{a.codice} — {a.descrizione}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" step="1" min="1" className="w-24" placeholder="Qta" value={r.quantita} onChange={e => updateRow(i, "quantita", parseInt(e.target.value) || 0)} />
+                          {art && (
+                            <div className="text-xs text-slate-500 min-w-[110px] text-right font-mono" title={`Peso medio ${art.peso_medio || 0} kg`}>
+                              {pesoRiga.toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                              <div className="text-[10px] text-slate-400">{cpLabel}</div>
+                            </div>
+                          )}
+                          <Button type="button" variant="outline" size="icon" onClick={() => removeRow(i)}><Trash size={14} /></Button>
+                        </div>
+                      );
+                    })}
                   </div>
+                  {rows.length > 0 && (() => {
+                    const sub = { BIANCHERIA_PIANA: 0, SPUGNA: 0, VARIE: 0, NON_CLASSIFICATO: 0, TOT: 0 };
+                    rows.forEach(r => {
+                      const art = articoli.find(a => a.id === r.articolo_id);
+                      if (!art) return;
+                      const pesoRiga = (parseFloat(r.quantita) || 0) * (parseFloat(art.peso_medio) || 0);
+                      const cp = (art.categoria_peso || "NON_CLASSIFICATO");
+                      const key = ["BIANCHERIA_PIANA", "SPUGNA", "VARIE"].includes(cp) ? cp : "NON_CLASSIFICATO";
+                      sub[key] += pesoRiga;
+                      sub.TOT += pesoRiga;
+                    });
+                    return (
+                      <div className="mt-3 p-2 bg-slate-50 rounded border border-slate-200 grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]" data-testid="ddt-pesi-subtotali">
+                        <div><div className="text-slate-500 uppercase tracking-wide">Biancheria</div><div className="font-mono font-bold text-sky-700">{sub.BIANCHERIA_PIANA.toFixed(3)} kg</div></div>
+                        <div><div className="text-slate-500 uppercase tracking-wide">Spugna</div><div className="font-mono font-bold text-emerald-700">{sub.SPUGNA.toFixed(3)} kg</div></div>
+                        <div><div className="text-slate-500 uppercase tracking-wide">Varie</div><div className="font-mono font-bold text-violet-700">{sub.VARIE.toFixed(3)} kg</div></div>
+                        <div><div className="text-slate-500 uppercase tracking-wide">N. class.</div><div className="font-mono font-bold text-amber-700">{sub.NON_CLASSIFICATO.toFixed(3)} kg</div></div>
+                        <div><div className="text-slate-500 uppercase tracking-wide">Totale</div><div className="font-mono font-bold text-indaco text-sm">{sub.TOT.toFixed(3)} kg</div></div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div><Label>Note</Label><Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} /></div>
@@ -275,6 +308,7 @@ export default function DDT() {
               <th className="text-left py-3 px-4">Data</th>
               <th className="text-left py-3 px-4">Cliente</th>
               <th className="text-center py-3 px-4">Pezzi</th>
+              <th className="text-right py-3 px-4" title="Peso totale DDT (kg)">Peso</th>
               {canSeePrices && <th className="text-right py-3 px-4">Imponibile</th>}
               <th className="text-center py-3 px-4">Stato</th>
               <th className="text-center py-3 px-4">Operativi</th>
@@ -298,6 +332,11 @@ export default function DDT() {
                   {docSecondary(d) && <div className="text-xs text-slate-500">{docSecondary(d)}</div>}
                 </td>
                 <td className="py-2 px-4 text-center font-mono" data-testid={`ddt-pezzi-${d.id}`}>{pezziTot}</td>
+                <td className="py-2 px-4 text-right font-mono text-emerald-700" data-testid={`ddt-peso-${d.id}`} title={
+                  `Bianch.: ${(d.peso_biancheria_piana || 0).toFixed(3)} kg · Spugna: ${(d.peso_spugna || 0).toFixed(3)} kg · Varie: ${(d.peso_varie || 0).toFixed(3)} kg${d.peso_non_classificato ? ` · N.class.: ${(d.peso_non_classificato).toFixed(3)} kg` : ""}`
+                }>
+                  {d.peso_totale != null ? `${Number(d.peso_totale).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg` : <span className="text-slate-300">—</span>}
+                </td>
                 {canSeePrices && <td className="py-2 px-4 text-right font-mono font-bold">€ {d.imponibile.toFixed(2)}</td>}
                 <td className="py-2 px-4 text-center">
                   {d.stato_fatturazione === "fatturato" ? (
@@ -356,7 +395,7 @@ export default function DDT() {
               </tr>
               );
             })}
-            {list.length === 0 && <tr><td colSpan={canSeePrices ? 8 : 7} className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
+            {list.length === 0 && <tr><td colSpan={canSeePrices ? 9 : 8} className="text-center py-12 text-slate-400">Nessun DDT</td></tr>}
           </tbody>
         </table>
       </div>

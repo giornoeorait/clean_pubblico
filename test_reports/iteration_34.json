@@ -1,0 +1,33 @@
+{
+  "summary": "Iter34 — Snapshot peso DDT + Ricalcolo storico + Dashboard KPI kg + Preview live DDT. Backend: 10/10 pytest PASS (POST /api/ddt salva peso_medio_snapshot/categoria_peso_snapshot/peso_riga sulle righe + peso_totale/biancheria_piana/spugna/varie/non_classificato/calcolo_peso_tipo=CALCOLO_ORIGINALE/peso_calcolato_at sul doc; somma subtotali = peso_totale; PATCH ricalcola snapshot + timestamp; snapshot congelato -> modifica peso_medio articolo dopo save non altera peso_riga DDT esistente; GET preview shape completa admin-only 200 / contabilita 403; POST esegui senza conferma 400 / con conferma 200 IDEMPOTENTE (2° chiamata aggiornati=0, saltati_gia_calcolati=37) e 403 non-admin; report/produzione ritorna per_categoria_peso[4]; dashboard/kpi ritorna kg_mese/kg_anno con 5 sub-keys + kg_serie_mensile[12]). Frontend: dashboard-produzione-kg presente con 5 KPI cards (kg-mese-totale/biancheria/spugna/varie + kg-anno-totale) + kg-serie-chart con 12 mesi. DDT grid: 35 ddt-peso-<id> celle con formato it-IT '0,900 kg' 3 decimali + tooltip subtotali per categoria. Dialog DDT edit: ddt-pesi-subtotali panel con Biancheria/Spugna/Varie/N. class./Totale + row mostra peso stimato + label categoria abbreviata (Bianch./Spugna/Varie/N.class.). Report tab Produzione: prod-ricalc-open apre prod-ricalc-dialog con ricalc-count=0 e prod-ricalc-esegui disabled (idempotenza corretta, 37 DDT già ricalcolati come RICALCOLO_STORICO in setup precedente).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_peso_snapshot.py",
+    "/app/test_reports/pytest/iter34_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/ddt.py L43-92 _compute_righe: implementazione corretta di snapshot congelato (peso_medio_snapshot 4 decimali, categoria_peso_snapshot uppercase con fallback NON_CLASSIFICATO, peso_riga 3 decimali). Subtotali per categoria calcolati in un solo loop. OK.",
+    "backend/routers/ddt.py L169-194 create_ddt: usa **peso_sub per spread dei 5 campi + calcolo_peso_tipo='CALCOLO_ORIGINALE' + peso_calcolato_at=now_utc(). Coerente. OK.",
+    "backend/routers/ddt.py L242-249 update_ddt: quando body.righe è fornita, ricalcola snapshot e marca come CALCOLO_ORIGINALE (nuovo save = nuovo snapshot originale). Corretto: non deve essere marcato come RICALCOLO_STORICO in questo caso. OK.",
+    "backend/routers/ddt.py L423-462 esegui_ricalcolo_peso: filtro idempotente basato su presenza campo calcolo_peso_tipo (`if d.get('calcolo_peso_tipo'): saltati_gia_calcolati += 1; continue`) — la seconda chiamata NON sovrascrive nulla. Verificato: aggiornati=0 al secondo run. OK.",
+    "backend/routers/dashboard.py L167-197 _aggregate_kg: split docs_snap vs docs_no_snap corretto — fallback via anagrafica articoli solo quando snapshot mancante. Cache articoli lazy (una volta sola) per non fare N query. OK.",
+    "backend/routers/dashboard.py L202-224 serie 12 mesi: gestione carry-over anno per mesi negativi corretta (`while m<=0: m+=12; y-=1`). Ogni entry ha 4 categorie + totale. OK.",
+    "backend/routers/reports.py L202-212 fallback snapshot: `has_snapshot = 'peso_riga' in r or 'peso_medio_snapshot' in r` — preferisce sempre lo snapshot quando presente. Fallback all'anagrafica solo se il DDT è pre-feature. Difesa in profondità. OK.",
+    "frontend/src/pages/DDT.jsx L217-237 pannello ddt-pesi-subtotali: calcolo client-side simmetrico al backend (peso_medio × quantita × riga, aggregato per categoria con fallback NON_CLASSIFICATO). UX corretta: pannello visibile solo quando rows.length>0. OK.",
+    "frontend/src/pages/Dashboard.jsx L113-186 sezione produzione: 5 KPI card + BarChart stacked con 4 series (biancheria_piana/spugna/varie/non_classificato) + tooltip. Formattazione it-IT via toLocaleString su tutti i valori. OK.",
+    "frontend/src/pages/Report.jsx L340-372 prod-ricalc-dialog: bottone Esegui correttamente disabilitato quando ricalcPreview.ddt_da_ricalcolare===0. Toast di successo dopo esecuzione + refresh preview. OK.",
+    "Warning minore (non bloccante): DialogContent Radix emette warning 'Missing Description or aria-describedby={undefined}' su vari dialog (Ricalcolo, DDT modifica). Aggiungere <DialogDescription> per accessibilità (già segnalato in iter33)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter34_peso_snapshot.py (NEW: 10 pytest test cases)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100%"},
+  "test_credentials": "admin@cleantec.it / admin123 — OK; contabilita@cleantec.it / contabilita123 — OK (usato per verifica 403 su endpoint admin-only)",
+  "seed_data_creation": "Nessun dato residuo. Tutti i DDT creati durante i test (note='TEST_iter34_*') vengono eliminati via finally. Il patch del peso_medio articolo viene sempre ripristinato al valore originale.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter34 = Snapshot peso DDT + Ricalcolo storico + Dashboard KPI kg. Backend: POST/PATCH /api/ddt salva peso_medio_snapshot/categoria_peso_snapshot (uppercase)/peso_riga sulle righe + peso_totale/peso_biancheria_piana/peso_spugna/peso_varie/peso_non_classificato + calcolo_peso_tipo='CALCOLO_ORIGINALE' + peso_calcolato_at sul doc; somma subtotali = peso_totale. GET /api/ddt/peso/ricalcolo/preview (admin-only, 403 altri) ritorna ddt_totali/ddt_da_ricalcolare/ddt_con_calcolo_originale/ddt_con_ricalcolo_storico/articoli_senza_peso/articoli_non_classificati/anomalie_count/anomalie. POST /api/ddt/peso/ricalcolo/esegui senza conferma=true → 400; IDEMPOTENTE (saltati_gia_calcolati incrementa). GET /api/reports/produzione fallback snapshot→anagrafica corretto. GET /api/dashboard/kpi ha kg_mese/kg_anno (obj con totale/biancheria_piana/spugna/varie/non_classificato) + kg_serie_mensile[12]. Frontend data-testid: ddt-peso-<id> (35 celle formato it-IT 3 dec + tooltip subtotali), ddt-pesi-subtotali (pannello 5 col in dialog crea/edit DDT), dashboard-produzione-kg + kg-mese-totale/biancheria/spugna/varie + kg-anno-totale + kg-serie-chart (Dashboard), prod-ricalc-open/prod-ricalc-dialog/ricalc-count/prod-ricalc-esegui (Report → Produzione). Stato attuale ricalcolo: 37 DDT su 37 marcati RICALCOLO_STORICO — bottone Esegui disabled correttamente.",
+  "rca_of_the_issue": "Nessun bug trovato. Feature implementata correttamente. Copertura test: 10 pytest backend + 6 verifiche UI (dashboard 5 card + chart, DDT grid colonna Peso con tooltip, DDT dialog edit con ddt-pesi-subtotali + peso stimato per riga, Report dialog ricalcolo con count=0 e bottone disabled)."
+}

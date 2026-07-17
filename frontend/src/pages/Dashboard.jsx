@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from "recharts";
-import { Users, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur, ChartLineUp, Archive } from "@phosphor-icons/react";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line, BarChart, Bar, Legend } from "recharts";
+import { Users, Truck, Receipt, Warning, TrendUp, CheckCircle, CurrencyEur, ChartLineUp, Archive, Scales } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import { usePermissions } from "../lib/permissions";
 
@@ -103,6 +103,85 @@ export default function Dashboard() {
                   <Archive size={22} weight="duotone" className="text-emerald-700" />
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Produzione in chilogrammi */}
+      {kpi.kg_mese && (
+        <div className="mb-6" data-testid="dashboard-produzione-kg">
+          <div className="flex items-center gap-2 mb-3">
+            <Scales size={20} className="text-emerald-600" weight="duotone" />
+            <h3 className="font-display text-lg font-bold">Produzione in chilogrammi</h3>
+          </div>
+          {/* KPI mese */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div className="kpi-card">
+              <div className="overline">Mese corrente</div>
+              <div className="font-display text-3xl font-bold text-emerald-700 mt-1" data-testid="kg-mese-totale">
+                {(kpi.kg_mese.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Prodotti in {MESI_LBL[new Date().getMonth() + 1] || "mese"}</div>
+            </div>
+            <div className="kpi-card bg-sky-50 border-l-4 border-sky-300">
+              <div className="overline text-sky-700">Biancheria piana</div>
+              <div className="font-display text-2xl font-bold text-sky-700 mt-1" data-testid="kg-mese-biancheria">
+                {(kpi.kg_mese.biancheria_piana || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+              </div>
+            </div>
+            <div className="kpi-card bg-emerald-50 border-l-4 border-emerald-300">
+              <div className="overline text-emerald-700">Spugna</div>
+              <div className="font-display text-2xl font-bold text-emerald-700 mt-1" data-testid="kg-mese-spugna">
+                {(kpi.kg_mese.spugna || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+              </div>
+            </div>
+            <div className="kpi-card bg-violet-50 border-l-4 border-violet-300">
+              <div className="overline text-violet-700">Varie</div>
+              <div className="font-display text-2xl font-bold text-violet-700 mt-1" data-testid="kg-mese-varie">
+                {(kpi.kg_mese.varie || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+              </div>
+            </div>
+            <div className="kpi-card">
+              <div className="overline">Anno {kpi.anno_corrente}</div>
+              <div className="font-display text-2xl font-bold text-indaco mt-1" data-testid="kg-anno-totale">
+                {(kpi.kg_anno.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1 leading-snug">
+                Bianch.: <span className="font-mono text-sky-700">{(kpi.kg_anno.biancheria_piana || 0).toFixed(1)}</span>{" "}·{" "}
+                Spugna: <span className="font-mono text-emerald-700">{(kpi.kg_anno.spugna || 0).toFixed(1)}</span>{" "}·{" "}
+                Varie: <span className="font-mono text-violet-700">{(kpi.kg_anno.varie || 0).toFixed(1)}</span>
+              </div>
+            </div>
+          </div>
+          {/* Grafico mensile con confronto categorie (ultimi 12 mesi) */}
+          {Array.isArray(kpi.kg_serie_mensile) && kpi.kg_serie_mensile.length > 0 && (
+            <div className="kpi-card" data-testid="kg-serie-chart">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold text-slate-700">
+                  Andamento mensile kg (ultimi 12 mesi) — confronto tra categorie
+                </div>
+                <div className="text-[11px] text-slate-500 italic">Barre impilate = totale mensile</div>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={kpi.kg_serie_mensile}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="mese" fontSize={11} tick={{ fill: "#64748b" }} />
+                  <YAxis fontSize={11} tick={{ fill: "#64748b" }} tickFormatter={(v) => `${v} kg`} />
+                  <Tooltip
+                    formatter={(v, name) => [
+                      `${Number(v).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`,
+                      name,
+                    ]}
+                    contentStyle={{ borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="biancheria_piana" stackId="a" name="Biancheria piana" fill="#0ea5e9" />
+                  <Bar dataKey="spugna" stackId="a" name="Spugna" fill="#10b981" />
+                  <Bar dataKey="varie" stackId="a" name="Varie" fill="#8b5cf6" />
+                  <Bar dataKey="non_classificato" stackId="a" name="Non classificato" fill="#f59e0b" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>

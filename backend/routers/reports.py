@@ -199,13 +199,23 @@ async def report_produzione(
             aid = r.get("articolo_id")
             art = articoli_map.get(aid or "", {})
             cat = art.get("categoria", "—")
-            cat_peso = art.get("categoria_peso", "NON_CLASSIFICATO") or "NON_CLASSIFICATO"
-            # Filtro per categoria (se richiesto)
+            # PREFERISCI snapshot se presente (peso storico congelato al save del DDT)
+            has_snapshot = "peso_riga" in r or "peso_medio_snapshot" in r
+            if has_snapshot:
+                cat_peso = (r.get("categoria_peso_snapshot") or "NON_CLASSIFICATO").upper()
+                peso_unit_used = float(r.get("peso_medio_snapshot") or 0)
+                kg = float(r.get("peso_riga") or 0)
+                # Se peso_riga è mancante ma abbiamo peso_medio_snapshot, ricalcola
+                if not kg and peso_unit_used:
+                    kg = float(r.get("quantita") or 0) * peso_unit_used
+            else:
+                cat_peso = art.get("categoria_peso", "NON_CLASSIFICATO") or "NON_CLASSIFICATO"
+                peso_unit_used = float(art.get("peso_medio", 0) or 0)
+                kg = float(r.get("quantita") or 0) * peso_unit_used
+            # Filtro per categoria (se richiesto) — usa la categoria commerciale dell'articolo
             if categoria and cat != categoria:
                 continue
             qta = float(r.get("quantita") or 0)
-            peso = float(art.get("peso_medio", 0) or 0)
-            kg = qta * peso
             tot_kg += kg
             tot_pz += qta
             ddt_kg += kg

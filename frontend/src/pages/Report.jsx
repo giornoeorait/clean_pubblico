@@ -219,6 +219,32 @@ function FatturatoView({ d }) {
 
 // ============== PRODUZIONE ==============
 function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCheck, anno, buildQuery }) {
+  const [ricalcOpen, setRicalcOpen] = useState(false);
+  const [ricalcPreview, setRicalcPreview] = useState(null);
+  const [ricalcLoading, setRicalcLoading] = useState(false);
+  const openRicalcolo = async () => {
+    setRicalcOpen(true);
+    setRicalcLoading(true);
+    try {
+      const { data: p } = await api.get("/ddt/peso/ricalcolo/preview");
+      setRicalcPreview(p);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore preview ricalcolo");
+      setRicalcOpen(false);
+    } finally { setRicalcLoading(false); }
+  };
+  const eseguiRicalcolo = async () => {
+    setRicalcLoading(true);
+    try {
+      const { data: r } = await api.post("/ddt/peso/ricalcolo/esegui", { conferma: true });
+      toast.success(`Ricalcolo completato: ${r.aggiornati} DDT aggiornati, ${r.saltati_gia_calcolati} saltati`);
+      setRicalcOpen(false);
+      // ricarica anche il report per riflettere i nuovi valori
+      window.location.reload();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore esecuzione ricalcolo");
+    } finally { setRicalcLoading(false); }
+  };
   const downloadXlsx = async () => {
     try {
       const res = await api.get(`/reports/produzione/xlsx?${buildQuery()}`, { responseType: "blob" });
@@ -299,12 +325,54 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
             {(filters.cliente_id || filters.categoria || filters.use_range) && (
               <Button variant="outline" size="sm" onClick={() => setFilters(f => ({ ...f, cliente_id: "", categoria: "", use_range: false, data_inizio: "", data_fine: "" }))} data-testid="prod-reset">Azzera</Button>
             )}
+            <Button variant="outline" size="sm" onClick={openRicalcolo} data-testid="prod-ricalc-open">
+              Ricalcolo storico DDT…
+            </Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700" size="sm" onClick={downloadXlsx} data-testid="prod-xlsx">
               <FileArrowDown size={14} className="mr-1" /> Excel
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Dialog Ricalcolo storico */}
+      <Dialog open={ricalcOpen} onOpenChange={setRicalcOpen}>
+        <DialogContent className="max-w-lg" data-testid="prod-ricalc-dialog">
+          <DialogHeader>
+            <DialogTitle>Ricalcolo peso DDT storici</DialogTitle>
+          </DialogHeader>
+          {ricalcLoading && <div className="text-center py-6 text-slate-500">Caricamento…</div>}
+          {!ricalcLoading && ricalcPreview && (
+            <div className="space-y-3">
+              <div className="rounded-md bg-slate-50 border border-slate-200 p-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><div className="text-[11px] text-slate-500 uppercase tracking-wide">DDT totali</div><div className="font-mono font-bold">{ricalcPreview.ddt_totali}</div></div>
+                  <div><div className="text-[11px] text-slate-500 uppercase tracking-wide">Da ricalcolare</div><div className="font-mono font-bold text-amber-700" data-testid="ricalc-count">{ricalcPreview.ddt_da_ricalcolare}</div></div>
+                  <div><div className="text-[11px] text-slate-500 uppercase tracking-wide">Con calc. originale</div><div className="font-mono text-emerald-700">{ricalcPreview.ddt_con_calcolo_originale}</div></div>
+                  <div><div className="text-[11px] text-slate-500 uppercase tracking-wide">Già ricalcolati</div><div className="font-mono">{ricalcPreview.ddt_con_ricalcolo_storico}</div></div>
+                </div>
+              </div>
+              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+                <div><b>Articoli senza peso medio:</b> {ricalcPreview.articoli_senza_peso}</div>
+                <div><b>Articoli non classificati:</b> {ricalcPreview.articoli_non_classificati}</div>
+                <div><b>Anomalie righe (articolo mancante):</b> {ricalcPreview.anomalie_count}</div>
+              </div>
+              <div className="text-[11px] text-slate-500 italic">{ricalcPreview.note}</div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <Button variant="outline" onClick={() => setRicalcOpen(false)} disabled={ricalcLoading}>Annulla</Button>
+                <Button
+                  className="bg-amber-600 hover:bg-amber-700"
+                  onClick={eseguiRicalcolo}
+                  disabled={ricalcLoading || ricalcPreview.ddt_da_ricalcolare === 0}
+                  data-testid="prod-ricalc-esegui"
+                >
+                  Esegui ricalcolo su {ricalcPreview.ddt_da_ricalcolare} DDT
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Warning articoli senza peso / non classificati */}
       {articoliCheck && (articoliCheck.senza_peso_count > 0 || (articoliCheck.non_classificati_count || 0) > 0 || articoliCheck.sospetti_grammi?.length > 0) && (

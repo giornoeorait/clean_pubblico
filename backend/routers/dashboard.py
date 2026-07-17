@@ -133,6 +133,96 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
     storico_aggiunto = round(sum(s.get("totale_netto", 0) for s in storico_da_sommare), 2)
     fatturato_anno = round(fatturato_anno_fatture + storico_aggiunto, 2)
 
+    # ---- Produzione kg (con snapshot su DDT, fallback anagrafica) ----
+    # Query DDT del mese e dell'anno con solo i campi necessari
+    def _sum_pesi(docs, key):
+        return round(sum(float(d.get(key) or 0) for d in docs), 3)
+
+    def _fallback_kg(doc, cat_key: str, articoli_map: Dict[str, Dict]) -> float:
+        """Se DDT senza snapshot, ricalcola on-the-fly dall'anagrafica corrente."""
+        tot = 0.0
+        for r in (doc.get("righe") or []):
+            aid = r.get("articolo_id")
+            art = articoli_map.get(aid or "", {})
+            cat = (art.get("categoria_peso") or "NON_CLASSIFICATO").upper()
+            peso_unit = float(art.get("peso_medio") or 0)
+            qta = float(r.get("quantita") or 0)
+            if cat_key == "totale":
+                tot += qta * peso_unit
+            elif cat == cat_key:
+                tot += qta * peso_unit
+        return round(tot, 3)
+
+    async def _cache_articoli():
+        m: Dict[str, Dict] = {}
+        async for a in db.articoli.find(
+            {"tenant_id": user["tenant_id"]},
+            {"_id": 0, "id": 1, "peso_medio": 1, "categoria_peso": 1},
+        ):
+            m[a["id"]] = a
+        return m
+
+    articoli_cache = None
+
+    async def _aggregate_kg(match: Dict[str, Any]):
+        nonlocal articoli_cache
+        docs = await db.ddt.find(
+            match,
+            {"_id": 0, "id": 1, "righe": 1, "peso_totale": 1, "peso_biancheria_piana": 1,
+             "peso_spugna": 1, "peso_varie": 1, "peso_non_classificato": 1, "calcolo_peso_tipo": 1},
+        ).to_list(20000)
+        # Split: docs con snapshot vs docs senza
+        docs_snap = [d for d in docs if d.get("calcolo_peso_tipo")]
+        docs_no_snap = [d for d in docs if not d.get("calcolo_peso_tipo")]
+        tot = _sum_pesi(docs_snap, "peso_totale")
+        bp = _sum_pesi(docs_snap, "peso_biancheria_piana")
+        sp = _sum_pesi(docs_snap, "peso_spugna")
+        va = _sum_pesi(docs_snap, "peso_varie")
+        nc = _sum_pesi(docs_snap, "peso_non_classificato")
+        if docs_no_snap:
+            if articoli_cache is None:
+                articoli_cache = await _cache_articoli()
+            for d in docs_no_snap:
+                tot += _fallback_kg(d, "totale", articoli_cache)
+                bp += _fallback_kg(d, "BIANCHERIA_PIANA", articoli_cache)
+                sp += _fallback_kg(d, "SPUGNA", articoli_cache)
+                va += _fallback_kg(d, "VARIE", articoli_cache)
+                nc += _fallback_kg(d, "NON_CLASSIFICATO", articoli_cache)
+        return {
+            "totale": round(tot, 3),
+            "biancheria_piana": round(bp, 3),
+            "spugna": round(sp, 3),
+            "varie": round(va, 3),
+            "non_classificato": round(nc, 3),
+        }
+
+    kg_mese = await _aggregate_kg({**scope, "data": {"$gte": first_day_month}})
+    kg_anno = await _aggregate_kg({**scope, "data": {"$gte": first_day_year}})
+
+    # Serie mensile per grafico confronto categorie (ultimi 12 mesi)
+    serie_kg = []
+    for i in range(11, -1, -1):
+        # calcolo primo giorno del mese N-i
+        y = today_start.year
+        m = today_start.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_start = datetime(y, m, 1, tzinfo=timezone.utc)
+        if m == 12:
+            month_end = datetime(y + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            month_end = datetime(y, m + 1, 1, tzinfo=timezone.utc)
+        kg_m = await _aggregate_kg({**scope, "data": {"$gte": month_start, "$lt": month_end}})
+        serie_kg.append({
+            "mese": f"{y}-{m:02d}",
+            "biancheria_piana": kg_m["biancheria_piana"],
+            "spugna": kg_m["spugna"],
+            "varie": kg_m["varie"],
+            "non_classificato": kg_m["non_classificato"],
+            "totale": kg_m["totale"],
+        })
+
     return {
         "clienti_totali": clienti_tot,
         "articoli_totali": articoli_tot,
@@ -156,6 +246,10 @@ async def dashboard_kpi(user: Dict = Depends(get_current_user)):
         "storico_totale_anno": storico_totale_anno,
         "storico_mesi_inclusi": storico_mesi_inclusi,
         "anno_corrente": anno_corrente,
+        # ---- Produzione kg (mese e anno correnti, con serie 12 mesi) ----
+        "kg_mese": kg_mese,
+        "kg_anno": kg_anno,
+        "kg_serie_mensile": serie_kg,
     }
 
 
