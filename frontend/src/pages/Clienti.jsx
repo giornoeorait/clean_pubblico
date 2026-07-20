@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import ImportClientiDialog from "../components/ImportClientiDialog";
+import ClienteStatistichePeso from "../components/ClienteStatistichePeso";
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
@@ -393,6 +394,9 @@ export default function Clienti() {
                 <div className="kpi-card !p-3"><div className="overline">Incassato</div><div className="font-display text-2xl font-bold text-emerald-600">€ {profile.stats.incassato_totale.toFixed(2)}</div></div>
                 <div className="kpi-card !p-3"><div className="overline">Sospeso</div><div className="font-display text-2xl font-bold text-amber-600">€ {profile.stats.sospeso_totale.toFixed(2)}</div></div>
               </div>
+
+              {/* Statistiche peso (§12) */}
+              <ClienteStatistichePeso clienteId={profile.cliente.id} />
 
               {/* Portale pubblico link */}
               <div className="mb-4 p-3 rounded-lg border border-indaco/20 bg-indaco/5" data-testid="cliente-portale-panel">

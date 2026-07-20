@@ -40,7 +40,12 @@ export default function Report() {
     data_fine: "",
     cliente_id: "",
     categoria: "",
-    use_range: false,   // se true, usa range date invece di anno
+    categoria_peso: "",
+    articolo_id: "",
+    stato_fatturazione: "",
+    solo_consegnati: false,
+    mese: "",           // 1-12
+    use_range: false,   // se true, usa range date invece di anno/mese
   });
   const [clienti, setClienti] = useState([]);
   const [articoloCategorie, setArticoloCategorie] = useState([]);
@@ -68,9 +73,14 @@ export default function Report() {
       if (prodFilters.data_fine) params.set("data_fine", prodFilters.data_fine);
     } else {
       params.set("anno", String(anno));
+      if (prodFilters.mese) params.set("mese", String(prodFilters.mese));
     }
     if (prodFilters.cliente_id) params.set("cliente_id", prodFilters.cliente_id);
     if (prodFilters.categoria) params.set("categoria", prodFilters.categoria);
+    if (prodFilters.categoria_peso) params.set("categoria_peso", prodFilters.categoria_peso);
+    if (prodFilters.articolo_id) params.set("articolo_id", prodFilters.articolo_id);
+    if (prodFilters.stato_fatturazione) params.set("stato_fatturazione", prodFilters.stato_fatturazione);
+    if (prodFilters.solo_consegnati) params.set("solo_consegnati", "true");
     return params.toString();
   };
 
@@ -222,6 +232,24 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
   const [ricalcOpen, setRicalcOpen] = useState(false);
   const [ricalcPreview, setRicalcPreview] = useState(null);
   const [ricalcLoading, setRicalcLoading] = useState(false);
+  const [articoliList, setArticoliList] = useState([]);
+  const [anomalieOpen, setAnomalieOpen] = useState(false);
+  const [anomalie, setAnomalie] = useState(null);
+  const [anomalieLoading, setAnomalieLoading] = useState(false);
+  useEffect(() => {
+    api.get("/articoli").then(r => setArticoliList(r.data || [])).catch(() => {});
+  }, []);
+  const openAnomalie = async () => {
+    setAnomalieOpen(true);
+    setAnomalieLoading(true);
+    try {
+      const { data: a } = await api.get("/reports/anomalie-pesi");
+      setAnomalie(a);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore caricamento anomalie");
+      setAnomalieOpen(false);
+    } finally { setAnomalieLoading(false); }
+  };
   const openRicalcolo = async () => {
     setRicalcOpen(true);
     setRicalcLoading(true);
@@ -293,6 +321,22 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
               </div>
             </>
           )}
+          {!filters.use_range && (
+            <div>
+              <Label className="text-[11px] uppercase tracking-wide text-slate-500">Mese</Label>
+              <select
+                value={filters.mese || ""}
+                onChange={e => setFilters(f => ({ ...f, mese: e.target.value }))}
+                className="h-9 px-2 border border-slate-200 rounded-md text-sm w-32"
+                data-testid="prod-mese"
+              >
+                <option value="">Tutto l&apos;anno</option>
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                  <option key={m} value={m}>{["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"][m-1]}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="min-w-[220px] flex-1">
             <Label className="text-[11px] uppercase tracking-wide text-slate-500">Cliente</Label>
             <select
@@ -321,19 +365,123 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
               {categorie.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
+          <div>
+            <Label className="text-[11px] uppercase tracking-wide text-slate-500">Articolo</Label>
+            <select
+              value={filters.articolo_id || ""}
+              onChange={e => setFilters(f => ({ ...f, articolo_id: e.target.value }))}
+              className="h-9 px-2 border border-slate-200 rounded-md text-sm w-56"
+              data-testid="prod-articolo"
+            >
+              <option value="">Tutti</option>
+              {articoliList.map(a => (
+                <option key={a.id} value={a.id}>{a.codice} — {a.descrizione}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-[11px] uppercase tracking-wide text-slate-500">Stato DDT</Label>
+            <select
+              value={filters.stato_fatturazione || ""}
+              onChange={e => setFilters(f => ({ ...f, stato_fatturazione: e.target.value }))}
+              className="h-9 px-2 border border-slate-200 rounded-md text-sm w-36"
+              data-testid="prod-stato"
+            >
+              <option value="">Tutti</option>
+              <option value="non_fatturato">Non fatturati</option>
+              <option value="fatturato">Fatturati</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-1 text-xs mt-4">
+            <input type="checkbox" checked={!!filters.solo_consegnati} onChange={e => setFilters(f => ({ ...f, solo_consegnati: e.target.checked }))} data-testid="prod-solo-consegnati" />
+            Solo consegnati
+          </label>
           <div className="ml-auto flex gap-2">
-            {(filters.cliente_id || filters.categoria || filters.use_range) && (
-              <Button variant="outline" size="sm" onClick={() => setFilters(f => ({ ...f, cliente_id: "", categoria: "", use_range: false, data_inizio: "", data_fine: "" }))} data-testid="prod-reset">Azzera</Button>
+            {(filters.cliente_id || filters.categoria || filters.categoria_peso || filters.articolo_id || filters.stato_fatturazione || filters.solo_consegnati || filters.mese || filters.use_range) && (
+              <Button variant="outline" size="sm" onClick={() => setFilters(f => ({ ...f, cliente_id: "", categoria: "", categoria_peso: "", articolo_id: "", stato_fatturazione: "", solo_consegnati: false, mese: "", use_range: false, data_inizio: "", data_fine: "" }))} data-testid="prod-reset">Azzera</Button>
             )}
+            <Button variant="outline" size="sm" onClick={openAnomalie} data-testid="prod-anomalie-open">
+              Anomalie pesi
+            </Button>
             <Button variant="outline" size="sm" onClick={openRicalcolo} data-testid="prod-ricalc-open">
-              Ricalcolo storico DDT…
+              Ricalcolo storico…
             </Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700" size="sm" onClick={downloadXlsx} data-testid="prod-xlsx">
               <FileArrowDown size={14} className="mr-1" /> Excel
             </Button>
+            <Button className="bg-rose-600 hover:bg-rose-700" size="sm" onClick={async () => {
+              try {
+                const res = await api.get(`/reports/produzione/pdf?${buildQuery()}`, { responseType: "blob" });
+                const url = URL.createObjectURL(res.data);
+                const a = document.createElement("a"); a.href = url;
+                a.download = `Analisi_kg_${filters.use_range ? `${filters.data_inizio}_${filters.data_fine}` : anno}.pdf`;
+                a.click(); URL.revokeObjectURL(url);
+                toast.success("PDF scaricato");
+              } catch { toast.error("Errore export PDF"); }
+            }} data-testid="prod-pdf">
+              <FileArrowDown size={14} className="mr-1" /> PDF
+            </Button>
           </div>
         </div>
       </div>
+
+      {/* Dialog Anomalie pesi */}
+      <Dialog open={anomalieOpen} onOpenChange={setAnomalieOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="prod-anomalie-dialog">
+          <DialogHeader><DialogTitle>Anomalie pesi</DialogTitle></DialogHeader>
+          {anomalieLoading && <div className="text-center py-6 text-slate-500">Caricamento…</div>}
+          {!anomalieLoading && anomalie && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="p-2 bg-slate-50 rounded"><div className="text-[11px] uppercase text-slate-500">Articoli anomali</div><div className="font-mono font-bold text-amber-700">{anomalie.articoli_anomali_count}</div></div>
+                <div className="p-2 bg-slate-50 rounded"><div className="text-[11px] uppercase text-slate-500">DDT anomali</div><div className="font-mono font-bold text-amber-700">{anomalie.ddt_anomali_count}</div></div>
+                <div className="p-2 bg-slate-50 rounded"><div className="text-[11px] uppercase text-slate-500">Righe qta ≤ 0</div><div className="font-mono">{anomalie.righe_qta_zero}</div></div>
+                <div className="p-2 bg-slate-50 rounded"><div className="text-[11px] uppercase text-slate-500">Righe articolo mancante</div><div className="font-mono">{anomalie.righe_articolo_mancante}</div></div>
+              </div>
+              {anomalie.articoli_anomali_count > 0 && (
+                <div>
+                  <h5 className="font-display font-bold mb-1">Articoli anomali</h5>
+                  <div className="overflow-x-auto max-h-64 border rounded"><table className="data-table text-xs">
+                    <thead><tr><th>Codice</th><th>Descrizione</th><th>Cat. peso</th><th>Peso</th><th>Problemi</th><th className="text-right">DDT</th></tr></thead>
+                    <tbody>
+                      {anomalie.articoli_anomali.map(a => (
+                        <tr key={a.articolo_id}>
+                          <td className="font-mono">{a.codice}</td>
+                          <td>{a.descrizione}</td>
+                          <td className="text-slate-500">{a.categoria_peso || "—"}</td>
+                          <td className="text-right font-mono">{(a.peso_medio || 0).toFixed(3)}</td>
+                          <td className="text-red-600">{a.problemi.join("; ")}</td>
+                          <td className="text-right">{a.ddt_coinvolti}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
+                </div>
+              )}
+              {anomalie.ddt_anomali_count > 0 && (
+                <div>
+                  <h5 className="font-display font-bold mb-1">DDT anomali</h5>
+                  <div className="overflow-x-auto max-h-64 border rounded"><table className="data-table text-xs">
+                    <thead><tr><th>Numero</th><th>Data</th><th>Problemi</th><th className="text-right">Peso totale</th><th className="text-right">Somma sub.</th></tr></thead>
+                    <tbody>
+                      {anomalie.ddt_anomali.map(d2 => (
+                        <tr key={d2.ddt_id}>
+                          <td className="font-mono">{d2.numero}</td>
+                          <td>{d2.data ? new Date(d2.data).toLocaleDateString("it-IT") : "—"}</td>
+                          <td className="text-red-600">{d2.problemi.join("; ")}</td>
+                          <td className="text-right font-mono">{(d2.peso_totale || 0).toFixed(3)}</td>
+                          <td className="text-right font-mono">{(d2.somma_subtotali || 0).toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
+                </div>
+              )}
+              <div className="text-[11px] text-slate-500 italic">Report generato il {new Date(anomalie.generato_at).toLocaleString("it-IT")}</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Ricalcolo storico */}
       <Dialog open={ricalcOpen} onOpenChange={setRicalcOpen}>
@@ -421,11 +569,14 @@ function ProduzioneView({ d, filters, setFilters, clienti, categorie, articoliCh
       )}
 
       {/* KPI principali */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi label="Totale kg prodotti" value={fmtK(d.totale_kg)} sub={d.data_inizio ? `${d.data_inizio} → ${d.data_fine}` : `anno ${d.anno || "—"}`} />
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <Kpi label="Totale kg" value={fmtK(d.totale_kg)} sub={d.data_inizio ? `${d.data_inizio} → ${d.data_fine}` : (d.mese_label || `anno ${d.anno || "—"}`)} />
         <Kpi label="Totale pezzi" value={(d.totale_pezzi || 0).toFixed(0)} color="text-slate-900" />
-        <Kpi label="Peso medio" value={d.totale_pezzi ? `${(d.totale_kg / d.totale_pezzi).toFixed(2)} kg/pz` : "—"} color="text-celeste" />
         <Kpi label="N° DDT" value={d.ddt_count || 0} color="text-amber-600" />
+        <Kpi label="Peso medio pz" value={d.totale_pezzi ? `${(d.totale_kg / d.totale_pezzi).toFixed(2)} kg/pz` : "—"} color="text-celeste" />
+        <Kpi label="Media per DDT" value={`${(d.peso_medio_per_ddt || 0).toFixed(3)} kg`} color="text-indaco" />
+        <Kpi label="Media giornaliera" value={`${(d.peso_medio_giornaliero || 0).toFixed(3)} kg`} color="text-emerald-600" sub={`${d.giorni_distinti || 0} giorni`} />
+        <Kpi label="Media mensile" value={`${(d.peso_medio_mensile || 0).toFixed(3)} kg`} color="text-violet-600" sub={`${d.mesi_distinti || 0} mesi`} />
       </div>
 
       {/* Grafico mensile */}
