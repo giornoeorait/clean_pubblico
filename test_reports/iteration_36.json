@@ -1,0 +1,38 @@
+{
+  "summary": "Iter36 — Compliance §16-19 validata: RBAC + Audit log + Migrazioni + Filtri + Anomalie. Backend 23/23 pytest PASS (test_iter36_compliance.py). §16 SICUREZZA: (1) PATCH /fatture/{id}/rinumera contabilita→403 ✓, admin senza motivazione→422 ✓, admin motivazione<10ch→422 ✓, admin no-op→400 (validato dopo RBAC) ✓; (2) POST /articoli con ruolo cliente→403 ✓, PATCH /articoli/{id} cliente→403 ✓, contabilita POST /articoli→201 ✓; (3) GET /reports/anomalie-pesi contabilita→403 ✓, admin→200 con articoli_anomali+ddt_anomali ✓; (4) utente ruolo=cliente su GET /fatture riceve solo le proprie (verificato cliente_id di ogni fattura ritornata) ✓. §16 AUDIT LOG: PATCH rinumera scrive db.audit_log con azione=RINUMERA_RIDATA + dettagli.motivazione/old_data/new_data/old_numero/new_numero ✓; POST /ddt/peso/ricalcolo/esegui scrive azione=RICALCOLO_PESO_STORICO ✓. §17 MIGRAZIONI: 0 articoli senza categoria_peso (tutti valorizzati) ✓; counts tenant demo: clienti/articoli/DDT/fatture tutti >0 ✓; indici Mongo verificati via index_information(): db.ddt include (tenant_id,data DESC), (tenant_id,cliente_id,data DESC), (tenant_id,calcolo_peso_tipo) ✓; db.articoli include (tenant_id,categoria_peso) ✓; DDT hanno calcolo_peso_tipo (CALCOLO_ORIGINALE o RICALCOLO_STORICO) + peso_calcolato_at ✓. §18 FATTURAZIONE: /fatture/summary con range date + cliente ritorna totale coerente con sum(/fatture limit=1000) (delta<0.02€); count summary >= len(limit=10) ✓; filtri combinati cliente_id+data_inizio+data_fine ritornano solo fatture del cliente ✓. §18 PESI: subtotali DDT peso_totale ≈ peso_biancheria_piana+spugna+varie+non_classificato (tolleranza 0.006 kg) verificato su 5+ DDT ✓; dashboard.kg_anno.totale ≈ report_produzione(anno).totale_kg (delta<0.02 kg) ✓. §14 ANOMALIE: articolo test con peso_medio=0+categoria=NON_CLASSIFICATO compare in articoli_anomali con problemi ['peso medio uguale a zero', 'categoria peso non assegnata'] ✓. §13 REGOLE: iniettata riga con quantita=0 in DDT esistente → totale_kg e totale_pezzi del report NON cambiano (esclusione confermata) ✓. FRONTEND (§16 UI): /fatture con admin mostra 63 bottoni fatt-renum-*, con contabilita mostra 0 bottoni (canRinumera=user.role in [admin,superadmin]) ✓.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter36_compliance.py",
+    "/app/test_reports/pytest/iter36_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/billing.py L759: rinumera_fattura richiede require_roles('admin') — corretto restringimento §16. Admin ha bypass in core.require_roles() quindi superadmin passa automaticamente. Contabilita respinto con 403 ✓.",
+    "backend/routers/catalog.py L93-94: articoli registrato con write_roles=('admin','contabilita'). require_roles rifiuta ruolo 'cliente' con 403 ✓. Coerente con schema autorizzazioni §16.",
+    "backend/routers/reports.py L782: anomalie_pesi con require_roles('admin') — admin only. Contabilita/logistica/cliente→403 ✓.",
+    "backend/routers/billing.py L145-153: query builder impone cliente_id=user.cliente_id se user.role=='cliente' — enforcement lato server ✓ (non basta filtro UI).",
+    "backend/schemas.py: RinumeraIn.motivazione ha Field(min_length=10, max_length=500) → 422 automatico se mancante o corta ✓.",
+    "backend/routers/billing.py L853-865: log_audit(RINUMERA_RIDATA) con dettagli completi (old_numero/new_numero/old_data/new_data/motivazione) — audit log non alterabile (append-only) ✓.",
+    "backend/routers/ddt.py L465: log_audit(RICALCOLO_PESO_STORICO) sulla singola operazione bulk (entita_id='*') — pattern semplice; volendo dettagliare, si potrebbe emettere una riga per ogni DDT modificato per full traceability.",
+    "backend/seed.py L389-395: migrazione categoria_peso=NON_CLASSIFICATO su articoli legacy senza campo — idempotente e non distruttiva ✓.",
+    "backend/seed.py L101-106: ensure_indexes crea 5 indici compositi su db.ddt + 1 su db.articoli. Nessun dato viene toccato — solo indici. ✓.",
+    "backend/routers/billing.py L215-250: summary_fatture usa aggregation pipeline separata dall'elenco paginato → i totali NON dipendono dal limit ✓.",
+    "backend/routers/reports.py L232-237: esclusione righe con quantita<=0 prima dell'aggregazione — implementa §13 correttamente ✓.",
+    "frontend/src/pages/Fatture.jsx L17: canRinumera = user?.role === 'admin' || user?.role === 'superadmin' — coerente con backend admin-only. Contabilita non vede il bottone (confermato via Playwright) ✓."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter36_compliance.py (NEW: 23 pytest per Compliance §16-19)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% (visibilità Rinumera OK)"},
+  "test_credentials": "admin@cleantec.it/admin123 OK; contabilita@cleantec.it/contabilita123 OK. Utente ruolo=cliente creato dinamicamente via POST /api/users (TEST_cliente_iter36@cleantec.it) e cancellato al termine dei test.",
+  "seed_data_creation": "Nessun dato persistente. Test crea/cancella: 1 utente cliente TEST, 1 articolo TEST anomalie, 1 riga TEST_FAKE con qta=0 (subito rimossa). Test rinumera modifica temporaneamente la data di una fattura e ripristina la data originale (best-effort).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter36 = validazione compliance §16-19. Test file: /app/backend/tests/test_iter36_compliance.py (23 test in 5 classi: TestSicurezza16, TestAuditLog16, TestMigrazioni17, TestFatturazione18, TestPesi18, TestAnomalie14, TestRegoleInclusione13). Fixtures: admin_session, cont_session, cliente_user (crea/elimina TEST_cliente_iter36 via POST /api/users con role='cliente' e cliente_id di un demo cliente). MongoDB fixture (pymongo diretto) usato per verifiche indici + audit_log + counts. Chiavi importanti: /api/users prefix (non /utenti); dashboard.kg_anno è OGGETTO {totale, biancheria_piana, spugna, varie, non_classificato} NON scalare; articoli_anomali[] usa chiave 'articolo_id' non 'id'; require_roles in core.py concede sempre bypass ad admin/superadmin (quindi require_roles('contabilita') passa anche per admin — attenzione).",
+  "rca_of_the_issue": "Nessun bug funzionale. 2 correzioni al test durante lo sviluppo: (a) dashboard.kg_anno è dict non scalare — usata chiave .totale; (b) anomalie_pesi ritorna articolo_id non id nella lista articoli_anomali. Entrambi problemi del test, non del backend."
+}

@@ -10,8 +10,11 @@ import { Receipt, CheckCircle, Plus, Eye, Trash, CurrencyEur, FilePdf, FileXls, 
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { docPrimary, docSecondary } from "../lib/clienteLabel";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 
 export default function Fatture() {
+  const { user } = useAuth() || {};
+  const canRinumera = user?.role === "admin" || user?.role === "superadmin";
   const [list, setList] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [filterStato, setFilterStato] = useState("all");
@@ -468,7 +471,7 @@ export default function Fatture() {
                   <Button variant="ghost" size="icon" onClick={() => downloadXmlPa(f)} title="Scarica XML Fattura Elettronica" data-testid={`fatt-xml-${f.id}`}><FileXls size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openEmailDialog(f)} title="Invia via email" data-testid={`fatt-email-${f.id}`}><Envelope size={14} /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openDetail(f)} title="Dettaglio" data-testid={`fatt-detail-${f.id}`}><Eye size={14} /></Button>
-                  {!f.xml_transmitted && (
+                  {!f.xml_transmitted && canRinumera && (
                     <Button variant="ghost" size="icon" onClick={() => openRenum(f)} title="Rinumera e ridata fattura" data-testid={`fatt-renum-${f.id}`}><PencilLine size={14} /></Button>
                   )}
                   {!f.xml_transmitted ? (

@@ -756,11 +756,11 @@ class RinumeraIn(BaseModel):
 
 
 @router.patch("/{fid}/rinumera")
-async def rinumera_fattura(fid: str, body: RinumeraIn, user: Dict = Depends(require_roles(*_WRITE))):
+async def rinumera_fattura(fid: str, body: RinumeraIn, user: Dict = Depends(require_roles("admin"))):
     """Modifica manuale del numero e/o data fattura (solo per fatture NON trasmesse a SDI).
 
-    Consentito ad Admin/Contabilità. La modifica viene loggata sull'audit log (non alterabile)
-    con motivazione obbligatoria.
+    Consentito ad Admin/Super User (§16). La modifica viene loggata sull'audit log
+    (non alterabile) con motivazione obbligatoria.
     """
     fattura = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
     if not fattura:
