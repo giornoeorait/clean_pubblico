@@ -558,18 +558,59 @@ async def converti_ddt(oid: str, user: Dict = Depends(require_roles("admin", "lo
         raise HTTPException(400, "Ordinativo annullato")
     cli = await db.clienti.find_one(merge_scope(user, {"id": cur["cliente_id"]}), {"_id": 0})
     if not cli: raise HTTPException(404, "Cliente mancante")
-    # Crea DDT
+    # Crea DDT — con snapshot peso (§7) usando anagrafica articoli corrente
     ddt_seq = await next_seq("ddt")
     did = new_id()
     from core import format_numero
     numero_ddt = await format_numero("ddt", "DDT", ddt_seq)
+
+    # Snapshot peso per ogni riga + subtotali doc
+    tenant_id = tenant_id_of(user)
+    articoli_map: Dict[str, Dict] = {}
+    for r in (cur.get("righe") or []):
+        aid = r.get("articolo_id")
+        if aid and aid not in articoli_map:
+            a = await db.articoli.find_one({"tenant_id": tenant_id, "id": aid},
+                                            {"_id": 0, "peso_medio": 1, "categoria_peso": 1})
+            articoli_map[aid] = {
+                "peso_medio": float((a or {}).get("peso_medio") or 0),
+                "categoria_peso": ((a or {}).get("categoria_peso") or "NON_CLASSIFICATO").upper(),
+            }
+    peso_totale = 0.0
+    peso_by_cat = {"BIANCHERIA_PIANA": 0.0, "SPUGNA": 0.0, "VARIE": 0.0, "NON_CLASSIFICATO": 0.0}
+    new_righe = []
+    for r in (cur.get("righe") or []):
+        aid = r.get("articolo_id")
+        art = articoli_map.get(aid or "", {"peso_medio": 0.0, "categoria_peso": "NON_CLASSIFICATO"})
+        peso_unit = float(art.get("peso_medio") or 0)
+        cat_peso = art.get("categoria_peso", "NON_CLASSIFICATO")
+        if cat_peso not in peso_by_cat:
+            cat_peso = "NON_CLASSIFICATO"
+        qta = float(r.get("quantita") or 0)
+        peso_riga = round(peso_unit * qta, 3)
+        peso_totale += peso_riga
+        peso_by_cat[cat_peso] += peso_riga
+        new_r = dict(r)
+        new_r["peso_medio_snapshot"] = round(peso_unit, 4)
+        new_r["categoria_peso_snapshot"] = cat_peso
+        new_r["peso_riga"] = peso_riga
+        new_righe.append(new_r)
+
     ddt_doc = {
-        "id": did, "tenant_id": tenant_id_of(user), "numero": numero_ddt,
+        "id": did, "tenant_id": tenant_id, "numero": numero_ddt,
         "cliente_id": cur["cliente_id"], "cliente_nome": cli.get("ragione_sociale", ""),
         "listino_id": cli.get("listino_id"),
         "data": now_utc(),
         "note": f"Generato da {cur['numero']}" + (f" · {cur.get('note_cliente', '')}" if cur.get("note_cliente") else ""),
-        "righe": cur["righe"], "imponibile": cur["totale"],
+        "righe": new_righe, "imponibile": cur["totale"],
+        # Snapshot peso (§7-9)
+        "peso_totale": round(peso_totale, 3),
+        "peso_biancheria_piana": round(peso_by_cat["BIANCHERIA_PIANA"], 3),
+        "peso_spugna": round(peso_by_cat["SPUGNA"], 3),
+        "peso_varie": round(peso_by_cat["VARIE"], 3),
+        "peso_non_classificato": round(peso_by_cat["NON_CLASSIFICATO"], 3),
+        "calcolo_peso_tipo": "CALCOLO_ORIGINALE",
+        "peso_calcolato_at": now_utc(),
         "stato_fatturazione": "non_fatturato",
         "fattura_id": None, "fattura_numero": None,
         "created_at": now_utc(), "updated_at": now_utc(),

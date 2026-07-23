@@ -1,6 +1,7 @@
 """Seed demo data (commercial flow) + MongoDB indexes + counters."""
 import logging
 from datetime import datetime, timedelta
+from typing import Dict, List
 from core import (
     db, new_id, now_utc, hash_password, verify_password,
     ADMIN_EMAIL, ADMIN_PASSWORD, DEMO_TENANT_ID,
@@ -395,6 +396,73 @@ async def migrate_phase2():
         logger.info(f"[SEED] categoria_peso=NON_CLASSIFICATO applicata a {res_catpeso.modified_count} articoli")
 
 
+async def migrate_ddt_peso_snapshot():
+    """Ricalcolo peso storico automatico per DDT senza calcolo_peso_tipo (§7-8).
+
+    Popola snapshot su ogni riga (peso_medio_snapshot, categoria_peso_snapshot, peso_riga)
+    e subtotali sul doc (peso_totale, peso_biancheria_piana/spugna/varie/non_classificato).
+    Marca ogni DDT trattato con calcolo_peso_tipo=RICALCOLO_STORICO + timestamp.
+    Idempotente: DDT con calcolo_peso_tipo già valorizzato vengono saltati.
+    """
+    from datetime import timezone as _tz, datetime as _dt
+    now = _dt.now(_tz.utc)
+
+    # Raggruppa articoli per tenant, così evitiamo query N+1
+    articoli_by_tenant: Dict[str, Dict[str, Dict]] = {}
+    async for a in db.articoli.find(
+        {}, {"_id": 0, "id": 1, "tenant_id": 1, "peso_medio": 1, "categoria_peso": 1}
+    ):
+        tid = a.get("tenant_id")
+        if not tid:
+            continue
+        articoli_by_tenant.setdefault(tid, {})[a["id"]] = {
+            "peso_medio": float(a.get("peso_medio") or 0),
+            "categoria_peso": (a.get("categoria_peso") or "NON_CLASSIFICATO").upper(),
+        }
+
+    aggiornati = 0
+    async for d in db.ddt.find(
+        {"$or": [{"calcolo_peso_tipo": {"$exists": False}}, {"calcolo_peso_tipo": None}]},
+        {"_id": 0, "id": 1, "tenant_id": 1, "righe": 1},
+    ):
+        articoli_map = articoli_by_tenant.get(d.get("tenant_id"), {})
+        peso_totale = 0.0
+        peso_by_cat = {"BIANCHERIA_PIANA": 0.0, "SPUGNA": 0.0, "VARIE": 0.0, "NON_CLASSIFICATO": 0.0}
+        new_righe: List[Dict] = []
+        for r in (d.get("righe") or []):
+            aid = r.get("articolo_id")
+            art = articoli_map.get(aid or "", {"peso_medio": 0.0, "categoria_peso": "NON_CLASSIFICATO"})
+            peso_unit = float(art.get("peso_medio") or 0)
+            cat_peso = art.get("categoria_peso", "NON_CLASSIFICATO")
+            if cat_peso not in peso_by_cat:
+                cat_peso = "NON_CLASSIFICATO"
+            qta = float(r.get("quantita") or 0)
+            peso_riga = round(peso_unit * qta, 3)
+            peso_totale += peso_riga
+            peso_by_cat[cat_peso] += peso_riga
+            new_r = dict(r)
+            new_r["peso_medio_snapshot"] = round(peso_unit, 4)
+            new_r["categoria_peso_snapshot"] = cat_peso
+            new_r["peso_riga"] = peso_riga
+            new_righe.append(new_r)
+        await db.ddt.update_one(
+            {"id": d["id"], "tenant_id": d.get("tenant_id")},
+            {"$set": {
+                "righe": new_righe,
+                "peso_totale": round(peso_totale, 3),
+                "peso_biancheria_piana": round(peso_by_cat["BIANCHERIA_PIANA"], 3),
+                "peso_spugna": round(peso_by_cat["SPUGNA"], 3),
+                "peso_varie": round(peso_by_cat["VARIE"], 3),
+                "peso_non_classificato": round(peso_by_cat["NON_CLASSIFICATO"], 3),
+                "calcolo_peso_tipo": "RICALCOLO_STORICO",
+                "peso_calcolato_at": now,
+            }},
+        )
+        aggiornati += 1
+    if aggiornati:
+        logger.info(f"[SEED] migrate_ddt_peso_snapshot: {aggiornati} DDT ricalcolati")
+
+
 async def run_all():
     await ensure_demo_tenant()
     await seed_admin_and_users()
@@ -402,6 +470,7 @@ async def run_all():
     await seed_listini_and_ddt()
     await seed_termini_templates()
     await migrate_phase2()
+    await migrate_ddt_peso_snapshot()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

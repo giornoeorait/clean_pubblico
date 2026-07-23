@@ -1,0 +1,34 @@
+{
+  "summary": "Iter37 — Bug fix peso snapshot DDT: MIGRATION AUTOMATICA + CONVERSIONE ORDINATIVO→DDT validati. Backend 7/7 pytest PASS (test_iter37_peso_migration_conversione.py). (1) MIGRATION: unset dei campi peso su un DDT esistente + sudo supervisorctl restart backend → il DDT viene ricalcolato automaticamente con calcolo_peso_tipo='RICALCOLO_STORICO', peso_totale coerente con sum(qta × peso_medio) e subtotali per categoria popolati. Log backend confermato: '[SEED] migrate_ddt_peso_snapshot: 1 DDT ricalcolati'. (2) IDEMPOTENZA: secondo restart consecutivo NON produce log 'ricalcolati' (0 DDT modificati) — verificato via aggregate counts identici pre/post + nessun peso_calcolato_at cambiato. (3) CONVERSIONE ORDINATIVO→DDT: POST /api/ordinativi + POST /api/ordinativi/{oid}/converti-ddt produce DDT con calcolo_peso_tipo='CALCOLO_ORIGINALE', peso_totale>0, subtotali per categoria coerenti con articoli, ogni riga contiene peso_medio_snapshot/categoria_peso_snapshot/peso_riga; origine_ordinativo_id/numero tracciati. (4) REGRESSION: POST /api/ddt diretto continua a settare CALCOLO_ORIGINALE + peso_totale. GET /api/ddt?limit=500 ritorna 37 DDT tutti con peso_totale non-null e calcolo_peso_tipo valorizzato (0 mancanti). Reports /reports/produzione?anno=2026 e /dashboard/kpi rispondono 200 con dati coerenti. (5) FRONTEND (/ddt): header Peso presente; 4 DDT non-fatturati mostrati tutti con valore 'X,XXX kg' (1,800 / 0,900 / 9,900 / 30,006 kg) — nessuna cella vuota o em-dash. Bug utente RISOLTO.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/ddt filtri", "issues": ["Date input usano <input type=date> nativo del browser invece del componente shadcn Calendar (già noto, non oggetto di questo bug fix)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_peso_migration_conversione.py",
+    "/app/test_reports/pytest/iter37_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/seed.py L399-463 migrate_ddt_peso_snapshot: filtro {$or:[{calcolo_peso_tipo:{$exists:false}},{calcolo_peso_tipo:null}]} è idempotente ✓; costruisce articoli_by_tenant in un'unica pass (evita N+1) ✓; log '[SEED] migrate_ddt_peso_snapshot: N' solo se aggiornati>0 (silente su 2° restart) ✓.",
+    "backend/routers/ordinativi.py L551-624 converti_ddt: costruisce articoli_map dedupe per articolo_id (evita N query duplicate) ✓; usa peso_medio + categoria_peso ATTUALI dell'anagrafica al momento della conversione (comportamento corretto per snapshot 'CALCOLO_ORIGINALE') ✓; peso_totale/subtotali calcolati e persistiti sul DDT ✓; ogni riga arricchita con peso_medio_snapshot/categoria_peso_snapshot/peso_riga ✓.",
+    "backend/routers/ddt.py L43-92 _compute_righe: percorso POST/PATCH /ddt continua a produrre snapshot identico (stesso pattern) ✓ — nessuna regressione.",
+    "backend/routers/ddt.py L138 _enrich_cliente_denominazione: buon join lato server per DDT legacy senza cliente_denominazione ✓.",
+    "Nota migrazione forward-compat: la migration usa la categoria_peso CORRENTE dell'articolo per DDT storici. Se un articolo cambia categoria fra Utente A crea DDT (2024) e B fa restart (2026), il subtotale di categoria potrebbe divergere dallo storico. Marcato come RICALCOLO_STORICO (non CALCOLO_ORIGINALE) — semantica corretta.",
+    "backend/seed.py L466-477 run_all: order: seed → migrate_phase2 → migrate_ddt_peso_snapshot → indexes. Ordinamento corretto (i DDT esistono già prima della migration)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_peso_migration_conversione.py (NEW: 7 pytest per fix peso snapshot)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (colonna Peso completa su tutti i DDT visualizzati)"},
+  "test_credentials": "admin@cleantec.it/admin123 OK. Login viene reindirizzato a /dashboard dopo ~5s (splash 'Verifica sessione…'). Cookie-based session (httpOnly) — usare sessione requests.Session() per test API.",
+  "seed_data_creation": "Nessun dato persistente. Test crea/elimina: 1 ordinativo TEST + 1 DDT convertito, 1 DDT diretto TEST_iter37. Tutti gli oggetti sono rimossi in fixture teardown. Il DDT usato per il test migration ha subìto unset+ricalcolo → il valore finale ricalcolato coincide con quello originale (verificato in assert).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug 'colonna Peso vuota su alcuni DDT' — RISOLTO. Fix confermato: (a) migrate_ddt_peso_snapshot in seed.py backfilla DDT storici al primo restart post-deploy in modo idempotente; (b) converti_ddt in routers/ordinativi.py ora replica il pattern _compute_righe di ddt.py per popolare snapshot+subtotali. Tutti i 37 DDT in DB hanno calcolo_peso_tipo valorizzato. Test file: /app/backend/tests/test_iter37_peso_migration_conversione.py (7 test in 4 classi: TestMigrationAutomatica[2], TestConversioneOrdinativoDDT[1], TestRegressionDDT[2], TestRegressionReports[2]). ATTENZIONE: i test 1&2 fanno sudo supervisorctl restart backend — non eseguibili in parallelo con altri test suite. Nota UX: le date input in /ddt usano <input type=date> nativo del browser invece di shadcn Calendar (issue nota pre-esistente).",
+  "rca_of_the_issue": "ROOT CAUSE (già identificato dal main agent): (1) POST /api/ordinativi/{oid}/converti-ddt NON popolava snapshot peso e subtotali sul DDT risultante (perdita di informazione); (2) DDT storici creati prima dell'introduzione del feature snapshot non venivano ricalcolati automaticamente. MITIGATION: (a) converti_ddt ora costruisce articoli_map e calcola peso_riga/subtotali/calcolo_peso_tipo=CALCOLO_ORIGINALE; (b) migrate_ddt_peso_snapshot in seed.py esegue backfill idempotente al restart backend. Entrambi validati con test funzionali end-to-end."
+}
