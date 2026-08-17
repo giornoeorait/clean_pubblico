@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { clientePrimary, clienteSecondary } from "../lib/clienteLabel";
 import {
   Plus, FilePdf, Trash, PencilSimple, HandHeart, FileText, FloppyDisk,
-  CheckCircle, XCircle, Eye, Handshake, Copy, ArrowRight, Warning,
+  CheckCircle, XCircle, Eye, Handshake, Copy, ArrowRight, Warning, Lightning,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -100,6 +100,16 @@ export default function Offerte() {
   const selectedCliente = clienti.find(c => c.id === form?.cliente_id);
 
   const addRiga = () => setForm({ ...form, righe: [...form.righe, { articolo_id: "", quantita: 1, sconto_perc: 0, sconto_eur: 0 }] });
+
+  const inserisciListinoCompleto = () => {
+    const presenti = new Set(form.righe.map(r => r.articolo_id).filter(Boolean));
+    const nuove = Object.keys(listinoPrezzi)
+      .filter(aid => !presenti.has(aid) && articoli.some(a => a.id === aid))
+      .map(aid => ({ articolo_id: aid, quantita: 1, sconto_perc: 0, sconto_eur: 0 }));
+    if (nuove.length === 0) { toast.info("Tutti gli articoli del listino sono già presenti nell'offerta"); return; }
+    setForm({ ...form, righe: [...form.righe, ...nuove] });
+    toast.success(`Inseriti ${nuove.length} articoli dal listino`);
+  };
   const delRiga = (i) => setForm({ ...form, righe: form.righe.filter((_, j) => j !== i) });
   const updRiga = (i, k, v) => setForm({ ...form, righe: form.righe.map((r, j) => j === i ? { ...r, [k]: v } : r) });
 
@@ -351,7 +361,14 @@ export default function Offerte() {
               <section className="border border-slate-200 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-200">
                   <h4 className="font-display font-bold text-sm">Articoli offerta</h4>
-                  <Button type="button" variant="outline" size="sm" onClick={addRiga} data-testid="add-riga-btn"><Plus size={13} className="mr-1" />Aggiungi riga</Button>
+                  <div className="flex items-center gap-2">
+                    {Object.keys(listinoPrezzi).length > 0 && (
+                      <Button type="button" variant="outline" size="sm" onClick={inserisciListinoCompleto} data-testid="inserisci-listino-completo-btn" className="border-indaco/40 text-indaco hover:bg-indaco/5">
+                        <Lightning size={13} className="mr-1" />Inserisci listino completo
+                      </Button>
+                    )}
+                    <Button type="button" variant="outline" size="sm" onClick={addRiga} data-testid="add-riga-btn"><Plus size={13} className="mr-1" />Aggiungi riga</Button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
