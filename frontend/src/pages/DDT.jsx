@@ -17,7 +17,6 @@ export default function DDT() {
   const { canSeePrices, canEditDate } = usePermissions();
   // Default: mese in corso (dal 1° del mese a oggi) + solo "non fatturato"
   const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const toISODate = (d) => d.toISOString().slice(0, 10);
 
   const [list, setList] = useState([]);
@@ -25,7 +24,7 @@ export default function DDT() {
   const [articoli, setArticoli] = useState([]);
   const [filterCliente, setFilterCliente] = useState("all");
   const [filterStato, setFilterStato] = useState("non_fatturato");
-  const [filterFrom, setFilterFrom] = useState(toISODate(firstOfMonth));
+  const [filterFrom, setFilterFrom] = useState(toISODate(today));
   const [filterTo, setFilterTo] = useState(toISODate(today));
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -52,7 +51,7 @@ export default function DDT() {
   const resetFilters = () => {
     setFilterCliente("all");
     setFilterStato("non_fatturato");
-    setFilterFrom(toISODate(firstOfMonth));
+    setFilterFrom(toISODate(today));
     setFilterTo(toISODate(today));
   };
 
