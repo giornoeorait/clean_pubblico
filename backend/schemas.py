@@ -67,6 +67,7 @@ class ArticoloIn(BaseModel):
     prezzo_lavaggio: float = 0.0
     giacenza: int = 0
     multiplo_quantita: int = 1  # 1 = unitario; 5/10/25 = ordini solo a multipli
+    multiplo_imballaggio: int = 1  # pezzi per confezione/imballo (contatore totem produzione)
 
     @field_validator("categoria_peso")
     @classmethod
@@ -255,6 +256,7 @@ class PatchArticoloIn(_PatchBase):
     prezzo_lavaggio: Optional[float] = None
     giacenza: Optional[int] = None
     multiplo_quantita: Optional[int] = None
+    multiplo_imballaggio: Optional[int] = None
 
     @field_validator("categoria_peso")
     @classmethod

@@ -113,6 +113,11 @@ function OrderDetail({ order, onBack, onFinalized }) {
     const f = order.righe_eseguite || [];
     return (order.righe || []).map((_, i) => !!f[i]);
   });
+  const [counts, setCounts] = useState(() => {
+    const c = order.righe_conteggio || [];
+    const f = order.righe_eseguite || [];
+    return (order.righe || []).map((r, i) => f[i] ? (r.quantita || 0) : (Number(c[i]) || 0));
+  });
   const [operatorAsk, setOperatorAsk] = useState(false);
   const [operatorName, setOperatorName] = useState(order.operatore_produzione || "");
   const [confirmIncomplete, setConfirmIncomplete] = useState(false);
@@ -134,8 +139,27 @@ function OrderDetail({ order, onBack, onFinalized }) {
     setBusy(false);
   };
 
+  const saveCounts = (next) => {
+    api.patch(`/ordinativi/${o.id}/produzione`, { righe_conteggio: next }).catch(() => {});
+  };
+
+  const stepCount = (i, dir) => {
+    if (isNew || flags[i]) return;
+    const target = o.righe[i].quantita || 0;
+    const step = Math.max(1, Number(o.righe[i].multiplo_imballaggio) || 1);
+    const next = counts.map((v, j) => {
+      if (j !== i) return v;
+      const nv = dir > 0 ? Math.min(target, v + step) : Math.max(0, v - step);
+      return nv;
+    });
+    setCounts(next);
+    saveCounts(next);
+  };
+
   const toggleRow = async (i) => {
     if (isNew) return;
+    const target = o.righe[i].quantita || 0;
+    if (!flags[i] && counts[i] !== target) return; // flag solo a quantità esatta
     const next = flags.map((v, j) => j === i ? !v : v);
     setFlags(next);
     try { await api.patch(`/ordinativi/${o.id}/produzione`, { righe_eseguite: next }); }
@@ -188,21 +212,39 @@ function OrderDetail({ order, onBack, onFinalized }) {
             Premi "METTI IN LAVORAZIONE" per iniziare a spuntare le righe.
           </div>
         )}
-        {(o.righe || []).map((r, i) => (
-          <button key={i} onClick={() => toggleRow(i)} disabled={isNew} data-testid={`totem-row-${i}`}
-            className={`w-full flex items-center gap-5 p-5 rounded-2xl border-2 text-left transition-all active:scale-[0.99] ${flags[i] ? "bg-emerald-950/50 border-emerald-500/70" : "bg-slate-900 border-slate-700"} ${isNew ? "opacity-50" : ""}`}>
-            {flags[i]
-              ? <CheckCircle size={44} weight="fill" className="text-emerald-400 flex-shrink-0" />
-              : <Circle size={44} className="text-slate-500 flex-shrink-0" />}
-            <div className="flex-1 min-w-0">
-              <div className={`text-2xl font-bold ${flags[i] ? "text-emerald-200 line-through" : "text-white"}`}>{r.descrizione}</div>
-              <div className="text-slate-400 text-lg font-mono">{r.codice}</div>
+        {(o.righe || []).map((r, i) => {
+          const target = r.quantita || 0;
+          const step = Math.max(1, Number(r.multiplo_imballaggio) || 1);
+          const reached = counts[i] === target;
+          return (
+            <div key={i} data-testid={`totem-row-${i}`}
+              className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${flags[i] ? "bg-emerald-950/50 border-emerald-500/70" : reached ? "bg-sky-950/40 border-sky-500/60" : "bg-slate-900 border-slate-700"} ${isNew ? "opacity-50" : ""}`}>
+              {/* Check (attivo solo a quantità esatta) */}
+              <button onClick={() => toggleRow(i)} disabled={isNew || (!flags[i] && !reached)} data-testid={`totem-row-check-${i}`}
+                className="flex-shrink-0 active:scale-90 transition-transform disabled:cursor-not-allowed">
+                {flags[i]
+                  ? <CheckCircle size={52} weight="fill" className="text-emerald-400" />
+                  : <Circle size={52} className={reached ? "text-sky-300 animate-pulse" : "text-slate-600"} />}
+              </button>
+              {/* Descrizione */}
+              <div className="flex-1 min-w-0">
+                <div className={`text-xl sm:text-2xl font-bold leading-tight ${flags[i] ? "text-emerald-200 line-through" : "text-white"}`}>{r.descrizione}</div>
+                <div className="text-slate-400 text-base font-mono">{r.codice}{step > 1 && <span className="ml-3 text-amber-400">imballi da {step} pz</span>}</div>
+              </div>
+              {/* Contatore − / + */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <button onClick={() => stepCount(i, -1)} disabled={isNew || flags[i] || counts[i] <= 0} data-testid={`totem-row-minus-${i}`}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-red-900/60 border-2 border-red-600/60 text-red-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center">−</button>
+                <div className="text-center min-w-[110px]" data-testid={`totem-row-count-${i}`}>
+                  <div className={`text-3xl sm:text-4xl font-bold font-mono ${flags[i] ? "text-emerald-300" : reached ? "text-sky-300" : "text-white"}`}>{counts[i]}</div>
+                  <div className="text-slate-400 text-base font-mono">/ {target} {r.unita_misura || "pz"}</div>
+                </div>
+                <button onClick={() => stepCount(i, 1)} disabled={isNew || flags[i] || reached} data-testid={`totem-row-plus-${i}`}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-emerald-900/60 border-2 border-emerald-600/60 text-emerald-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center">+</button>
+              </div>
             </div>
-            <div className={`text-3xl font-bold font-mono ${flags[i] ? "text-emerald-300" : "text-white"}`}>
-              {r.quantita} <span className="text-lg text-slate-400">{r.unita_misura || "pz"}</span>
-            </div>
-          </button>
-        ))}
+          );
+        })}
         {(o.note_cliente || o.note_interne) && (
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 text-slate-300 text-lg">
             {o.note_cliente && <div><b className="text-white">Note cliente:</b> {o.note_cliente}</div>}

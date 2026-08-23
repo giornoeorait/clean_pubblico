@@ -56,6 +56,7 @@ class ProduzionePatch(BaseModel):
     operatore: Optional[str] = None
     stato: Optional[Literal["in_lavorazione"]] = None
     righe_eseguite: Optional[List[bool]] = None
+    righe_conteggio: Optional[List[float]] = None
 
 
 class PortaleOrdIn(BaseModel):
@@ -110,6 +111,7 @@ async def _resolve_righe(tenant_id: str, cliente_id: str, righe: List[RigaOrd]) 
             "descrizione": a.get("descrizione", ""),
             "unita_misura": a.get("unita_misura", "pz"),
             "quantita": float(r.quantita),
+            "multiplo_imballaggio": int(a.get("multiplo_imballaggio") or 1),
             "prezzo_unitario": round(prezzo, 4),
             "totale": tot,
         })
@@ -527,6 +529,10 @@ async def update_produzione(oid: str, body: ProduzionePatch,
         if len(body.righe_eseguite) != len(cur.get("righe", [])):
             raise HTTPException(422, "righe_eseguite non corrisponde al numero di righe")
         patch["righe_eseguite"] = body.righe_eseguite
+    if body.righe_conteggio is not None:
+        if len(body.righe_conteggio) != len(cur.get("righe", [])):
+            raise HTTPException(422, "righe_conteggio non corrisponde al numero di righe")
+        patch["righe_conteggio"] = body.righe_conteggio
     await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": patch})
     await log_audit(user, "PRODUZIONE_UPDATE", "ordinativo", oid, {k: v for k, v in patch.items() if k != "updated_at"})
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})

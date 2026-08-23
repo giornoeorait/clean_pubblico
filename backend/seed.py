@@ -485,6 +485,28 @@ async def migrate_fatture_data_datetime():
         logger.info(f"[SEED] migrate_fatture_data_datetime: {fixed} fatture convertite")
 
 
+async def migrate_ordinativi_multiplo_imballaggio():
+    """Backfill multiplo_imballaggio nelle righe degli ordinativi aperti."""
+    fixed = 0
+    async for o in db.ordinativi.find(
+        {"stato": {"$in": ["nuovo", "in_lavorazione"]}, "righe.multiplo_imballaggio": {"$exists": False}},
+        {"_id": 1, "tenant_id": 1, "righe": 1},
+    ):
+        righe = o.get("righe", [])
+        changed = False
+        for r in righe:
+            if "multiplo_imballaggio" not in r:
+                a = await db.articoli.find_one({"tenant_id": o["tenant_id"], "id": r.get("articolo_id")},
+                                               {"_id": 0, "multiplo_imballaggio": 1})
+                r["multiplo_imballaggio"] = int((a or {}).get("multiplo_imballaggio") or 1)
+                changed = True
+        if changed:
+            await db.ordinativi.update_one({"_id": o["_id"]}, {"$set": {"righe": righe}})
+            fixed += 1
+    if fixed:
+        logger.info(f"[SEED] migrate_ordinativi_multiplo_imballaggio: {fixed} ordinativi aggiornati")
+
+
 async def run_all():
     await ensure_demo_tenant()
     await seed_admin_and_users()
@@ -494,6 +516,7 @@ async def run_all():
     await migrate_phase2()
     await migrate_ddt_peso_snapshot()
     await migrate_fatture_data_datetime()
+    await migrate_ordinativi_multiplo_imballaggio()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

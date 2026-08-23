@@ -386,3 +386,9 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Migrazione startup migrate_fatture_data_datetime: converte fatture.data/scadenza stringa → BSON datetime (fixava 500 su /reports/fatturato).
 - Offerte: bottone "Inserisci listino completo"; DDT: filtri data default oggi→oggi.
 - Test: iteration_38 (backend 12/12 dopo fix, frontend 100%).
+
+## 2026-06 — Multipli di imballaggio (totem)
+- Articoli: nuovo campo "Multipli di imballaggio" (multiplo_imballaggio, default 1) nel form articolo.
+- Snapshot del multiplo nelle righe ordinativo alla creazione + migrazione startup per ordini aperti esistenti.
+- Totem: contatore per riga con bottoni grandi +/− a scatti del multiplo (cap 0..quantità), conteggio persistito (righe_conteggio via PATCH produzione), flag riga abilitato SOLO a quantità esatta.
+- Testato e2e: +10/−10, cap a 100, check disabilitato finché non esatto, persistenza dopo reload.
