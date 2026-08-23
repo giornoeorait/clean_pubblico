@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import PageHeader from "../components/PageHeader";
 import ErrorBoundary from "../components/ErrorBoundary";
+import TempiLavorazioneView from "../components/TempiLavorazioneView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Truck, TrendUp, FileArrowDown, Archive, UploadSimple, FloppyDisk, Trash, MagnifyingGlass } from "@phosphor-icons/react";
+import { ChartBar, CurrencyEur, Scales, Gauge, Clock, Timer, Truck, TrendUp, FileArrowDown, Archive, UploadSimple, FloppyDisk, Trash, MagnifyingGlass } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -24,6 +25,7 @@ const TABS = [
   { v: "costo_kg", l: "Costo per kg", icon: Gauge },
   { v: "marginalita", l: "Marginalità", icon: TrendUp },
   { v: "aging", l: "Aging sospesi", icon: Clock },
+  { v: "tempi", l: "Tempi lavorazione", icon: Timer },
   { v: "km", l: "Km automezzi", icon: Truck },
   { v: "storico", l: "Storico (pre-app)", icon: Archive },
 ];
@@ -89,6 +91,7 @@ export default function Report() {
     setLoading(true); setData(null);
     try {
       const path = tab === "aging" ? "/reports/aging-sospesi" :
+                   tab === "tempi" ? `/reports/tempi-lavorazione?anno=${anno}` :
                    tab === "km" ? `/reports/km-automezzi?anno=${anno}` :
                    tab === "costo_kg" ? `/reports/costo-kg?anno=${anno}` :
                    tab === "fatturato" ? `/reports/fatturato?anno=${anno}` :
@@ -108,7 +111,7 @@ export default function Report() {
         subtitle="Fatturato, produzione, costi, marginalità e aging aggregati per mese, cliente, articolo e automezzo."
         actions={
           <div className="flex gap-2 items-center">
-            {tab !== "storico" && (
+            {tab !== "storico" && tab !== "tempi" && (
               <button
                 onClick={async () => {
                   try {
@@ -168,6 +171,7 @@ export default function Report() {
         {!loading && data && tab === "costo_kg" && <CostoKgView d={data} />}
         {!loading && data && tab === "marginalita" && <MarginalitaView d={data} />}
         {!loading && data && tab === "aging" && <AgingView d={data} />}
+        {!loading && data && tab === "tempi" && <TempiLavorazioneView d={data} />}
         {!loading && data && tab === "km" && <KmView d={data} />}
         {tab === "storico" && <StoricoView anno={anno} />}
       </ErrorBoundary>

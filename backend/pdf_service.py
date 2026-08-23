@@ -240,6 +240,8 @@ def generate_ddt_pdf(ddt: Dict, cliente: Dict, company: Dict) -> bytes:
     el.append(Spacer(1, 8*mm))
     el.append(Paragraph(f"<b>D.D.T. {ddt.get('numero', '')}</b>", st["h1"]))
     el.append(Paragraph(f"Data: {_fmt_date(ddt.get('data'))}", st["small"]))
+    if ddt.get("operatore_produzione"):
+        el.append(Paragraph(f"Eseguito da: <b>{ddt['operatore_produzione']}</b>", st["small"]))
     el.append(Spacer(1, 6*mm))
     el.append(_rows_table(ddt.get("righe", []), st))
     el.append(Spacer(1, 4*mm))

@@ -392,3 +392,10 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Snapshot del multiplo nelle righe ordinativo alla creazione + migrazione startup per ordini aperti esistenti.
 - Totem: contatore per riga con bottoni grandi +/− a scatti del multiplo (cap 0..quantità), conteggio persistito (righe_conteggio via PATCH produzione), flag riga abilitato SOLO a quantità esatta.
 - Testato e2e: +10/−10, cap a 100, check disabilitato finché non esatto, persistenza dopo reload.
+
+## 2026-06 — Eseguito da su DDT + Tempi Lavorazione
+- DDT: campo operatore_produzione snapshot alla conversione + "Eseguito da: <nome>" nel PDF; migrazione backfill DDT storici da ordinativi.
+- Tracking tempi ordinativi: presa_in_carico_at (set a metti-in-lavorazione, anche dal gestionale) e chiusura_at (set a converti-ddt); migrazione best-effort per ordini già in lavorazione (presa=updated_at).
+- Totem: timer "In attesa da X" / "In lavorazione da X" nel dettaglio e sulle card board.
+- Report: nuova tab "Tempi lavorazione" (GET /api/reports/tempi-lavorazione?anno&mese) con KPI (attesa media, lavorazione media, min/max), classifica operatori più veloci, classifica più attivi, tabella dettaglio ordini chiusi. Componente: /app/frontend/src/components/TempiLavorazioneView.jsx.
+- Ordini legacy senza timestamp: esclusi dalle medie, contati come "senza tracciamento".

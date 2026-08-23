@@ -505,6 +505,8 @@ async def update_ord(oid: str, body: OrdinativoPatch, user: Dict = Depends(requi
         patch["totale"] = round(sum(r["totale"] for r in rows), 2)
     for k in ("data_consegna_richiesta", "note_interne", "stato"):
         if k in data: patch[k] = data[k]
+    if data.get("stato") == "in_lavorazione" and not cur.get("presa_in_carico_at"):
+        patch["presa_in_carico_at"] = now_utc()
     await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": patch})
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
 
@@ -525,6 +527,8 @@ async def update_produzione(oid: str, body: ProduzionePatch,
         patch["operatore_produzione"] = body.operatore.strip()
     if body.stato:
         patch["stato"] = body.stato
+        if body.stato == "in_lavorazione" and not cur.get("presa_in_carico_at"):
+            patch["presa_in_carico_at"] = now_utc()
     if body.righe_eseguite is not None:
         if len(body.righe_eseguite) != len(cur.get("righe", [])):
             raise HTTPException(422, "righe_eseguite non corrisponde al numero di righe")
@@ -652,10 +656,12 @@ async def converti_ddt(oid: str, user: Dict = Depends(require_roles("admin", "lo
         "fattura_id": None, "fattura_numero": None,
         "created_at": now_utc(), "updated_at": now_utc(),
         "origine_ordinativo_id": cur["id"], "origine_ordinativo_numero": cur["numero"],
+        "operatore_produzione": cur.get("operatore_produzione") or "",
     }
     await db.ddt.insert_one(ddt_doc)
     await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": {
         "stato": "convertito_ddt", "ddt_id": did, "ddt_numero": numero_ddt, "updated_at": now_utc(),
+        "chiusura_at": now_utc(),
     }})
     await log_audit(user, "CONVERT", "ordinativo", oid, {"ddt": numero_ddt})
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})

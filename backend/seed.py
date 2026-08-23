@@ -507,6 +507,35 @@ async def migrate_ordinativi_multiplo_imballaggio():
         logger.info(f"[SEED] migrate_ordinativi_multiplo_imballaggio: {fixed} ordinativi aggiornati")
 
 
+async def migrate_ddt_operatore_produzione():
+    """Backfill 'Eseguito da' sui DDT generati da ordinativi lavorati al totem."""
+    fixed = 0
+    async for d in db.ddt.find(
+        {"origine_ordinativo_id": {"$ne": None}, "operatore_produzione": {"$exists": False}},
+        {"_id": 1, "tenant_id": 1, "origine_ordinativo_id": 1},
+    ):
+        o = await db.ordinativi.find_one(
+            {"tenant_id": d["tenant_id"], "id": d["origine_ordinativo_id"]},
+            {"_id": 0, "operatore_produzione": 1},
+        )
+        op = (o or {}).get("operatore_produzione") or ""
+        await db.ddt.update_one({"_id": d["_id"]}, {"$set": {"operatore_produzione": op}})
+        if op:
+            fixed += 1
+    if fixed:
+        logger.info(f"[SEED] migrate_ddt_operatore_produzione: {fixed} DDT aggiornati")
+
+
+async def migrate_ordinativi_presa_in_carico():
+    """Backfill best-effort presa_in_carico_at (=updated_at) per ordini già in lavorazione."""
+    r = await db.ordinativi.update_many(
+        {"stato": "in_lavorazione", "presa_in_carico_at": {"$exists": False}},
+        [{"$set": {"presa_in_carico_at": "$updated_at"}}],
+    )
+    if r.modified_count:
+        logger.info(f"[SEED] migrate_ordinativi_presa_in_carico: {r.modified_count} ordini")
+
+
 async def run_all():
     await ensure_demo_tenant()
     await seed_admin_and_users()
@@ -517,6 +546,8 @@ async def run_all():
     await migrate_ddt_peso_snapshot()
     await migrate_fatture_data_datetime()
     await migrate_ordinativi_multiplo_imballaggio()
+    await migrate_ddt_operatore_produzione()
+    await migrate_ordinativi_presa_in_carico()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

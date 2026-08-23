@@ -36,6 +36,15 @@ function fmtConsegna(d) {
   try { return new Date(d).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" }); } catch { return d; }
 }
 
+function workingLabel(iso) {
+  if (!iso) return "";
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ${min % 60}m`;
+  return `${Math.floor(h / 24)}g ${h % 24}h`;
+}
+
 const clienteName = (o) => o.cliente_snapshot?.denominazione_struttura || o.cliente_snapshot?.ragione_sociale || "Cliente";
 
 // ---------- Login totem ----------
@@ -98,6 +107,7 @@ function OrderCard({ o, onOpen }) {
         {!isNew && (
           <span className="flex items-center gap-2 text-base text-sky-300">
             {o.operatore_produzione && <span className="flex items-center gap-1"><User size={18} />{o.operatore_produzione}</span>}
+            {o.presa_in_carico_at && <span className="flex items-center gap-1 text-amber-300"><Timer size={18} />{workingLabel(o.presa_in_carico_at)}</span>}
             <span className="font-mono font-bold">{done}/{tot} righe</span>
           </span>
         )}
@@ -197,7 +207,13 @@ function OrderDetail({ order, onBack, onFinalized }) {
       <div className="px-6 pt-5">
         <div className="flex items-center justify-between mb-2">
           <span className="text-slate-300 text-xl font-semibold" data-testid="totem-progress-label">{doneCount} / {totRows} righe completate</span>
-          {o.operatore_produzione && <span className="flex items-center gap-2 text-sky-300 text-lg"><User size={22} />{o.operatore_produzione}</span>}
+          <span className="flex items-center gap-4">
+            <span className="flex items-center gap-2 text-amber-300 text-lg" data-testid="totem-detail-timer">
+              <Timer size={22} />
+              {isNew ? `In attesa da ${workingLabel(o.data_richiesta || o.created_at)}` : `In lavorazione da ${workingLabel(o.presa_in_carico_at || o.updated_at)}`}
+            </span>
+            {o.operatore_produzione && <span className="flex items-center gap-2 text-sky-300 text-lg"><User size={22} />{o.operatore_produzione}</span>}
+          </span>
         </div>
         <div className="h-4 bg-slate-800 rounded-full overflow-hidden">
           <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: totRows ? `${(doneCount / totRows) * 100}%` : "0%" }} />

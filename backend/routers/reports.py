@@ -1187,3 +1187,96 @@ async def report_pdf(tipo: str, anno: Optional[int] = None, user: Dict = Depends
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+
+
+# ======================== TEMPI LAVORAZIONE ========================
+@router.get("/reports/tempi-lavorazione")
+async def report_tempi_lavorazione(
+    anno: Optional[int] = None, mese: Optional[int] = None,
+    user: Dict = Depends(require_permission("report", "view")),
+):
+    """Tempi di attesa (arrivo → presa in carico) e lavorazione (presa in carico → chiusura DDT)
+    degli ordinativi convertiti, con classifica operatori."""
+    from datetime import datetime, timezone
+    from core import to_dt
+    tenant_id = tenant_id_of(user)
+    y = anno or datetime.now(timezone.utc).year
+    if mese:
+        start = datetime(y, mese, 1, tzinfo=timezone.utc)
+        end = datetime(y + (mese == 12), (mese % 12) + 1, 1, tzinfo=timezone.utc)
+    else:
+        start = datetime(y, 1, 1, tzinfo=timezone.utc)
+        end = datetime(y + 1, 1, 1, tzinfo=timezone.utc)
+
+    def _mins(a, b):
+        if not a or not b:
+            return None
+        if a.tzinfo is None:
+            a = a.replace(tzinfo=timezone.utc)
+        if b.tzinfo is None:
+            b = b.replace(tzinfo=timezone.utc)
+        m = (b - a).total_seconds() / 60.0
+        return round(m, 1) if m >= 0 else None
+
+    ordini = []
+    per_operatore: Dict[str, Dict] = {}
+    n_senza_tracking = 0
+    async for o in db.ordinativi.find(
+        {"tenant_id": tenant_id, "stato": "convertito_ddt",
+         "$or": [{"chiusura_at": {"$gte": start, "$lt": end}},
+                 {"chiusura_at": None, "updated_at": {"$gte": start, "$lt": end}},
+                 {"chiusura_at": {"$exists": False}, "updated_at": {"$gte": start, "$lt": end}}]},
+        {"_id": 0, "numero": 1, "cliente_snapshot": 1, "data_richiesta": 1, "created_at": 1,
+         "presa_in_carico_at": 1, "chiusura_at": 1, "updated_at": 1,
+         "operatore_produzione": 1, "ddt_numero": 1, "totale": 1, "righe": 1},
+    ).sort("updated_at", -1).limit(2000):
+        arrivo = to_dt(o.get("data_richiesta") or o.get("created_at"))
+        presa = to_dt(o.get("presa_in_carico_at"))
+        chiusura = to_dt(o.get("chiusura_at"))
+        attesa = _mins(arrivo, presa)
+        lavorazione = _mins(presa, chiusura)
+        if lavorazione is None:
+            n_senza_tracking += 1
+        op = (o.get("operatore_produzione") or "").strip()
+        cli = o.get("cliente_snapshot") or {}
+        ordini.append({
+            "numero": o.get("numero"),
+            "cliente": cli.get("denominazione_struttura") or cli.get("ragione_sociale") or "",
+            "operatore": op,
+            "ddt_numero": o.get("ddt_numero"),
+            "arrivo": arrivo.isoformat() if arrivo else None,
+            "presa_in_carico": presa.isoformat() if presa else None,
+            "chiusura": chiusura.isoformat() if chiusura else None,
+            "attesa_min": attesa,
+            "lavorazione_min": lavorazione,
+            "pezzi": round(sum(float(r.get("quantita") or 0) for r in (o.get("righe") or [])), 1),
+        })
+        if op and lavorazione is not None:
+            e = per_operatore.setdefault(op, {"operatore": op, "n_ordini": 0, "tempo_totale_min": 0.0, "pezzi_totali": 0.0})
+            e["n_ordini"] += 1
+            e["tempo_totale_min"] = round(e["tempo_totale_min"] + lavorazione, 1)
+            e["pezzi_totali"] = round(e["pezzi_totali"] + ordini[-1]["pezzi"], 1)
+
+    for e in per_operatore.values():
+        e["tempo_medio_min"] = round(e["tempo_totale_min"] / e["n_ordini"], 1) if e["n_ordini"] else None
+
+    tracked_attesa = [x["attesa_min"] for x in ordini if x["attesa_min"] is not None]
+    tracked_lav = [x["lavorazione_min"] for x in ordini if x["lavorazione_min"] is not None]
+    classifica_veloci = sorted(per_operatore.values(), key=lambda e: e["tempo_medio_min"] or 1e12)
+    classifica_attivi = sorted(per_operatore.values(), key=lambda e: (-e["n_ordini"], -e["tempo_totale_min"]))
+
+    return {
+        "anno": y, "mese": mese,
+        "kpi": {
+            "n_ordini_chiusi": len(ordini),
+            "n_tracciati": len(tracked_lav),
+            "n_senza_tracking": n_senza_tracking,
+            "attesa_media_min": round(sum(tracked_attesa) / len(tracked_attesa), 1) if tracked_attesa else None,
+            "lavorazione_media_min": round(sum(tracked_lav) / len(tracked_lav), 1) if tracked_lav else None,
+            "lavorazione_max_min": max(tracked_lav) if tracked_lav else None,
+            "lavorazione_min_min": min(tracked_lav) if tracked_lav else None,
+        },
+        "classifica_veloci": classifica_veloci,
+        "classifica_attivi": classifica_attivi,
+        "ordini": ordini[:200],
+    }
