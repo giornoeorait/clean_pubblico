@@ -3,7 +3,7 @@ import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import {
   ArrowLeft, CheckCircle, Circle, Play, Printer, SignOut, Timer,
-  Basket, User, Warning, CheckFat, SignIn,
+  Basket, User, Warning, CheckFat, SignIn, CornersOut, CornersIn,
 } from "@phosphor-icons/react";
 
 const POLL_MS = 20000;
@@ -11,14 +11,21 @@ const POLL_MS = 20000;
 function playBeep() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = "sine"; o.frequency.value = 880;
-    g.gain.setValueAtTime(0.4, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    o.start(); o.stop(ctx.currentTime + 0.6);
-    setTimeout(() => { const o2 = ctx.createOscillator(); const g2 = ctx.createGain(); o2.connect(g2); g2.connect(ctx.destination); o2.type = "sine"; o2.frequency.value = 1174; g2.gain.setValueAtTime(0.4, ctx.currentTime); g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6); o2.start(); o2.stop(ctx.currentTime + 0.6); }, 250);
+    // Allarme bitonale ~3 secondi (tipo sirena)
+    for (let i = 0; i < 6; i++) {
+      const t = ctx.currentTime + i * 0.5;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "square";
+      o.frequency.setValueAtTime(i % 2 === 0 ? 950 : 700, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.35, t + 0.03);
+      g.gain.setValueAtTime(0.35, t + 0.42);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      o.start(t); o.stop(t + 0.5);
+    }
+    setTimeout(() => ctx.close(), 3500);
   } catch {}
 }
 
@@ -327,7 +334,19 @@ export default function Produzione() {
   const [selected, setSelected] = useState(null);
   const [newAlert, setNewAlert] = useState(false);
   const [successBadge, setSuccessBadge] = useState(null); // {numero, ddt_numero}
+  const [isFull, setIsFull] = useState(false);
   const knownIds = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setIsFull(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen().catch(() => {});
+  };
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -401,6 +420,10 @@ export default function Produzione() {
           <div className="text-right hidden sm:block">
             <div className="text-white font-mono text-2xl">{new Date().toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })}</div>
           </div>
+          <button onClick={toggleFullscreen} data-testid="totem-fullscreen-btn" title={isFull ? "Esci da schermo intero" : "Schermo intero"}
+            className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
+            {isFull ? <CornersIn size={26} /> : <CornersOut size={26} />}
+          </button>
           <button onClick={logout} data-testid="totem-logout-btn" title="Esci"
             className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
             <SignOut size={26} />
