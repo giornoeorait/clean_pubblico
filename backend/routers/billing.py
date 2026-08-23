@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from core import (
     db, new_id, now_utc, to_dt,
-    get_current_user, require_roles, log_audit, next_seq,
+    get_current_user, require_roles, require_permission, log_audit, next_seq,
     tenant_scope, merge_scope, inject_tenant,
 )
 
@@ -196,7 +196,7 @@ async def _build_fatture_query(
 
 @router.get("")
 async def list_fatture(
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("fatture", "view")),
     cliente_id: Optional[str] = None,
     stato_incasso: Optional[str] = None,  # da_incassare | incassata
     data_inizio: Optional[str] = None,    # YYYY-MM-DD
@@ -214,7 +214,7 @@ async def list_fatture(
 
 @router.get("/summary")
 async def summary_fatture(
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("fatture", "view")),
     cliente_id: Optional[str] = None,
     stato_incasso: Optional[str] = None,
     data_inizio: Optional[str] = None,
@@ -476,7 +476,7 @@ async def create_fattura_from_ddt(body: FatturaFromDDT, user: Dict = Depends(req
 
 @router.get("/xml-bulk")
 async def fatture_xml_bulk(
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("fatture", "view")),
     from_: Optional[str] = Query(None, alias="from"),
     to: Optional[str] = Query(None),
     month: Optional[str] = Query(None),  # "YYYY-MM"
@@ -593,7 +593,7 @@ async def fatture_xml_bulk(
 
 
 @router.get("/{fid}/pdf")
-async def fattura_pdf(fid: str, user: Dict = Depends(get_current_user)):
+async def fattura_pdf(fid: str, user: Dict = Depends(require_permission("fatture", "view"))):
     from fastapi import Response
     from pdf_service import generate_fattura_pdf
     from routers.company import load_company_for_tenant
@@ -616,7 +616,7 @@ async def fattura_pdf(fid: str, user: Dict = Depends(get_current_user)):
 
 
 @router.get("/{fid}/xml")
-async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_user)):
+async def fattura_xml_elettronica(fid: str, user: Dict = Depends(require_permission("fatture", "view"))):
     """Export XML Fattura Elettronica (v1.2.2 FPR12 — privati B2B/B2C) per upload allo SdI."""
     from fastapi import Response
     from routers.company import load_company_for_tenant
@@ -647,7 +647,7 @@ async def fattura_xml_elettronica(fid: str, user: Dict = Depends(get_current_use
 
 
 @router.post("/{fid}/validate")
-async def validate_fattura(fid: str, user: Dict = Depends(get_current_user)):
+async def validate_fattura(fid: str, user: Dict = Depends(require_permission("fatture", "view"))):
     """Esegue tutti i controlli formali SdI sulla fattura SENZA generarne lo XML.
 
     Ritorna:
@@ -685,7 +685,7 @@ async def validate_fattura(fid: str, user: Dict = Depends(get_current_user)):
 
 
 @router.get("/{fid}")
-async def get_fattura(fid: str, user: Dict = Depends(get_current_user)):
+async def get_fattura(fid: str, user: Dict = Depends(require_permission("fatture", "view"))):
     doc = await db.fatture.find_one(merge_scope(user, {"id": fid}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Fattura non trovata")
@@ -1058,7 +1058,7 @@ sospesi_router = APIRouter(prefix="/sospesi", tags=["sospesi"])
 
 @sospesi_router.get("")
 async def list_sospesi(
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("sospesi", "view")),
     cliente_id: Optional[str] = None,
     dal: Optional[str] = None,
     al: Optional[str] = None,

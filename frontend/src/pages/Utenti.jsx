@@ -150,6 +150,7 @@ export default function Utenti() {
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="logistica">Logistica</SelectItem>
                       <SelectItem value="contabilita">Contabilità</SelectItem>
+                      <SelectItem value="produzione">Produzione (Totem)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from core import (
     db, new_id, now_utc,
-    get_current_user, require_roles,
+    get_current_user, require_roles, require_permission,
     tenant_scope, merge_scope, tenant_id_of, inject_tenant, log_audit,
 )
 from schemas import DipendenteIn, PatchDipendenteIn, AutomezzoIn, PatchAutomezzoIn
@@ -17,7 +17,7 @@ router = APIRouter(tags=["hr"])
 # ============== DIPENDENTI ==============
 
 @router.get("/dipendenti")
-async def list_dip(attivo: Optional[bool] = None, user: Dict = Depends(get_current_user)):
+async def list_dip(attivo: Optional[bool] = None, user: Dict = Depends(require_permission("dipendenti", "view"))):
     q: Dict = dict(tenant_scope(user))
     if attivo is not None:
         q["attivo"] = attivo

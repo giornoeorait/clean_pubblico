@@ -52,6 +52,12 @@ class OrdinativoPatch(BaseModel):
     stato: Optional[Literal["nuovo", "in_lavorazione", "annullato"]] = None
 
 
+class ProduzionePatch(BaseModel):
+    operatore: Optional[str] = None
+    stato: Optional[Literal["in_lavorazione"]] = None
+    righe_eseguite: Optional[List[bool]] = None
+
+
 class PortaleOrdIn(BaseModel):
     data_consegna_richiesta: str
     righe: List[RigaOrd]
@@ -501,6 +507,31 @@ async def update_ord(oid: str, body: OrdinativoPatch, user: Dict = Depends(requi
     return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
 
 
+@router.patch("/ordinativi/{oid}/produzione")
+async def update_produzione(oid: str, body: ProduzionePatch,
+                            user: Dict = Depends(require_roles("admin", "logistica", "contabilita", "produzione"))):
+    """Totem produzione: metti in lavorazione, flag righe eseguite, nome operatore."""
+    cur = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
+    if not cur:
+        raise HTTPException(404, "Ordinativo non trovato")
+    if cur["stato"] == "convertito_ddt":
+        raise HTTPException(409, "Ordinativo già convertito in DDT")
+    if cur["stato"] == "annullato":
+        raise HTTPException(409, "Ordinativo annullato")
+    patch: Dict = {"updated_at": now_utc()}
+    if body.operatore is not None:
+        patch["operatore_produzione"] = body.operatore.strip()
+    if body.stato:
+        patch["stato"] = body.stato
+    if body.righe_eseguite is not None:
+        if len(body.righe_eseguite) != len(cur.get("righe", [])):
+            raise HTTPException(422, "righe_eseguite non corrisponde al numero di righe")
+        patch["righe_eseguite"] = body.righe_eseguite
+    await db.ordinativi.update_one(merge_scope(user, {"id": oid}), {"$set": patch})
+    await log_audit(user, "PRODUZIONE_UPDATE", "ordinativo", oid, {k: v for k, v in patch.items() if k != "updated_at"})
+    return await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
+
+
 @router.delete("/ordinativi/{oid}")
 async def delete_ord(oid: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
     cur = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
@@ -549,7 +580,7 @@ async def reinvia_conferma_ordine(oid: str, user: Dict = Depends(require_roles("
 
 
 @router.post("/ordinativi/{oid}/converti-ddt")
-async def converti_ddt(oid: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
+async def converti_ddt(oid: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita", "produzione"))):
     cur = await db.ordinativi.find_one(merge_scope(user, {"id": oid}), {"_id": 0})
     if not cur: raise HTTPException(404, "Ordinativo non trovato")
     if cur["stato"] == "convertito_ddt":

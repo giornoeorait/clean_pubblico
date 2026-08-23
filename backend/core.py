@@ -129,12 +129,14 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: str, email: str, role: str, tenant_id: str) -> str:
+    # Ruolo "produzione" (totem touch-screen): sessione lunga 90 giorni
+    expiry = timedelta(days=90) if role == "produzione" else timedelta(hours=12)
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
         "tenant_id": tenant_id,
-        "exp": now_utc() + timedelta(hours=12),
+        "exp": now_utc() + expiry,
         "type": "access",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -223,6 +225,12 @@ _ROLE_DEFAULT_PERMISSIONS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "costi":              {"view": False, "edit": False},
         "dipendenti":         {"view": False, "edit": False},
         "report":             {"view": False, "edit": False},
+    },
+    "produzione": {
+        # Totem produzione: solo ordinativi (lavorazione + conversione DDT)
+        **{s: {"view": False, "edit": False} for s in PERMISSION_SECTIONS},
+        "ordinativi": {"view": True, "edit": True},
+        "ddt":        {"view": True, "edit": False},
     },
 }
 

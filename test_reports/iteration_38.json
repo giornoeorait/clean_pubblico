@@ -1,0 +1,39 @@
+{
+  "summary": "Tested Totem Produzione feature. Backend: 10/12 tests pass. Frontend: full totem flow works (login form → board → detail → operator modal → row toggle → persistence → finalize DDT with success badge). Redirects for produzione role work correctly (/, /dashboard, /clienti, /login → /produzione). JWT expiry differentiation works (~90d totem vs ~12h admin). RBAC gap detected: produzione role can GET /api/fatture and /api/costi (should be 403).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/fatture", "issue": "Produzione role receives 200 (list of invoices) instead of 403. Endpoint uses only get_current_user with no role/permission check. Same for GET /api/fatture/{id}, /api/fatture/{id}/pdf, /api/fatture/{id}/xml.", "priority": "HIGH"},
+      {"endpoint": "GET /api/costi", "issue": "Produzione role receives 200 instead of 403. list_costi and get_costo use only get_current_user. Only write endpoints require roles.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_totem_produzione.py",
+    "/app/test_reports/pytest/iter38_totem.xml"
+  ],
+  "action_items": [
+    "Fix RBAC on /api/fatture list & detail endpoints: replace get_current_user with require_roles('admin','contabilita') OR require_permission('fatture','view') so 'produzione' users are rejected with 403.",
+    "Fix RBAC on /api/costi list & detail endpoints: same treatment (require_permission('costi','view') or require_roles).",
+    "Recommended: audit all other GET endpoints (fornitori, hr, dipendenti, report...) — the 'produzione' role default permissions matrix disables them but many read endpoints only use get_current_user, so they bypass the matrix."
+  ],
+  "critical_code_review_comments": [
+    "core.py has a role-scoped permission matrix (_ROLE_DEFAULT_PERMISSIONS) with 'produzione' having only ordinativi (view+edit) + ddt (view). However most read endpoints (fatture, costi, fornitori list, etc.) don't call has_permission/require_permission — they only call get_current_user, bypassing the matrix entirely. The RBAC design is inconsistent: matrix exists but not enforced for reads.",
+    "converti-ddt endpoint allows 'produzione' role, which is correct for totem, but the /api/ddt/{id}/pdf endpoint uses get_current_user (correctly, so produzione can print) — this is fine.",
+    "PATCH /ordinativi/{oid}/produzione correctly validates righe_eseguite length (422) and rejects convertito_ddt/annullato states (409).",
+    "Produzione.jsx: printDdt uses hidden iframe; iframe is never removed from DOM (memory leak on multiple prints). Also URL.createObjectURL is never revoked."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter38_totem_produzione.py (new)"
+  ],
+  "success_rate": {"backend": "83% (10/12)", "frontend": "100% (all critical flows verified)"},
+  "test_credentials": "totem@cleantec.it/totem123 (produzione), admin@cleantec.it/admin123",
+  "seed_data_creation": "Test creates ordinativi on demand via admin POST /api/ordinativi when no 'nuovo' orders exist. Uses TEST_ prefix implicitly via numero counter.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite for totem is /app/backend/tests/test_iter38_totem_produzione.py. Two tests fail: test_produzione_cannot_access_fatture and test_produzione_cannot_access_costi — these are legitimate RBAC bugs, not test issues. All other totem features (JWT 90d, ordinativi access, PATCH produzione, converti-ddt, PDF download, redirects, board UI, operator modal, row persistence, success badge) verified working. Frontend UI uses window.print via hidden iframe which won't fire in headless — verify only success badge appearance."
+}

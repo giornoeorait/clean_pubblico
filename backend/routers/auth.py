@@ -23,9 +23,10 @@ async def login(body: LoginIn, response: Response):
         raise HTTPException(status_code=403, detail="Utente disattivato")
     tenant_id = user.get("tenant_id") or DEMO_TENANT_ID  # legacy fallback
     token = create_access_token(user["id"], user["email"], user["role"], tenant_id)
+    cookie_max_age = 7776000 if user["role"] == "produzione" else 43200  # 90gg totem / 12h standard
     response.set_cookie(
         key="access_token", value=token, httponly=True, secure=False,
-        samesite="lax", max_age=43200, path="/",
+        samesite="lax", max_age=cookie_max_age, path="/",
     )
     clean_doc(user)
     _enrich_user(user)

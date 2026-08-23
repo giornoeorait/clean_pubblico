@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core import (
     db, new_id, now_utc,
-    get_current_user, require_roles,
+    get_current_user, require_roles, require_permission,
     tenant_scope, merge_scope, tenant_id_of, inject_tenant, log_audit,
 )
 from schemas import CostoIn, PatchCostoIn
@@ -26,7 +26,7 @@ async def list_costi(
     anno: Optional[int] = None,
     fornitore_id: Optional[str] = None,
     limit: int = 1000,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("costi", "view")),
 ):
     query: Dict = dict(tenant_scope(user))
     if categoria:
@@ -66,7 +66,7 @@ async def create_costo(body: CostoIn, user: Dict = Depends(require_roles("admin"
 async def summary_costi(
     anno: Optional[int] = None,
     mese_riferimento: Optional[str] = None,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("costi", "view")),
 ):
     """Aggregato: totale per categoria + totale per mese nell'anno selezionato."""
     match: Dict = dict(tenant_scope(user))
@@ -114,7 +114,7 @@ async def summary_costi(
 
 
 @router.get("/costi/{cid}")
-async def get_costo(cid: str, user: Dict = Depends(get_current_user)):
+async def get_costo(cid: str, user: Dict = Depends(require_permission("costi", "view"))):
     doc = await db.costi.find_one(merge_scope(user, {"id": cid}), {"_id": 0})
     if not doc:
         raise HTTPException(404, "Costo non trovato")

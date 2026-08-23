@@ -37,6 +37,7 @@ import Report from "./pages/Report";
 import Dipendenti from "./pages/Dipendenti";
 import Automezzi from "./pages/Automezzi";
 import VerifyEmail from "./pages/VerifyEmail";
+import Produzione from "./pages/Produzione";
 
 function WithLayout({ children, roles }) {
   return (
@@ -50,6 +51,7 @@ function RootRedirect() {
   const { user } = useAuth();
   if (user === null) return null;
   if (user === false) return <Navigate to="/login" replace />;
+  if (user.role === "produzione") return <Navigate to="/produzione" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -69,6 +71,7 @@ export default function App() {
               <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/ordina/:token" element={<PortalePublic />} />
             <Route path="/portale" element={<PortaleAccesso />} />
+            <Route path="/produzione" element={<Produzione />} />
               <Route path="/billing" element={<WithLayout roles={["admin"]}><Billing /></WithLayout>} />
               <Route path="/admin" element={<WithLayout roles={["superadmin"]}><SuperAdmin /></WithLayout>} />
               <Route path="/admin/superadmins" element={<WithLayout roles={["superadmin"]}><SuperadminUsers /></WithLayout>} />

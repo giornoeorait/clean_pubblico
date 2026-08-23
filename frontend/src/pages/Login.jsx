@@ -23,7 +23,7 @@ export default function Login() {
     setLoading(false);
     if (ok) {
       toast.success("Accesso effettuato");
-      navigate("/dashboard");
+      navigate("/");
     }
   };
 

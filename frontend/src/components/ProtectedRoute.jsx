@@ -15,6 +15,7 @@ export default function ProtectedRoute({ children, roles }) {
     );
   }
   if (user === false) return <Navigate to="/login" replace />;
+  if (user.role === "produzione") return <Navigate to="/produzione" replace />;
   if (roles && roles.length) {
     // Strict: superadmin-only routes must NOT accept regular admin
     const superadminOnly = roles.length === 1 && roles[0] === "superadmin";

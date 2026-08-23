@@ -195,6 +195,7 @@ async def seed_admin_and_users():
     test_users = [
         ("logistica@cleantec.it", "logistica123", "Luca Bianchi (Logistica)", "logistica"),
         ("contabilita@cleantec.it", "contabilita123", "Paolo Neri (Contabilità)", "contabilita"),
+        ("totem@cleantec.it", "totem123", "Totem Produzione", "produzione"),
     ]
     for email, pwd, name, role in test_users:
         if not await db.users.find_one({"email": email}):
@@ -463,6 +464,27 @@ async def migrate_ddt_peso_snapshot():
         logger.info(f"[SEED] migrate_ddt_peso_snapshot: {aggiornati} DDT ricalcolati")
 
 
+async def migrate_fatture_data_datetime():
+    """Converte fatture.data/scadenza salvate come stringa ISO in BSON datetime.
+    Necessario per aggregazioni ($dateToString) e filtri range data."""
+    from core import to_dt
+    fixed = 0
+    async for f in db.fatture.find({"data": {"$type": "string"}}, {"_id": 1, "data": 1, "scadenza": 1}):
+        patch = {}
+        d = to_dt(f.get("data"))
+        if d:
+            patch["data"] = d
+        if isinstance(f.get("scadenza"), str):
+            s = to_dt(f["scadenza"])
+            if s:
+                patch["scadenza"] = s
+        if patch:
+            await db.fatture.update_one({"_id": f["_id"]}, {"$set": patch})
+            fixed += 1
+    if fixed:
+        logger.info(f"[SEED] migrate_fatture_data_datetime: {fixed} fatture convertite")
+
+
 async def run_all():
     await ensure_demo_tenant()
     await seed_admin_and_users()
@@ -471,6 +493,7 @@ async def run_all():
     await seed_termini_templates()
     await migrate_phase2()
     await migrate_ddt_peso_snapshot()
+    await migrate_fatture_data_datetime()
     await backfill_tenant_id()
     await ensure_indexes()
     await ensure_counters()

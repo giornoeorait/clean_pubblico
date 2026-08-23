@@ -377,3 +377,12 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - (P4 / Future) Allegare PDF report al profilo cliente/fornitore per archiviazione storica
 - (P4 / Future) Esporre `delete_object` in storage.py per pulire snapshot orfani su delete
 - Configurare Stripe LIVE key in produzione
+
+## 2026-06 — Totem Produzione (/produzione)
+- Nuova sezione touch-screen per lavanderia: board ordini (nuovi + in lavorazione, ordinati per urgenza consegna), dettaglio con flag righe eseguite persistenti, nome operatore, "Metti in lavorazione", "Finisci e trasforma in DDT" con stampa PDF automatica e badge conferma.
+- Nuovo ruolo "produzione": account totem@cleantec.it/totem123, JWT 90 giorni, accesso SOLO a /produzione (redirect da tutte le altre route).
+- Backend: PATCH /api/ordinativi/{oid}/produzione (stato, operatore, righe_eseguite), converti-ddt esteso al ruolo produzione.
+- Hardening RBAC: require_permission applicato ai GET di fatture, sospesi, costi, reports, dipendenti, fatture-fornitore, ddt-fornitore (prima solo get_current_user).
+- Migrazione startup migrate_fatture_data_datetime: converte fatture.data/scadenza stringa → BSON datetime (fixava 500 su /reports/fatturato).
+- Offerte: bottone "Inserisci listino completo"; DDT: filtri data default oggi→oggi.
+- Test: iteration_38 (backend 12/12 dopo fix, frontend 100%).

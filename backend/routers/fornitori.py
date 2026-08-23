@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core import (
     db, new_id, now_utc, next_seq,
-    get_current_user, require_roles,
+    get_current_user, require_roles, require_permission,
     tenant_scope, merge_scope, tenant_id_of, inject_tenant, log_audit,
 )
 from schemas import (
@@ -147,7 +147,7 @@ async def fornitore_profilo(fid: str, user: Dict = Depends(get_current_user)):
 
 @router.get("/ddt-fornitore")
 async def list_ddt_forn(fornitore_id: Optional[str] = None, limit: int = 300,
-                        user: Dict = Depends(get_current_user)):
+                        user: Dict = Depends(require_permission("ddt_ricevuti", "view"))):
     query: Dict = dict(tenant_scope(user))
     if fornitore_id:
         query["fornitore_id"] = fornitore_id
@@ -227,7 +227,7 @@ async def delete_ddt_forn(did: str, user: Dict = Depends(require_roles("admin", 
 @router.get("/fatture-fornitore")
 async def list_ft_forn(
     fornitore_id: Optional[str] = None, stato_pagamento: Optional[str] = None,
-    limit: int = 300, user: Dict = Depends(get_current_user),
+    limit: int = 300, user: Dict = Depends(require_permission("fatture_fornitore", "view")),
 ):
     query: Dict = dict(tenant_scope(user))
     if fornitore_id:
@@ -238,7 +238,7 @@ async def list_ft_forn(
 
 
 @router.get("/fatture-fornitore/ddt-fatturabili/{fornitore_id}")
-async def ddt_fatturabili(fornitore_id: str, user: Dict = Depends(get_current_user)):
+async def ddt_fatturabili(fornitore_id: str, user: Dict = Depends(require_permission("fatture_fornitore", "view"))):
     """DDT fornitore non ancora inclusi in una fattura passiva."""
     return await db.ddt_fornitore.find(
         merge_scope(user, {"fornitore_id": fornitore_id, "stato_fatturazione": "non_fatturato"}),

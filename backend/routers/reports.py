@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from core import db, get_current_user, tenant_scope, tenant_id_of, require_roles, now_utc
+from core import db, get_current_user, tenant_scope, tenant_id_of, require_roles, require_permission, now_utc
 from pdf_service import generate_report_pdf
 
 router = APIRouter(tags=["reports"])
@@ -29,7 +29,7 @@ def _year_regex(anno: Optional[int]) -> Optional[Dict]:
 # ======================== FATTURATO ========================
 
 @router.get("/reports/fatturato")
-async def report_fatturato(anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_fatturato(anno: Optional[int] = None, user: Dict = Depends(require_permission("report", "view"))):
     """Fatturato aggregato per mese + top clienti. Usa le fatture emesse."""
     tenant_id = tenant_id_of(user)
     # Filtra per anno via data (BSON datetime) se specificato
@@ -125,7 +125,7 @@ async def report_produzione(
     articolo_id: Optional[str] = None,
     stato_fatturazione: Optional[str] = None,  # non_fatturato | fatturato
     solo_consegnati: bool = False,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("report", "view")),
 ):
     """Volume prodotto in kg = Σ (quantita riga DDT × peso_medio articolo).
 
@@ -374,7 +374,7 @@ async def report_produzione(
 
 
 @router.get("/reports/produzione/articoli-check")
-async def articoli_peso_check(user: Dict = Depends(get_current_user)):
+async def articoli_peso_check(user: Dict = Depends(require_permission("report", "view"))):
     """Controllo dati Articoli per l'analisi kg.
 
     - senza_peso: articoli con peso_medio mancante/zero
@@ -442,7 +442,7 @@ async def report_produzione_xlsx(
     articolo_id: Optional[str] = None,
     stato_fatturazione: Optional[str] = None,
     solo_consegnati: bool = False,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("report", "view")),
 ):
     """Export Excel dell'analisi produzione kg con tutti gli aggregati."""
     import io
@@ -558,7 +558,7 @@ async def report_produzione_pdf(
     articolo_id: Optional[str] = None,
     stato_fatturazione: Optional[str] = None,
     solo_consegnati: bool = False,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("report", "view")),
 ):
     """Export PDF dell'analisi produzione kg. Rispetta i filtri applicati."""
     import io
@@ -717,7 +717,7 @@ async def cliente_statistiche_peso(
     data_fine: Optional[str] = None,
     categoria: Optional[str] = None,
     articolo_id: Optional[str] = None,
-    user: Dict = Depends(get_current_user),
+    user: Dict = Depends(require_permission("report", "view")),
 ):
     """Statistiche peso per un singolo cliente con filtri (§12)."""
     cli = await db.clienti.find_one({"tenant_id": tenant_id_of(user), "id": cliente_id}, {"_id": 0})
@@ -886,7 +886,7 @@ async def anomalie_pesi(user: Dict = Depends(require_roles("admin"))):
 # ======================== COSTO PER KG ========================
 
 @router.get("/reports/costo-kg")
-async def report_costo_kg(anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_costo_kg(anno: Optional[int] = None, user: Dict = Depends(require_permission("report", "view"))):
     """Costo produzione per kg = totale costi / totale kg prodotti.
 
     Fornisce anche la breakdown per categoria costi e per mese (costo_kg mese-su-mese).
@@ -960,7 +960,7 @@ async def report_costo_kg(anno: Optional[int] = None, user: Dict = Depends(get_c
 # ======================== AGING SOSPESI ========================
 
 @router.get("/reports/aging-sospesi")
-async def report_aging_sospesi(user: Dict = Depends(get_current_user)):
+async def report_aging_sospesi(user: Dict = Depends(require_permission("report", "view"))):
     """Fasce di scadenza per fatture da_incassare. Basato sulla data fattura (+30gg default).
 
     Buckets: 0-30, 31-60, 61-90, >90 giorni dalla data fattura.
@@ -1020,7 +1020,7 @@ async def report_aging_sospesi(user: Dict = Depends(get_current_user)):
 # ======================== KM AUTOMEZZI ========================
 
 @router.get("/reports/km-automezzi")
-async def report_km(anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_km(anno: Optional[int] = None, user: Dict = Depends(require_permission("report", "view"))):
     """Km percorsi + spesa per automezzo (targa) — da costi.categoria=automezzi."""
     match: Dict = dict(tenant_scope(user))
     match["categoria"] = "automezzi"
@@ -1070,7 +1070,7 @@ async def report_km(anno: Optional[int] = None, user: Dict = Depends(get_current
 # ======================== MARGINALITÀ ========================
 
 @router.get("/reports/marginalita")
-async def report_marginalita(anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_marginalita(anno: Optional[int] = None, user: Dict = Depends(require_permission("report", "view"))):
     """Marginalità per cliente = Fatturato - quota costi allocata per kg prodotto.
 
     Allocazione: costi totali / kg totali = costo_kg; per ogni cliente: costo = costo_kg × kg_cliente;
@@ -1169,7 +1169,7 @@ _REPORT_FUNCS = {
 
 
 @router.get("/reports/{tipo}/pdf")
-async def report_pdf(tipo: str, anno: Optional[int] = None, user: Dict = Depends(get_current_user)):
+async def report_pdf(tipo: str, anno: Optional[int] = None, user: Dict = Depends(require_permission("report", "view"))):
     fn = _REPORT_FUNCS.get(tipo)
     if not fn:
         raise HTTPException(404, f"Report '{tipo}' non esistente. Ammessi: {list(_REPORT_FUNCS.keys())}")
