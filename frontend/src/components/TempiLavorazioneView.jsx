@@ -8,7 +8,11 @@ const fmtMin = (m) => {
   if (h < 24) return `${h}h ${Math.round(m % 60)}m`;
   return `${Math.floor(h / 24)}g ${h % 24}h`;
 };
-const fmtDT = (iso) => iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDT = (iso) => {
+  if (!iso) return "—";
+  const s = !/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso + "Z" : iso;
+  return new Date(s).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+};
 
 function Kpi({ label, value, sub, color = "text-indaco" }) {
   return (

@@ -29,9 +29,15 @@ function playBeep() {
   } catch {}
 }
 
+const parseUTC = (iso) => {
+  if (!iso) return null;
+  const s = typeof iso === "string" && !/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso + "Z" : iso;
+  return new Date(s);
+};
+
 function elapsedLabel(iso) {
   if (!iso) return "";
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  const min = Math.max(0, Math.floor((Date.now() - parseUTC(iso).getTime()) / 60000));
   if (min < 60) return `${min} min fa`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}h ${min % 60}m fa`;
@@ -45,7 +51,7 @@ function fmtConsegna(d) {
 
 function workingLabel(iso) {
   if (!iso) return "";
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  const min = Math.max(0, Math.floor((Date.now() - parseUTC(iso).getTime()) / 60000));
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}h ${min % 60}m`;
