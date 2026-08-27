@@ -8,7 +8,7 @@ import TrialBanner from "./TrialBanner";
 import AlertsBanner from "./AlertsBanner";
 import { VersionBadge } from "./VersionWatcher";
 import {
-  ChartBar, Users, Package, Receipt, Truck, UserList,
+  ChartBar, Users, Package, Receipt, Truck, UserList, MapPin,
   SignOut, List, X, Sparkle, CreditCard, Crown, CurrencyEur, Palette, Buildings, HandHeart, ShoppingCart, Factory, Wallet, Database,
 } from "@phosphor-icons/react";
 
@@ -22,6 +22,7 @@ const ALL_ITEMS = [
   { to: "/offerte", label: "Offerte & Preventivi", icon: HandHeart, section: "offerte", roles: ["admin", "contabilita", "logistica"] },
   { to: "/ordinativi", label: "Ordinativi", icon: ShoppingCart, section: "ordinativi", roles: ["admin", "logistica", "contabilita"] },
   { to: "/ddt", label: "D.D.T.", icon: Truck, section: "ddt", roles: ["admin", "logistica", "contabilita"] },
+  { to: "/consegne", label: "Consegne", icon: MapPin, section: "ddt", roles: ["admin", "logistica", "contabilita"] },
   { to: "/fatture", label: "Fatturazione", icon: Receipt, section: "fatture", roles: ["admin", "contabilita", "logistica"] },
   { to: "/sospesi", label: "Sospesi", icon: CurrencyEur, section: "sospesi", roles: ["admin", "contabilita", "logistica"] },
   { to: "/fornitori", label: "Fornitori", icon: Factory, section: "fornitori", roles: ["admin", "contabilita", "logistica"] },

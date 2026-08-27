@@ -399,3 +399,10 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Totem: timer "In attesa da X" / "In lavorazione da X" nel dettaglio e sulle card board.
 - Report: nuova tab "Tempi lavorazione" (GET /api/reports/tempi-lavorazione?anno&mese) con KPI (attesa media, lavorazione media, min/max), classifica operatori più veloci, classifica più attivi, tabella dettaglio ordini chiusi. Componente: /app/frontend/src/components/TempiLavorazioneView.jsx.
 - Ordini legacy senza timestamp: esclusi dalle medie, contati come "senza tracciamento".
+
+## 2026-06 — Sezione Consegne con giro ottimizzato
+- Nuova pagina /consegne (menu, ruoli admin/logistica/contabilita, responsive per telefono fattorino).
+- GET /api/consegne?data=YYYY-MM-DD: ordini convertito_ddt del giorno (campo data_consegna_richiesta), raggruppati per cliente con indirizzo_scarico (fallback indirizzo), DDT e pezzi.
+- POST /api/consegne/giro {data}: geocoding Nominatim (cache campo geo su clienti/company), matrice tempi reali OSRM (fallback haversine 40km/h), TSP nearest-neighbour+2-opt, giro A/R dalla sede (dati aziendali company). Ritorna tappe ordinate con min/km per tratta, totale, rientro, link Google Maps navigazione, elenco esclusi senza indirizzo.
+- File: /app/backend/routers/consegne.py, /app/frontend/src/pages/Consegne.jsx.
+- Testato e2e: 3 consegne Milano, giro OSRM 44min/25km, UI ok.

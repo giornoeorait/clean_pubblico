@@ -38,6 +38,7 @@ import Dipendenti from "./pages/Dipendenti";
 import Automezzi from "./pages/Automezzi";
 import VerifyEmail from "./pages/VerifyEmail";
 import Produzione from "./pages/Produzione";
+import Consegne from "./pages/Consegne";
 
 function WithLayout({ children, roles }) {
   return (
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="/sospesi" element={<WithLayout roles={["admin","contabilita"]}><Sospesi /></WithLayout>} />
               <Route path="/offerte" element={<WithLayout roles={["admin","contabilita"]}><Offerte /></WithLayout>} />
               <Route path="/ordinativi" element={<WithLayout roles={["admin","logistica","contabilita"]}><Ordinativi /></WithLayout>} />
+              <Route path="/consegne" element={<WithLayout roles={["admin","logistica","contabilita"]}><Consegne /></WithLayout>} />
               <Route path="/fornitori" element={<WithLayout roles={["admin","contabilita"]}><Fornitori /></WithLayout>} />
               <Route path="/fornitori/ddt" element={<WithLayout roles={["admin","logistica","contabilita"]}><DdtFornitore /></WithLayout>} />
               <Route path="/fornitori/fatture" element={<WithLayout roles={["admin","contabilita"]}><FattureFornitore /></WithLayout>} />
