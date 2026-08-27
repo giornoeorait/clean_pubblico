@@ -74,22 +74,22 @@ function TotemLogin() {
   };
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
-      <form onSubmit={submit} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-10 space-y-6" data-testid="totem-login-form">
+      <form onSubmit={submit} className="w-full max-w-sm xl:max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-6 xl:p-10 space-y-4 xl:space-y-6" data-testid="totem-login-form">
         <div className="text-center">
-          <div className="text-emerald-400 font-mono uppercase tracking-[0.3em] text-sm mb-2">Totem Produzione</div>
-          <h1 className="font-display text-4xl font-bold text-white">CleanTec Lavanderia</h1>
-          <p className="text-slate-400 mt-2 text-lg">Accedi una sola volta — la sessione resta attiva 90 giorni</p>
+          <div className="text-emerald-400 font-mono uppercase tracking-[0.3em] text-xs xl:text-sm mb-2">Totem Produzione</div>
+          <h1 className="font-display text-2xl xl:text-4xl font-bold text-white">CleanTec Lavanderia</h1>
+          <p className="text-slate-400 mt-2 text-sm xl:text-lg">Accedi una sola volta — la sessione resta attiva 90 giorni</p>
         </div>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="Email totem"
           data-testid="totem-login-email"
-          className="w-full px-6 py-5 text-2xl bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          className="w-full px-4 py-3 xl:px-6 xl:py-5 text-lg xl:text-2xl bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Password"
           data-testid="totem-login-password"
-          className="w-full px-6 py-5 text-2xl bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        {error && <div className="text-red-400 bg-red-950/50 border border-red-800 rounded-xl px-4 py-3 text-lg" data-testid="totem-login-error">{error}</div>}
+          className="w-full px-4 py-3 xl:px-6 xl:py-5 text-lg xl:text-2xl bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        {error && <div className="text-red-400 bg-red-950/50 border border-red-800 rounded-xl px-4 py-3 text-sm xl:text-lg" data-testid="totem-login-error">{error}</div>}
         <button type="submit" disabled={loading} data-testid="totem-login-submit"
-          className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-2xl font-bold rounded-xl flex items-center justify-center gap-3 transition-all disabled:opacity-50">
-          <SignIn size={28} weight="bold" />{loading ? "Accesso…" : "ACCEDI"}
+          className="w-full py-3.5 xl:py-6 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-lg xl:text-2xl font-bold rounded-xl flex items-center justify-center gap-3 transition-all disabled:opacity-50">
+          <SignIn size={24} weight="bold" />{loading ? "Accesso…" : "ACCEDI"}
         </button>
       </form>
     </div>
