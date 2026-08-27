@@ -166,18 +166,50 @@ function OrderDetail({ order, onBack, onFinalized }) {
     api.patch(`/ordinativi/${o.id}/produzione`, { righe_conteggio: next }).catch(() => {});
   };
 
-  const stepCount = (i, dir) => {
-    if (isNew || flags[i]) return;
+  const countsRef = useRef(counts);
+  const saveTimer = useRef(null);
+  const holdRef = useRef(null);
+
+  const scheduleSave = () => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; saveCounts(countsRef.current); }, 450);
+  };
+
+  const applyStep = (i, dir) => {
+    if (isNew || flags[i]) return false;
     const target = o.righe[i].quantita || 0;
     const step = Math.max(1, Number(o.righe[i].multiplo_imballaggio) || 1);
-    const next = counts.map((v, j) => {
-      if (j !== i) return v;
-      const nv = dir > 0 ? Math.min(target, v + step) : Math.max(0, v - step);
-      return nv;
-    });
+    const cur = countsRef.current[i];
+    const nv = dir > 0 ? Math.min(target, cur + step) : Math.max(0, cur - step);
+    if (nv === cur) return false;
+    const next = countsRef.current.map((v, j) => (j === i ? nv : v));
+    countsRef.current = next;
     setCounts(next);
-    saveCounts(next);
+    scheduleSave();
+    return true;
   };
+
+  const stopHold = () => { if (holdRef.current) { clearTimeout(holdRef.current); holdRef.current = null; } };
+
+  const startHold = (i, dir) => {
+    stopHold();
+    applyStep(i, dir);
+    let n = 0;
+    const tick = () => {
+      n += 1;
+      if (!applyStep(i, dir)) { stopHold(); return; }
+      // accelerazione logaritmica: più tieni premuto, più va veloce (min 60ms)
+      const delay = Math.max(60, Math.round(350 / (1 + Math.log2(1 + n))));
+      holdRef.current = setTimeout(tick, delay);
+    };
+    holdRef.current = setTimeout(tick, 400);
+  };
+
+  useEffect(() => () => {
+    stopHold();
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveCounts(countsRef.current); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleRow = async (i) => {
     if (isNew) return;
@@ -262,14 +294,18 @@ function OrderDetail({ order, onBack, onFinalized }) {
               </div>
               {/* Contatore − / + */}
               <div className="flex items-center gap-3 flex-shrink-0">
-                <button onClick={() => stepCount(i, -1)} disabled={isNew || flags[i] || counts[i] <= 0} data-testid={`totem-row-minus-${i}`}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-red-900/60 border-2 border-red-600/60 text-red-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center">−</button>
+                <button onPointerDown={() => startHold(i, -1)} onPointerUp={stopHold} onPointerLeave={stopHold} onPointerCancel={stopHold}
+                  onContextMenu={(e) => e.preventDefault()}
+                  disabled={isNew || flags[i] || counts[i] <= 0} data-testid={`totem-row-minus-${i}`}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-red-900/60 border-2 border-red-600/60 text-red-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center select-none touch-none">−</button>
                 <div className="text-center min-w-[110px]" data-testid={`totem-row-count-${i}`}>
                   <div className={`text-3xl sm:text-4xl font-bold font-mono ${flags[i] ? "text-emerald-300" : reached ? "text-sky-300" : "text-white"}`}>{counts[i]}</div>
                   <div className="text-slate-400 text-base font-mono">/ {target} {r.unita_misura || "pz"}</div>
                 </div>
-                <button onClick={() => stepCount(i, 1)} disabled={isNew || flags[i] || reached} data-testid={`totem-row-plus-${i}`}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-emerald-900/60 border-2 border-emerald-600/60 text-emerald-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center">+</button>
+                <button onPointerDown={() => startHold(i, 1)} onPointerUp={stopHold} onPointerLeave={stopHold} onPointerCancel={stopHold}
+                  onContextMenu={(e) => e.preventDefault()}
+                  disabled={isNew || flags[i] || reached} data-testid={`totem-row-plus-${i}`}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-emerald-900/60 border-2 border-emerald-600/60 text-emerald-200 text-4xl font-bold active:scale-90 transition-transform disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center select-none touch-none">+</button>
               </div>
             </div>
           );
