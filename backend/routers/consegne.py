@@ -72,6 +72,22 @@ async def _matrix(points: List[Dict]):
     return dur, dist, "stima"
 
 
+async def _route_geometry(points_ordered: List[Dict]) -> Optional[List[List[float]]]:
+    """Geometria reale su strada (lista [lat, lon]) via OSRM route."""
+    coords = ";".join(f"{p['lon']},{p['lat']}" for p in points_ordered)
+    try:
+        async with httpx.AsyncClient(timeout=20, headers=UA) as cx:
+            r = await cx.get(f"{OSRM_URL}/route/v1/driving/{coords}",
+                             params={"overview": "full", "geometries": "geojson"})
+            r.raise_for_status()
+            d = r.json()
+            if d.get("code") == "Ok" and d.get("routes"):
+                return [[lat, lon] for lon, lat in d["routes"][0]["geometry"]["coordinates"]]
+    except Exception:
+        pass
+    return None
+
+
 def _tsp_round_trip(dur: List[List[float]]) -> List[int]:
     """Giro A/R dal nodo 0: nearest neighbour + 2-opt. Ritorna ordine dei nodi 1..n-1."""
     n = len(dur)
@@ -199,6 +215,9 @@ async def calcola_giro(body: Dict, user: Dict = Depends(require_roles("admin", "
     gmaps = (f"https://www.google.com/maps/dir/?api=1&origin={sede_geo['lat']},{sede_geo['lon']}"
              f"&destination={sede_geo['lat']},{sede_geo['lon']}&travelmode=driving&waypoints={waypoints}")
 
+    sede_pt = {"lat": sede_geo["lat"], "lon": sede_geo["lon"]}
+    geometria = await _route_geometry([sede_pt] + [{"lat": t["lat"], "lon": t["lon"]} for t in tappe] + [sede_pt])
+
     return {
         "data": data,
         "partenza": {"indirizzo": sede_addr, "lat": sede_geo["lat"], "lon": sede_geo["lon"]},
@@ -207,6 +226,7 @@ async def calcola_giro(body: Dict, user: Dict = Depends(require_roles("admin", "
         "totale_min": round(tot_sec / 60, 1), "totale_km": round(tot_m / 1000, 1),
         "fonte_tempi": fonte,
         "gmaps_url": gmaps,
+        "geometria": geometria,
         "senza_indirizzo": senza_indirizzo,
         "calcolato_at": now_utc().isoformat(),
     }

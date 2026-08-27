@@ -406,3 +406,6 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - POST /api/consegne/giro {data}: geocoding Nominatim (cache campo geo su clienti/company), matrice tempi reali OSRM (fallback haversine 40km/h), TSP nearest-neighbour+2-opt, giro A/R dalla sede (dati aziendali company). Ritorna tappe ordinate con min/km per tratta, totale, rientro, link Google Maps navigazione, elenco esclusi senza indirizzo.
 - File: /app/backend/routers/consegne.py, /app/frontend/src/pages/Consegne.jsx.
 - Testato e2e: 3 consegne Milano, giro OSRM 44min/25km, UI ok.
+
+## 2026-06 — Mappa del giro consegne
+- Componente GiroMappa (react-leaflet 5 + leaflet, tile OSM): mappa affiancata all'elenco tappe con marker numerati, marker "L" lavanderia, polyline percorso reale su strada (OSRM /route geometries=geojson, campo "geometria" nella risposta /consegne/giro, fallback linee rette).

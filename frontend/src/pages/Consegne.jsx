@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import api, { formatApiErrorDetail as errMsg } from "../lib/api";
 import { toast } from "sonner";
+import { GiroMappa } from "../components/GiroMappa";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -110,33 +111,36 @@ export default function Consegne() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl text-sm">
-              <span className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center flex-shrink-0"><House size={16} /></span>
-              <div><b>Partenza — Lavanderia</b><div className="text-xs text-slate-500">{giro.partenza.indirizzo}</div></div>
-            </div>
-            {giro.tappe.map(t => (
-              <div key={t.posizione} className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl text-sm" data-testid={`tappa-${t.posizione}`}>
-                <span className="w-8 h-8 rounded-full bg-indaco text-white font-bold flex items-center justify-center flex-shrink-0">{t.posizione}</span>
-                <div className="flex-1 min-w-0">
-                  <b>{t.cliente}</b>
-                  <div className="text-xs text-slate-500 truncate">{t.indirizzo}</div>
-                  <div className="text-xs text-slate-400 font-mono">{t.ordini.map(o => o.ddt_numero).join(", ")} · {t.pezzi} pz{t.telefono && <a href={`tel:${t.telefono}`} className="ml-2 text-indaco"><Phone size={12} className="inline" /> {t.telefono}</a>}</div>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl text-sm">
+                <span className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center flex-shrink-0"><House size={16} /></span>
+                <div><b>Partenza — Lavanderia</b><div className="text-xs text-slate-500">{giro.partenza.indirizzo}</div></div>
+              </div>
+              {giro.tappe.map(t => (
+                <div key={t.posizione} className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl text-sm" data-testid={`tappa-${t.posizione}`}>
+                  <span className="w-8 h-8 rounded-full bg-indaco text-white font-bold flex items-center justify-center flex-shrink-0">{t.posizione}</span>
+                  <div className="flex-1 min-w-0">
+                    <b>{t.cliente}</b>
+                    <div className="text-xs text-slate-500 truncate">{t.indirizzo}</div>
+                    <div className="text-xs text-slate-400 font-mono">{t.ordini.map(o => o.ddt_numero).join(", ")} · {t.pezzi} pz{t.telefono && <a href={`tel:${t.telefono}`} className="ml-2 text-indaco"><Phone size={12} className="inline" /> {t.telefono}</a>}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-mono text-emerald-600 font-semibold">{fmtMin(t.tempo_tappa_min)}</div>
+                    <div className="text-xs text-slate-400 font-mono">{t.km_tappa} km</div>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="font-mono text-emerald-600 font-semibold">{fmtMin(t.tempo_tappa_min)}</div>
-                  <div className="text-xs text-slate-400 font-mono">{t.km_tappa} km</div>
+              ))}
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl text-sm">
+                <span className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center flex-shrink-0"><House size={16} /></span>
+                <div className="flex-1"><b>Rientro in lavanderia</b></div>
+                <div className="text-right">
+                  <div className="font-mono text-emerald-600 font-semibold">{fmtMin(giro.rientro_min)}</div>
+                  <div className="text-xs text-slate-400 font-mono">{giro.rientro_km} km</div>
                 </div>
               </div>
-            ))}
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl text-sm">
-              <span className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center flex-shrink-0"><House size={16} /></span>
-              <div className="flex-1"><b>Rientro in lavanderia</b></div>
-              <div className="text-right">
-                <div className="font-mono text-emerald-600 font-semibold">{fmtMin(giro.rientro_min)}</div>
-                <div className="text-xs text-slate-400 font-mono">{giro.rientro_km} km</div>
-              </div>
             </div>
+            <GiroMappa giro={giro} />
           </div>
         </div>
       )}
