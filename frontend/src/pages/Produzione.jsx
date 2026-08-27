@@ -377,7 +377,13 @@ export default function Produzione() {
   const [newAlert, setNewAlert] = useState(false);
   const [successBadge, setSuccessBadge] = useState(null); // {numero, ddt_numero}
   const [isFull, setIsFull] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(true);
   const knownIds = useRef(null);
+
+  useEffect(() => {
+    if (!user || user === false) return;
+    api.get("/stampa-settings").then(r => setAutoPrint(r.data.auto_print_ddt !== false)).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     const onFs = () => setIsFull(!!document.fullscreenElement);
@@ -433,9 +439,9 @@ export default function Produzione() {
   };
 
   const onFinalized = async (converted) => {
-    const printed = converted.ddt_id ? await printDdt(converted.ddt_id) : false;
+    const printed = autoPrint && converted.ddt_id ? await printDdt(converted.ddt_id) : false;
     setSelected(null);
-    setSuccessBadge({ numero: converted.numero, ddt_numero: converted.ddt_numero, printed });
+    setSuccessBadge({ numero: converted.numero, ddt_numero: converted.ddt_numero, printed, autoPrint });
     setTimeout(() => setSuccessBadge(null), 12000);
     fetchOrders();
   };
@@ -479,7 +485,7 @@ export default function Produzione() {
           <CheckFat size={44} weight="fill" className="text-emerald-400 flex-shrink-0" />
           <div>
             <div className="text-emerald-200 text-2xl font-bold">Ordine {successBadge.numero} chiuso → DDT {successBadge.ddt_numero} creato</div>
-            <div className="text-emerald-400 text-lg">{successBadge.printed ? "🖨 Stampa DDT avviata" : "⚠ Stampa non avviata — apri il DDT dal gestionale"}</div>
+            <div className="text-emerald-400 text-lg">{successBadge.printed ? "🖨 Stampa DDT avviata" : successBadge.autoPrint === false ? "Stampa automatica disattivata nelle impostazioni" : "⚠ Stampa non avviata — apri il DDT dal gestionale"}</div>
           </div>
         </div>
       )}

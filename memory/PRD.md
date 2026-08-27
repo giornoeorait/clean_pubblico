@@ -413,3 +413,8 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 ## 2026-06 — Stampa Giro (PDF fattorino)
 - GET /api/consegne/giro/pdf?data=YYYY-MM-DD: foglio di viaggio PDF (generate_giro_pdf in pdf_service.py) con intestazione azienda, totali giro, tabella tappe (n°, cliente, indirizzo, telefono, DDT, pezzi, tempo, km, colonna Firma), rientro, elenco esclusi.
 - Bottone "Stampa giro" nella pagina Consegne accanto ad "Apri navigazione".
+
+## 2026-06 — Stampa & Totem (stampa silenziosa)
+- Endpoint GET/PUT /api/stampa-settings (GET tutti gli autenticati incl. totem, PUT solo admin): {auto_print_ddt, nome_stampante} salvato in company.stampa.
+- Pagina admin /stampa "Stampa & Totem": switch stampa automatica DDT, campo promemoria stampante, istruzioni guidate Chrome kiosk (--kiosk-printing --kiosk https://cleantec.app/produzione) con bottone copia, note per tablet Android.
+- Totem: legge auto_print_ddt al login; se disattivo salta la stampa e il badge lo indica.

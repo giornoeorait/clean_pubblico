@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Respons
 from pydantic import BaseModel, Field, EmailStr
 from PIL import Image
 
-from core import db, now_utc, require_roles, tenant_scope, tenant_id_of, log_audit
+from core import db, now_utc, require_roles, tenant_scope, tenant_id_of, log_audit, get_current_user
 from storage import put_object, get_object, APP_NAME
 from smtp_service import send_email
 from backup_service import (
@@ -78,6 +78,24 @@ def _public_view(doc: Optional[dict]) -> dict:
         "updated_at": doc.get("updated_at"),
     }
     return out
+
+
+@router.get("/stampa-settings")
+async def get_stampa_settings(user: Dict = Depends(get_current_user)):
+    doc = await db.company.find_one(tenant_scope(user), {"_id": 0, "stampa": 1}) or {}
+    st = doc.get("stampa") or {}
+    return {"auto_print_ddt": st.get("auto_print_ddt", True), "nome_stampante": st.get("nome_stampante", "")}
+
+
+@router.put("/stampa-settings")
+async def put_stampa_settings(body: Dict, user: Dict = Depends(require_roles("admin"))):
+    st = {
+        "auto_print_ddt": bool((body or {}).get("auto_print_ddt", True)),
+        "nome_stampante": str((body or {}).get("nome_stampante") or "").strip(),
+    }
+    await db.company.update_one(tenant_scope(user), {"$set": {"stampa": st}}, upsert=True)
+    await log_audit(user, "UPDATE", "stampa_settings", tenant_id_of(user), st)
+    return st
 
 
 @router.get("/company")
