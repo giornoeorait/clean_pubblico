@@ -157,15 +157,19 @@ async def calcola_giro(body: Dict, user: Dict = Depends(require_roles("admin", "
     data = (body or {}).get("data")
     if not data:
         raise HTTPException(422, "Campo 'data' richiesto (YYYY-MM-DD)")
-    return await _calcola_giro(tenant_id_of(user), data)
+    return await _calcola_giro(tenant_id_of(user), data,
+                               cliente_ids=(body or {}).get("cliente_ids"),
+                               autista=str((body or {}).get("autista") or "").strip())
 
 
 @router.get("/giro/pdf")
-async def giro_pdf(data: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
+async def giro_pdf(data: str, clienti: Optional[str] = None, autista: Optional[str] = None,
+                   user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
     from fastapi import Response
     from pdf_service import generate_giro_pdf
     tenant_id = tenant_id_of(user)
-    giro = await _calcola_giro(tenant_id, data)
+    cliente_ids = [c for c in (clienti or "").split(",") if c] or None
+    giro = await _calcola_giro(tenant_id, data, cliente_ids=cliente_ids, autista=(autista or "").strip())
     if not giro.get("tappe"):
         raise HTTPException(404, "Nessuna consegna con indirizzo per questo giorno")
     company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
@@ -174,16 +178,18 @@ async def giro_pdf(data: str, user: Dict = Depends(require_roles("admin", "logis
                     headers={"Content-Disposition": f'inline; filename="Giro_consegne_{data}.pdf"'})
 
 
-async def _calcola_giro(tenant_id: str, data: str) -> Dict:
-
+async def _calcola_giro(tenant_id: str, data: str, cliente_ids: Optional[List[str]] = None, autista: str = "") -> Dict:
     company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
     sede_addr = ", ".join(x for x in [company.get("indirizzo"), company.get("cap"), company.get("comune"), company.get("provincia")] if x)
     if not sede_addr:
         raise HTTPException(422, "Indirizzo lavanderia mancante: compila i dati aziendali in Impostazioni")
 
     consegne = await _consegne_del_giorno(tenant_id, data)
+    if cliente_ids:
+        ids = set(cliente_ids)
+        consegne = [c for c in consegne if c["cliente_id"] in ids]
     if not consegne:
-        return {"data": data, "tappe": [], "senza_indirizzo": [], "totale_min": 0, "totale_km": 0}
+        return {"data": data, "autista": autista, "tappe": [], "senza_indirizzo": [], "totale_min": 0, "totale_km": 0}
 
     sede_geo = await _geocode_cached(db.company, company, sede_addr, {"tenant_id": tenant_id})
     if not sede_geo:
@@ -202,7 +208,7 @@ async def _calcola_giro(tenant_id: str, data: str) -> Dict:
         stops.append({**c, "lat": geo["lat"], "lon": geo["lon"]})
 
     if not stops:
-        return {"data": data, "tappe": [], "senza_indirizzo": senza_indirizzo, "totale_min": 0, "totale_km": 0}
+        return {"data": data, "autista": autista, "tappe": [], "senza_indirizzo": senza_indirizzo, "totale_min": 0, "totale_km": 0}
 
     points = [{"lat": sede_geo["lat"], "lon": sede_geo["lon"]}] + [{"lat": s["lat"], "lon": s["lon"]} for s in stops]
     dur, dist, fonte = await _matrix(points)
@@ -237,6 +243,7 @@ async def _calcola_giro(tenant_id: str, data: str) -> Dict:
 
     return {
         "data": data,
+        "autista": autista,
         "partenza": {"indirizzo": sede_addr, "lat": sede_geo["lat"], "lon": sede_geo["lon"]},
         "tappe": tappe,
         "rientro_min": round(rientro_s / 60, 1), "rientro_km": round(rientro_m / 1000, 1),

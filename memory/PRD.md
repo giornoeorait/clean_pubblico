@@ -418,3 +418,8 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Endpoint GET/PUT /api/stampa-settings (GET tutti gli autenticati incl. totem, PUT solo admin): {auto_print_ddt, nome_stampante} salvato in company.stampa.
 - Pagina admin /stampa "Stampa & Totem": switch stampa automatica DDT, campo promemoria stampante, istruzioni guidate Chrome kiosk (--kiosk-printing --kiosk https://cleantec.app/produzione) con bottone copia, note per tablet Android.
 - Totem: legge auto_print_ddt al login; se disattivo salta la stampa e il badge lo indica.
+
+## 2026-06 — Consegne multi-autista
+- Selezione consegne con checkbox (default tutte, "Seleziona/Deseleziona tutte", contatore X di Y), campo "Nome autista".
+- POST /consegne/giro accetta cliente_ids[] e autista; GET /giro/pdf accetta ?clienti=id1,id2&autista=. PDF con "Autista: X" nel titolo.
+- Ogni autista seleziona le proprie consegne e genera itinerario/PDF indipendente.

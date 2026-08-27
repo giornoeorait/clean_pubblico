@@ -824,7 +824,10 @@ def generate_giro_pdf(giro: Dict, company: Dict) -> bytes:
     el.extend(_company_block(company, st))
     el.append(Spacer(1, 6*mm))
     data_it = "/".join(reversed(giro.get("data", "").split("-")))
-    el.append(Paragraph(f"<b>GIRO CONSEGNE — {s(data_it)}</b>", st["h1"]))
+    titolo = f"GIRO CONSEGNE — {s(data_it)}"
+    if giro.get("autista"):
+        titolo += f" — Autista: {s(giro['autista'])}"
+    el.append(Paragraph(f"<b>{titolo}</b>", st["h1"]))
     el.append(Paragraph(
         f"Partenza e rientro: {s(giro.get('partenza', {}).get('indirizzo', ''))} &nbsp;·&nbsp; "
         f"Totale stimato: <b>{giro.get('totale_min', 0):.0f} min</b> · {giro.get('totale_km', 0):.1f} km · {len(giro.get('tappe', []))} tappe",

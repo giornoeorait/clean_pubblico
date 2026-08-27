@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   MapPin, Path, CaretLeft, CaretRight, NavigationArrow, Phone,
-  Package, Clock, House, Warning, Truck, Printer,
+  Package, Clock, House, Warning, Truck, Printer, CheckSquare,
 } from "@phosphor-icons/react";
 
 const todayISO = () => new Date().toLocaleDateString("sv-SE");
@@ -23,6 +23,16 @@ export default function Consegne() {
   const [giro, setGiro] = useState(null);
   const [loading, setLoading] = useState(false);
   const [calcolando, setCalcolando] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [autista, setAutista] = useState("");
+
+  const toggleSel = (cid) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(cid) ? next.delete(cid) : next.add(cid);
+      return next;
+    });
+  };
 
   const shiftDay = (n) => {
     const d = new Date(data + "T12:00:00");
@@ -36,6 +46,7 @@ export default function Consegne() {
     try {
       const { data: res } = await api.get(`/consegne?data=${data}`);
       setLista(res);
+      setSelected(new Set(res.consegne.map(c => c.cliente_id)));
     } catch (e) { toast.error(errMsg(e)); }
     setLoading(false);
   }, [data]);
@@ -43,9 +54,10 @@ export default function Consegne() {
   useEffect(() => { load(); }, [load]);
 
   const calcolaGiro = async () => {
+    if (selected.size === 0) { toast.error("Seleziona almeno una consegna"); return; }
     setCalcolando(true);
     try {
-      const { data: res } = await api.post("/consegne/giro", { data });
+      const { data: res } = await api.post("/consegne/giro", { data, cliente_ids: [...selected], autista: autista.trim() });
       setGiro(res);
       if (res.tappe.length === 0 && res.senza_indirizzo.length === 0) toast.info("Nessuna consegna per questo giorno");
       else toast.success(`Giro calcolato: ${res.tappe.length} tappe, ${fmtMin(res.totale_min)}`);
@@ -55,7 +67,8 @@ export default function Consegne() {
 
   const stampaGiro = async () => {
     try {
-      const res = await api.get(`/consegne/giro/pdf?data=${data}`, { responseType: "blob" });
+      const qs = `data=${data}&clienti=${[...selected].join(",")}&autista=${encodeURIComponent(autista.trim())}`;
+      const res = await api.get(`/consegne/giro/pdf?${qs}`, { responseType: "blob" });
       const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -79,14 +92,22 @@ export default function Consegne() {
 
       {/* Elenco consegne */}
       <div className="kpi-card p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 className="font-display font-bold text-sm flex items-center gap-2">
-            <Package size={18} className="text-indaco" />Consegne del giorno {lista && <span className="text-slate-400 font-normal">({lista.n_consegne})</span>}
+            <Package size={18} className="text-indaco" />Consegne del giorno {lista && <span className="text-slate-400 font-normal">({selected.size} di {lista.n_consegne} selezionate)</span>}
           </h3>
           {lista && lista.n_consegne > 0 && (
-            <Button onClick={calcolaGiro} disabled={calcolando} size="sm" className="bg-indaco hover:bg-indaco/90" data-testid="calcola-giro-btn">
-              <Path size={16} className="mr-1.5" />{calcolando ? "Calcolo in corso…" : "Calcola giro ottimale"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" size="sm" data-testid="sel-tutte-btn"
+                onClick={() => setSelected(selected.size === lista.n_consegne ? new Set() : new Set(lista.consegne.map(c => c.cliente_id)))}>
+                {selected.size === lista.n_consegne ? "Deseleziona tutte" : "Seleziona tutte"}
+              </Button>
+              <Input value={autista} onChange={e => setAutista(e.target.value)} placeholder="Nome autista (opzionale)"
+                className="w-48 h-8 text-sm" data-testid="autista-input" />
+              <Button onClick={calcolaGiro} disabled={calcolando || selected.size === 0} size="sm" className="bg-indaco hover:bg-indaco/90" data-testid="calcola-giro-btn">
+                <Path size={16} className="mr-1.5" />{calcolando ? "Calcolo in corso…" : `Calcola giro (${selected.size})`}
+              </Button>
+            </div>
           )}
         </div>
         {loading && <div className="text-sm text-slate-400 p-4">Caricamento…</div>}
@@ -94,16 +115,28 @@ export default function Consegne() {
           <div className="text-sm text-slate-400 p-6 text-center border-2 border-dashed border-slate-200 rounded-xl">Nessuna consegna prevista per questo giorno</div>
         )}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {!loading && (lista?.consegne || []).map(c => (
-            <div key={c.cliente_id} className="border border-slate-200 rounded-xl p-3 hover:border-indaco/40 transition-colors" data-testid={`consegna-card-${c.cliente_id}`}>
-              <div className="font-semibold text-sm">{c.cliente}</div>
-              <div className="text-xs text-slate-500 flex items-start gap-1 mt-1"><MapPin size={14} className="flex-shrink-0 mt-0.5" />{c.indirizzo || <span className="text-red-500">indirizzo mancante</span>}</div>
-              <div className="text-xs text-slate-500 mt-1.5 flex flex-wrap gap-x-3">
-                {c.ordini.map(o => <span key={o.numero} className="font-mono">{o.numero} → {o.ddt_numero}</span>)}
-              </div>
-              <div className="text-xs font-mono text-indaco mt-1">{c.pezzi} pz</div>
-            </div>
-          ))}
+          {!loading && (lista?.consegne || []).map(c => {
+            const sel = selected.has(c.cliente_id);
+            return (
+              <button key={c.cliente_id} onClick={() => { toggleSel(c.cliente_id); setGiro(null); }}
+                className={`text-left border rounded-xl p-3 transition-all ${sel ? "border-indaco bg-indaco/5 ring-1 ring-indaco/30" : "border-slate-200 opacity-60 hover:opacity-100"}`}
+                data-testid={`consegna-card-${c.cliente_id}`}>
+                <div className="flex items-start gap-2">
+                  <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${sel ? "bg-indaco border-indaco" : "border-slate-300"}`}>
+                    {sel && <CheckSquare size={14} weight="fill" className="text-white" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-sm">{c.cliente}</div>
+                    <div className="text-xs text-slate-500 flex items-start gap-1 mt-1"><MapPin size={14} className="flex-shrink-0 mt-0.5" />{c.indirizzo || <span className="text-red-500">indirizzo mancante</span>}</div>
+                    <div className="text-xs text-slate-500 mt-1.5 flex flex-wrap gap-x-3">
+                      {c.ordini.map(o => <span key={o.numero} className="font-mono">{o.numero} → {o.ddt_numero}</span>)}
+                    </div>
+                    <div className="text-xs font-mono text-indaco mt-1">{c.pezzi} pz</div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -111,7 +144,7 @@ export default function Consegne() {
       {giro && giro.tappe.length > 0 && (
         <div className="kpi-card p-4" data-testid="giro-panel">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h3 className="font-display font-bold text-sm flex items-center gap-2"><Path size={18} className="text-emerald-600" />Giro suggerito (andata e ritorno)</h3>
+            <h3 className="font-display font-bold text-sm flex items-center gap-2"><Path size={18} className="text-emerald-600" />Giro suggerito (andata e ritorno){giro.autista && <span className="text-slate-500 font-normal">— Autista: <b>{giro.autista}</b></span>}</h3>
             <div className="flex items-center gap-3">
               <span className="text-sm font-mono text-slate-600"><Clock size={14} className="inline mr-1" />{fmtMin(giro.totale_min)} · {giro.totale_km} km{giro.fonte_tempi === "stima" && <span className="text-amber-500 ml-1">(stima)</span>}</span>
               <a href={giro.gmaps_url} target="_blank" rel="noreferrer" data-testid="apri-gmaps-btn">
