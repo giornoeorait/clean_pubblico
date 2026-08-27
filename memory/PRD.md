@@ -423,3 +423,7 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Selezione consegne con checkbox (default tutte, "Seleziona/Deseleziona tutte", contatore X di Y), campo "Nome autista".
 - POST /consegne/giro accetta cliente_ids[] e autista; GET /giro/pdf accetta ?clienti=id1,id2&autista=. PDF con "Autista: X" nel titolo.
 - Ogni autista seleziona le proprie consegne e genera itinerario/PDF indipendente.
+
+## 2026-06 — Ottimizzazione totem bassa risoluzione
+- Card board: altezza forzata uniforme h-44 (176px), flex-col justify-between, nome struttura invariato (text-2xl, line-clamp-2), badge/numero/info/footer ridotti (text-xs/sm), riga inferiore su una sola linea con truncate (operatore max-w, no wrap).
+- Header e titoli colonne ridotti (h1 2xl, data lg, icone 22), padding e gap compattati (p-4, gap-5, space-y-3).

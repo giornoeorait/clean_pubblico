@@ -103,25 +103,25 @@ function OrderCard({ o, onOpen }) {
   const tot = (o.righe || []).length;
   return (
     <button onClick={() => onOpen(o)} data-testid={`totem-order-card-${o.numero}`}
-      className={`text-left w-full rounded-2xl border-2 p-6 transition-all active:scale-[0.98] ${isNew ? "bg-amber-950/40 border-amber-500/60 hover:border-amber-400" : "bg-sky-950/40 border-sky-500/60 hover:border-sky-400"}`}>
-      <div className="flex items-center justify-between mb-3">
-        <span className={`px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wider ${isNew ? "bg-amber-500 text-amber-950" : "bg-sky-500 text-sky-950"}`}>
+      className={`text-left w-full h-44 flex flex-col justify-between rounded-2xl border-2 p-4 transition-all active:scale-[0.98] overflow-hidden ${isNew ? "bg-amber-950/40 border-amber-500/60 hover:border-amber-400" : "bg-sky-950/40 border-sky-500/60 hover:border-sky-400"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap ${isNew ? "bg-amber-500 text-amber-950" : "bg-sky-500 text-sky-950"}`}>
           {isNew ? "Nuovo" : "In lavorazione"}
         </span>
-        <span className="font-mono text-slate-400 text-lg">{o.numero}</span>
+        <span className="font-mono text-slate-400 text-sm whitespace-nowrap">{o.numero}</span>
       </div>
-      <div className="font-display text-2xl font-bold text-white leading-tight mb-2">{clienteName(o)}</div>
-      <div className="flex items-center gap-5 text-slate-300 text-lg">
-        <span className="flex items-center gap-2"><Basket size={22} />{(o.righe || []).reduce((s, r) => s + (r.quantita || 0), 0)} pz</span>
-        <span className="flex items-center gap-2"><Timer size={22} />Consegna: <b className="text-white">{fmtConsegna(o.data_consegna_richiesta)}</b></span>
+      <div className="font-display text-2xl font-bold text-white leading-tight line-clamp-2">{clienteName(o)}</div>
+      <div className="flex items-center gap-4 text-slate-300 text-sm whitespace-nowrap overflow-hidden">
+        <span className="flex items-center gap-1.5 flex-shrink-0"><Basket size={16} />{(o.righe || []).reduce((s, r) => s + (r.quantita || 0), 0)} pz</span>
+        <span className="flex items-center gap-1.5 truncate"><Timer size={16} />Consegna: <b className="text-white">{fmtConsegna(o.data_consegna_richiesta)}</b></span>
       </div>
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-slate-500 text-base">{elapsedLabel(o.data_richiesta || o.created_at)}</span>
+      <div className="flex items-center justify-between gap-2 text-xs whitespace-nowrap overflow-hidden">
+        <span className="text-slate-500 flex-shrink-0">{elapsedLabel(o.data_richiesta || o.created_at)}</span>
         {!isNew && (
-          <span className="flex items-center gap-2 text-base text-sky-300">
-            {o.operatore_produzione && <span className="flex items-center gap-1"><User size={18} />{o.operatore_produzione}</span>}
-            {o.presa_in_carico_at && <span className="flex items-center gap-1 text-amber-300"><Timer size={18} />{workingLabel(o.presa_in_carico_at)}</span>}
-            <span className="font-mono font-bold">{done}/{tot} righe</span>
+          <span className="flex items-center gap-2 text-sky-300 min-w-0">
+            {o.operatore_produzione && <span className="flex items-center gap-1 truncate max-w-[140px]"><User size={14} className="flex-shrink-0" />{o.operatore_produzione}</span>}
+            {o.presa_in_carico_at && <span className="flex items-center gap-1 text-amber-300 flex-shrink-0"><Timer size={14} />{workingLabel(o.presa_in_carico_at)}</span>}
+            <span className="font-mono font-bold flex-shrink-0">{done}/{tot} righe</span>
           </span>
         )}
       </div>
@@ -459,22 +459,22 @@ export default function Produzione() {
   return (
     <div className="min-h-screen bg-slate-950" data-testid="totem-board">
       {/* Header */}
-      <div className={`px-6 py-4 border-b flex items-center justify-between sticky top-0 z-20 transition-colors ${newAlert ? "bg-amber-600 border-amber-500 animate-pulse" : "bg-slate-900 border-slate-700"}`}>
+      <div className={`px-5 py-3 border-b flex items-center justify-between sticky top-0 z-20 transition-colors ${newAlert ? "bg-amber-600 border-amber-500 animate-pulse" : "bg-slate-900 border-slate-700"}`}>
         <div>
-          <div className="text-emerald-400 font-mono uppercase tracking-[0.25em] text-xs">Totem Produzione</div>
-          <h1 className="font-display text-3xl font-bold text-white">{newAlert ? "⚠ NUOVO ORDINE ARRIVATO!" : "Ordini in Lavanderia"}</h1>
+          <div className="text-emerald-400 font-mono uppercase tracking-[0.25em] text-[10px]">Totem Produzione</div>
+          <h1 className="font-display text-2xl font-bold text-white">{newAlert ? "⚠ NUOVO ORDINE ARRIVATO!" : "Ordini in Lavanderia"}</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <div className="text-white font-mono text-2xl">{new Date().toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })}</div>
+            <div className="text-white font-mono text-lg">{new Date().toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })}</div>
           </div>
           <button onClick={toggleFullscreen} data-testid="totem-fullscreen-btn" title={isFull ? "Esci da schermo intero" : "Schermo intero"}
-            className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
-            {isFull ? <CornersIn size={26} /> : <CornersOut size={26} />}
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
+            {isFull ? <CornersIn size={22} /> : <CornersOut size={22} />}
           </button>
           <button onClick={logout} data-testid="totem-logout-btn" title="Esci"
-            className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
-            <SignOut size={26} />
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl active:scale-95 transition-all">
+            <SignOut size={22} />
           </button>
         </div>
       </div>
@@ -490,25 +490,25 @@ export default function Produzione() {
         </div>
       )}
 
-      <div className="p-6 grid lg:grid-cols-2 gap-8">
+      <div className="p-4 grid lg:grid-cols-2 gap-5">
         {/* Nuovi */}
         <div>
-          <h2 className="flex items-center gap-3 text-amber-400 font-display text-2xl font-bold mb-4">
-            <span className="w-4 h-4 rounded-full bg-amber-400 animate-pulse" />In arrivo ({nuovi.length})
+          <h2 className="flex items-center gap-2 text-amber-400 font-display text-lg font-bold mb-3">
+            <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />In arrivo ({nuovi.length})
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {nuovi.map(o => <OrderCard key={o.id} o={o} onOpen={setSelected} />)}
-            {orders && nuovi.length === 0 && <div className="text-slate-600 text-xl p-6 border-2 border-dashed border-slate-800 rounded-2xl text-center">Nessun nuovo ordine</div>}
+            {orders && nuovi.length === 0 && <div className="text-slate-600 text-base p-5 border-2 border-dashed border-slate-800 rounded-2xl text-center">Nessun nuovo ordine</div>}
           </div>
         </div>
         {/* In lavorazione */}
         <div>
-          <h2 className="flex items-center gap-3 text-sky-400 font-display text-2xl font-bold mb-4">
-            <span className="w-4 h-4 rounded-full bg-sky-400" />In lavorazione ({inLav.length})
+          <h2 className="flex items-center gap-2 text-sky-400 font-display text-lg font-bold mb-3">
+            <span className="w-3 h-3 rounded-full bg-sky-400" />In lavorazione ({inLav.length})
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {inLav.map(o => <OrderCard key={o.id} o={o} onOpen={setSelected} />)}
-            {orders && inLav.length === 0 && <div className="text-slate-600 text-xl p-6 border-2 border-dashed border-slate-800 rounded-2xl text-center">Nessun ordine in lavorazione</div>}
+            {orders && inLav.length === 0 && <div className="text-slate-600 text-base p-5 border-2 border-dashed border-slate-800 rounded-2xl text-center">Nessun ordine in lavorazione</div>}
           </div>
         </div>
       </div>
