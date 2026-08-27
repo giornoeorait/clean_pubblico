@@ -409,3 +409,7 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 
 ## 2026-06 — Mappa del giro consegne
 - Componente GiroMappa (react-leaflet 5 + leaflet, tile OSM): mappa affiancata all'elenco tappe con marker numerati, marker "L" lavanderia, polyline percorso reale su strada (OSRM /route geometries=geojson, campo "geometria" nella risposta /consegne/giro, fallback linee rette).
+
+## 2026-06 — Stampa Giro (PDF fattorino)
+- GET /api/consegne/giro/pdf?data=YYYY-MM-DD: foglio di viaggio PDF (generate_giro_pdf in pdf_service.py) con intestazione azienda, totali giro, tabella tappe (n°, cliente, indirizzo, telefono, DDT, pezzi, tempo, km, colonna Firma), rientro, elenco esclusi.
+- Bottone "Stampa giro" nella pagina Consegne accanto ad "Apri navigazione".

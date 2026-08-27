@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   MapPin, Path, CaretLeft, CaretRight, NavigationArrow, Phone,
-  Package, Clock, House, Warning, Truck,
+  Package, Clock, House, Warning, Truck, Printer,
 } from "@phosphor-icons/react";
 
 const todayISO = () => new Date().toLocaleDateString("sv-SE");
@@ -51,6 +51,15 @@ export default function Consegne() {
       else toast.success(`Giro calcolato: ${res.tappe.length} tappe, ${fmtMin(res.totale_min)}`);
     } catch (e) { toast.error(errMsg(e)); }
     setCalcolando(false);
+  };
+
+  const stampaGiro = async () => {
+    try {
+      const res = await api.get(`/consegne/giro/pdf?data=${data}`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast.error(errMsg(e)); }
   };
 
   return (
@@ -108,6 +117,9 @@ export default function Consegne() {
               <a href={giro.gmaps_url} target="_blank" rel="noreferrer" data-testid="apri-gmaps-btn">
                 <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500"><NavigationArrow size={16} className="mr-1.5" />Apri navigazione</Button>
               </a>
+              <Button size="sm" variant="outline" onClick={stampaGiro} data-testid="stampa-giro-btn">
+                <Printer size={16} className="mr-1.5" />Stampa giro
+              </Button>
             </div>
           </div>
 

@@ -815,3 +815,56 @@ def generate_report_pdf(tipo: str, data: Dict, company: Dict, anno: Optional[int
         ))
 
     return _build(el)
+
+
+def generate_giro_pdf(giro: Dict, company: Dict) -> bytes:
+    """Foglio di viaggio per il fattorino: tappe ordinate con recapiti."""
+    st = _styles()
+    el: List = []
+    el.extend(_company_block(company, st))
+    el.append(Spacer(1, 6*mm))
+    data_it = "/".join(reversed(giro.get("data", "").split("-")))
+    el.append(Paragraph(f"<b>GIRO CONSEGNE — {s(data_it)}</b>", st["h1"]))
+    el.append(Paragraph(
+        f"Partenza e rientro: {s(giro.get('partenza', {}).get('indirizzo', ''))} &nbsp;·&nbsp; "
+        f"Totale stimato: <b>{giro.get('totale_min', 0):.0f} min</b> · {giro.get('totale_km', 0):.1f} km · {len(giro.get('tappe', []))} tappe",
+        st["small"]))
+    el.append(Spacer(1, 5*mm))
+
+    head = ["#", "Cliente", "Indirizzo", "Telefono", "DDT", "Pezzi", "Tempo", "Km", "Firma"]
+    rows = [head]
+    for t in giro.get("tappe", []):
+        rows.append([
+            str(t["posizione"]),
+            Paragraph(f"<b>{s(t['cliente'])}</b>", st["body"]),
+            Paragraph(s(t["indirizzo"]), st["body"]),
+            s(t.get("telefono") or "—"),
+            Paragraph(s(", ".join(o.get("ddt_numero") or "" for o in t.get("ordini", []))), st["body"]),
+            f"{t.get('pezzi', 0):g}",
+            f"{t.get('tempo_tappa_min', 0):.0f} min",
+            f"{t.get('km_tappa', 0):.1f}",
+            "",
+        ])
+    rows.append(["", Paragraph("<b>Rientro in lavanderia</b>", st["body"]), "", "", "", "",
+                 f"{giro.get('rientro_min', 0):.0f} min", f"{giro.get('rientro_km', 0):.1f}", ""])
+    tbl = Table(rows, colWidths=[8*mm, 34*mm, 44*mm, 24*mm, 26*mm, 13*mm, 15*mm, 12*mm, 22*mm], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94a3b8")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (5, 1), (7, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+        ("TOPPADDING", (0, 1), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+    ]))
+    el.append(tbl)
+    if giro.get("senza_indirizzo"):
+        el.append(Spacer(1, 5*mm))
+        el.append(Paragraph("<b>Consegne escluse (indirizzo mancante o non trovato):</b>", st["small"]))
+        for c in giro["senza_indirizzo"]:
+            el.append(Paragraph(f"• {s(c.get('cliente'))} — {s(c.get('motivo'))}", st["small"]))
+    return _build(el)

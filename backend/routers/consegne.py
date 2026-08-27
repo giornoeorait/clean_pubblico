@@ -157,7 +157,24 @@ async def calcola_giro(body: Dict, user: Dict = Depends(require_roles("admin", "
     data = (body or {}).get("data")
     if not data:
         raise HTTPException(422, "Campo 'data' richiesto (YYYY-MM-DD)")
+    return await _calcola_giro(tenant_id_of(user), data)
+
+
+@router.get("/giro/pdf")
+async def giro_pdf(data: str, user: Dict = Depends(require_roles("admin", "logistica", "contabilita"))):
+    from fastapi import Response
+    from pdf_service import generate_giro_pdf
     tenant_id = tenant_id_of(user)
+    giro = await _calcola_giro(tenant_id, data)
+    if not giro.get("tappe"):
+        raise HTTPException(404, "Nessuna consegna con indirizzo per questo giorno")
+    company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
+    pdf = generate_giro_pdf(giro, company)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="Giro_consegne_{data}.pdf"'})
+
+
+async def _calcola_giro(tenant_id: str, data: str) -> Dict:
 
     company = await db.company.find_one({"tenant_id": tenant_id}, {"_id": 0}) or {}
     sede_addr = ", ".join(x for x in [company.get("indirizzo"), company.get("cap"), company.get("comune"), company.get("provincia")] if x)
