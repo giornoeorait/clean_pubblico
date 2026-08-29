@@ -396,6 +396,15 @@ export default function Produzione() {
     else document.documentElement.requestFullscreen().catch(() => {});
   };
 
+  // Auto-fullscreen: i browser lo consentono solo dopo un gesto utente → al primo tocco
+  useEffect(() => {
+    const goFull = () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    };
+    document.addEventListener("pointerdown", goFull, { once: true });
+    return () => document.removeEventListener("pointerdown", goFull);
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     try {
       const [nuovi, lav] = await Promise.all([
