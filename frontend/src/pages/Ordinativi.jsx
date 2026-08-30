@@ -74,7 +74,7 @@ export default function Ordinativi() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ cliente_id: "", data_consegna_richiesta: inDays(3), righe: [], note_interne: "" });
+    setForm({ cliente_id: "", data_consegna_richiesta: inDays(3), righe: [], note_interne: "", ordine_di_prova: false });
     setOpen(true);
   };
   const openEdit = (o) => {
@@ -84,6 +84,7 @@ export default function Ordinativi() {
       data_consegna_richiesta: o.data_consegna_richiesta || inDays(3),
       righe: o.righe.map(r => ({ articolo_id: r.articolo_id, quantita: r.quantita })),
       note_interne: o.note_interne || "",
+      ordine_di_prova: !!o.ordine_di_prova,
     });
     setOpen(true);
   };
@@ -103,6 +104,7 @@ export default function Ordinativi() {
         data_consegna_richiesta: form.data_consegna_richiesta,
         righe: form.righe.map(r => ({ articolo_id: r.articolo_id, quantita: parseInt(r.quantita) || 0 })),
         note_interne: form.note_interne,
+        ordine_di_prova: !!form.ordine_di_prova,
       };
       if (editing) {
         const { cliente_id: _, ...patch } = payload;
@@ -427,6 +429,12 @@ export default function Ordinativi() {
                 <div>
                   <Label>Note interne</Label>
                   <Input value={form.note_interne} onChange={e => setForm({...form, note_interne: e.target.value})} />
+                </div>
+                <div className="col-span-2 flex items-center gap-2 pt-1">
+                  <input type="checkbox" id="ord-prova" checked={!!form.ordine_di_prova}
+                    onChange={e => setForm({...form, ordine_di_prova: e.target.checked})}
+                    className="w-4 h-4 accent-indigo-600" data-testid="ord-prova-checkbox" />
+                  <Label htmlFor="ord-prova" className="cursor-pointer">Ordine di prova <span className="text-xs text-slate-500 font-normal">— non verrà inviata nessuna email alla struttura</span></Label>
                 </div>
               </div>
 

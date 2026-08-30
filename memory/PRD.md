@@ -435,3 +435,8 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - Totem: rilevazione ambiente — bridge online→job diretto con polling stato reale; Android senza bridge→Web Share a PrintHand (manual_required); desktop→iframe print invariato. Badge con stati veri + bottoni Riprova/Apri con PrintHand/Scarica PDF. Anti doppio-click (printingRef + idempotenza server).
 - Admin /stampa: card Stampante DDT (IP/porta/protocollo/formato/copie/colore/fronte-retro), Verifica connessione e Pagina di prova (job tipo check/test eseguiti DAL bridge), badge bridge ONLINE/OFFLINE, token + download script + istruzioni.
 - Bridge NOTA: User-Agent custom necessario (Cloudflare blocca Python-urllib). Testato e2e con stampante finta su 9100: PDF ricevuto integro, stati printed/failed corretti, idempotenza OK, zero DDT duplicati.
+
+## 2026-06 — Flag "Ordine di prova"
+- OrdinativoIn.ordine_di_prova (bool, default false); salvato sul doc ordinativo. Se true, _create_ordinativo SALTA l'email di conferma al cliente (client_email_last_status='skipped' con motivazione); le notifiche interne restano attive.
+- Checkbox "Ordine di prova" nel form Nuovo ordinativo (Ordinativi.jsx, data-testid ord-prova-checkbox).
+- Testato: ordine prova → 0 email al cliente; ordine normale → email inviata (regressione OK).

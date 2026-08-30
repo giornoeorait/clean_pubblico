@@ -43,6 +43,7 @@ class OrdinativoIn(BaseModel):
     righe: List[RigaOrd]
     note_cliente: Optional[str] = ""
     note_interne: Optional[str] = ""
+    ordine_di_prova: bool = False
 
 
 class OrdinativoPatch(BaseModel):
@@ -126,7 +127,7 @@ def _cli_snapshot(cli: Dict) -> Dict:
 async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | OrdinativoIn | PortaleOrdIn,
                              origine: str, data_consegna: Optional[str], note_cliente: str = "",
                              note_interne: str = "", created_by: Optional[str] = None,
-                             ritiro_lavanderia: bool = False) -> Dict:
+                             ritiro_lavanderia: bool = False, ordine_di_prova: bool = False) -> Dict:
     cli = await db.clienti.find_one({"tenant_id": tenant_id, "id": cli_id}, {"_id": 0})
     if not cli:
         raise HTTPException(404, "Cliente non trovato")
@@ -148,6 +149,7 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
         "note_cliente": note_cliente or "",
         "note_interne": note_interne or "",
         "ritiro_lavanderia": bool(ritiro_lavanderia),
+        "ordine_di_prova": bool(ordine_di_prova),
         "created_at": now_utc(), "updated_at": now_utc(),
         "created_by": created_by,
     }
@@ -159,7 +161,13 @@ async def _create_ordinativo(tenant_id: str, cli_id: str, body: RigaOrd | Ordina
         await _notify_new_order(tenant_id, doc, cli)
     except Exception:
         pass
-    # Conferma ordine al CLIENTE (email cliente) — best-effort
+    # Conferma ordine al CLIENTE (email cliente) — best-effort. SKIP se ordine di prova.
+    if ordine_di_prova:
+        await db.ordinativi.update_one(
+            {"id": doc["id"]},
+            {"$set": {"client_email_last_status": "skipped",
+                      "client_email_last_error": "Ordine di prova: nessuna email inviata alla struttura"}})
+        return doc
     try:
         cres = await _send_order_confirmation_to_client(tenant_id, doc, cli)
         entry = {
@@ -485,7 +493,7 @@ async def create_ord(body: OrdinativoIn, user: Dict = Depends(require_roles("adm
     doc = await _create_ordinativo(
         tenant_id_of(user), body.cliente_id, body, "interno",
         body.data_consegna_richiesta, body.note_cliente or "", body.note_interne or "",
-        created_by=user["id"],
+        created_by=user["id"], ordine_di_prova=body.ordine_di_prova,
     )
     await log_audit(user, "CREATE", "ordinativo", doc["id"], {"numero": doc["numero"]})
     return doc
