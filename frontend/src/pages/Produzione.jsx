@@ -573,7 +573,7 @@ export default function Produzione() {
                 {successBadge.autoPrint === false ? <span className="text-slate-400">Stampa automatica disattivata nelle impostazioni</span>
                   : successBadge.printStato === "sending" || successBadge.printStato === "pending" ? <span className="text-amber-300">🖨 Invio alla stampante in corso…</span>
                   : successBadge.printStato === "printed" ? <span className="text-emerald-400">🖨 DDT inviato alla stampante</span>
-                  : successBadge.printStato === "manual_required" ? <span className="text-amber-300">Apertura di PrintHand necessaria — usa il bottone qui sotto</span>
+                  : successBadge.printStato === "manual_required" ? <span className="text-amber-300">Stampa automatica non disponibile — usa il bottone Stampa qui sotto</span>
                   : successBadge.printStato === "failed" ? <span className="text-red-300">Stampa non riuscita{successBadge.printErrore ? ` — ${successBadge.printErrore}` : ""} · DDT salvato correttamente, ma non stampato</span>
                   : <span className="text-slate-400">Preparazione stampa…</span>}
               </div>
@@ -586,10 +586,8 @@ export default function Produzione() {
                 <button onClick={() => avviaStampa(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="riprova-stampa-btn"
                   className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-xl active:scale-95">Riprova stampa</button>
               )}
-              <button onClick={() => condividiPrintHand(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="printhand-btn"
-                className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold rounded-xl active:scale-95">Apri con PrintHand</button>
               <button onClick={() => scaricaPdf(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="scarica-pdf-btn"
-                className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded-xl active:scale-95">Scarica PDF</button>
+                className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded-xl active:scale-95">Stampa</button>
             </div>
           )}
         </div>
