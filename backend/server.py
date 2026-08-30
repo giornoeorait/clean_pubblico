@@ -7,7 +7,7 @@ from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
 from core import client
-from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts, imports, fatturato_storico, clienti_export, consegne
+from routers import auth, users, catalog, billing, dashboard, files, tenants, subscriptions, superadmin, listini, ddt, branding, company, offerte, ordinativi, fornitori, costi, reports, hr, alerts, imports, fatturato_storico, clienti_export, consegne, print_jobs
 from seed import run_all as run_seed
 from storage import init_storage
 from backup_service import start_scheduler, stop_scheduler
@@ -69,6 +69,7 @@ api.include_router(offerte.router)
 api.include_router(ordinativi.router)
 api.include_router(ordinativi.public_router)
 api.include_router(consegne.router)
+api.include_router(print_jobs.router)
 api.include_router(fornitori.router)
 api.include_router(costi.router)
 api.include_router(reports.router)

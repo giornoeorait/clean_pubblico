@@ -378,11 +378,13 @@ export default function Produzione() {
   const [successBadge, setSuccessBadge] = useState(null); // {numero, ddt_numero}
   const [isFull, setIsFull] = useState(false);
   const [autoPrint, setAutoPrint] = useState(true);
+  const [printerCfg, setPrinterCfg] = useState({ configurata: false, bridge_online: false });
   const knownIds = useRef(null);
 
   useEffect(() => {
     if (!user || user === false) return;
     api.get("/stampa-settings").then(r => setAutoPrint(r.data.auto_print_ddt !== false)).catch(() => {});
+    api.get("/stampante-ddt").then(r => setPrinterCfg(r.data)).catch(() => {});
   }, [user]);
 
   useEffect(() => {
@@ -431,10 +433,18 @@ export default function Produzione() {
     return () => clearInterval(t);
   }, [user, fetchOrders]);
 
+  const isAndroid = /Android/i.test(navigator.userAgent);
+
+  const fetchPdfBlob = async (ddtId) => {
+    const res = await api.get(`/ddt/${ddtId}/pdf`, { responseType: "blob" });
+    return new Blob([res.data], { type: "application/pdf" });
+  };
+
   const printDdt = async (ddtId) => {
+    // Stampa desktop/kiosk: iframe + window.print (invariata)
     try {
-      const res = await api.get(`/ddt/${ddtId}/pdf`, { responseType: "blob" });
-      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const blob = await fetchPdfBlob(ddtId);
+      const url = URL.createObjectURL(blob);
       const iframe = document.createElement("iframe");
       iframe.style.display = "none";
       iframe.src = url;
@@ -447,12 +457,76 @@ export default function Produzione() {
     } catch { return false; }
   };
 
+  const condividiPrintHand = async (ddtId, ddtNumero) => {
+    // Android: condivisione file → l'operatore sceglie PrintHand (manual_required)
+    try {
+      const blob = await fetchPdfBlob(ddtId);
+      const file = new File([blob], `${ddtNumero || "DDT"}.pdf`, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: ddtNumero || "DDT" });
+        return true;
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return true;
+    } catch { return false; }
+  };
+
+  const scaricaPdf = async (ddtId, ddtNumero) => {
+    try {
+      const blob = await fetchPdfBlob(ddtId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${ddtNumero || "DDT"}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {}
+  };
+
+  const pollJob = async (jobId, onUpdate) => {
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const { data } = await api.get(`/print-jobs/${jobId}`);
+        onUpdate(data);
+        if (["printed", "failed", "manual_required"].includes(data.stato)) return data;
+      } catch {}
+    }
+    return null;
+  };
+
+  const printingRef = useRef(false);
+
+  const avviaStampa = async (ddtId, ddtNumero) => {
+    if (printingRef.current) return; // blocco anti doppio-click
+    printingRef.current = true;
+    const upd = (patch) => setSuccessBadge(prev => prev ? { ...prev, ...patch } : prev);
+    try {
+      if (printerCfg.configurata && printerCfg.bridge_online) {
+        // Stampa diretta reale via Print Bridge (silenziosa)
+        upd({ printStato: "sending" });
+        const { data: job } = await api.post("/print-jobs", { ddt_id: ddtId });
+        upd({ jobId: job.id, printStato: job.stato });
+        const done = await pollJob(job.id, (j) => upd({ printStato: j.stato, printErrore: j.errore }));
+        if (!done) upd({ printStato: "failed", printErrore: "Timeout: nessuna risposta dal bridge" });
+      } else if (isAndroid) {
+        // Nessun bridge: fallback PrintHand (richiede conferma operatore)
+        upd({ printStato: "manual_required" });
+        try { await api.post("/print-jobs", { ddt_id: ddtId, modalita: "manuale" }); } catch {}
+      } else {
+        // Desktop/kiosk: flusso invariato
+        const ok = await printDdt(ddtId);
+        upd({ printStato: ok ? "printed" : "failed" });
+      }
+    } finally { printingRef.current = false; }
+  };
+
   const onFinalized = async (converted) => {
-    const printed = autoPrint && converted.ddt_id ? await printDdt(converted.ddt_id) : false;
     setSelected(null);
-    setSuccessBadge({ numero: converted.numero, ddt_numero: converted.ddt_numero, printed, autoPrint });
-    setTimeout(() => setSuccessBadge(null), 12000);
+    setSuccessBadge({ numero: converted.numero, ddt_numero: converted.ddt_numero, ddt_id: converted.ddt_id, printStato: null, autoPrint });
     fetchOrders();
+    if (autoPrint && converted.ddt_id) await avviaStampa(converted.ddt_id, converted.ddt_numero);
   };
 
   if (user === null) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-2xl">Verifica sessione…</div>;
@@ -490,12 +564,34 @@ export default function Produzione() {
 
       {/* Success badge */}
       {successBadge && (
-        <div className="mx-6 mt-5 bg-emerald-950/70 border-2 border-emerald-500 rounded-2xl p-5 flex items-center gap-4" data-testid="totem-success-badge">
-          <CheckFat size={44} weight="fill" className="text-emerald-400 flex-shrink-0" />
-          <div>
-            <div className="text-emerald-200 text-2xl font-bold">Ordine {successBadge.numero} chiuso → DDT {successBadge.ddt_numero} creato</div>
-            <div className="text-emerald-400 text-lg">{successBadge.printed ? "🖨 Stampa DDT avviata" : successBadge.autoPrint === false ? "Stampa automatica disattivata nelle impostazioni" : "⚠ Stampa non avviata — apri il DDT dal gestionale"}</div>
+        <div className="mx-4 mt-4 bg-emerald-950/70 border-2 border-emerald-500 rounded-2xl p-4" data-testid="totem-success-badge">
+          <div className="flex items-center gap-3">
+            <CheckFat size={36} weight="fill" className="text-emerald-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-emerald-200 text-lg font-bold truncate">Ordine {successBadge.numero} chiuso → DDT {successBadge.ddt_numero} creato e salvato</div>
+              <div className="text-sm" data-testid="totem-print-status">
+                {successBadge.autoPrint === false ? <span className="text-slate-400">Stampa automatica disattivata nelle impostazioni</span>
+                  : successBadge.printStato === "sending" || successBadge.printStato === "pending" ? <span className="text-amber-300">🖨 Invio alla stampante in corso…</span>
+                  : successBadge.printStato === "printed" ? <span className="text-emerald-400">🖨 DDT inviato alla stampante</span>
+                  : successBadge.printStato === "manual_required" ? <span className="text-amber-300">Apertura di PrintHand necessaria — usa il bottone qui sotto</span>
+                  : successBadge.printStato === "failed" ? <span className="text-red-300">Stampa non riuscita{successBadge.printErrore ? ` — ${successBadge.printErrore}` : ""} · DDT salvato correttamente, ma non stampato</span>
+                  : <span className="text-slate-400">Preparazione stampa…</span>}
+              </div>
+            </div>
+            <button onClick={() => setSuccessBadge(null)} className="text-slate-400 hover:text-white p-2 flex-shrink-0" data-testid="totem-badge-close">✕</button>
           </div>
+          {(successBadge.printStato === "failed" || successBadge.printStato === "manual_required") && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {printerCfg.configurata && printerCfg.bridge_online && (
+                <button onClick={() => avviaStampa(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="riprova-stampa-btn"
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-xl active:scale-95">Riprova stampa</button>
+              )}
+              <button onClick={() => condividiPrintHand(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="printhand-btn"
+                className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold rounded-xl active:scale-95">Apri con PrintHand</button>
+              <button onClick={() => scaricaPdf(successBadge.ddt_id, successBadge.ddt_numero)} data-testid="scarica-pdf-btn"
+                className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded-xl active:scale-95">Scarica PDF</button>
+            </div>
+          )}
         </div>
       )}
 

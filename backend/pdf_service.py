@@ -871,3 +871,17 @@ def generate_giro_pdf(giro: Dict, company: Dict) -> bytes:
         for c in giro["senza_indirizzo"]:
             el.append(Paragraph(f"• {s(c.get('cliente'))} — {s(c.get('motivo'))}", st["small"]))
     return _build(el)
+
+
+def generate_test_page_pdf(company: Dict) -> bytes:
+    """Pagina di prova per la stampante DDT."""
+    st = _styles()
+    el: List = []
+    el.extend(_company_block(company, st))
+    el.append(Spacer(1, 10*mm))
+    el.append(Paragraph("<b>PAGINA DI PROVA — STAMPANTE DDT</b>", st["h1"]))
+    el.append(Spacer(1, 4*mm))
+    el.append(Paragraph("Se stai leggendo questo foglio, la stampa diretta dalla coda CleanTec funziona correttamente.", st["body"]))
+    from datetime import datetime, timezone
+    el.append(Paragraph(f"Generata: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}", st["small"]))
+    return _build(el)

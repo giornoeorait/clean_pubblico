@@ -427,3 +427,11 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 ## 2026-06 — Ottimizzazione totem bassa risoluzione
 - Card board: altezza forzata uniforme h-44 (176px), flex-col justify-between, nome struttura invariato (text-2xl, line-clamp-2), badge/numero/info/footer ridotti (text-xs/sm), riga inferiore su una sola linea con truncate (operatore max-w, no wrap).
 - Header e titoli colonne ridotti (h1 2xl, data lg, icone 22), padding e gap compattati (p-4, gap-5, space-y-3).
+
+## 2026-06 — Stampa DDT reale per Android 7 / Ricoh (Print Bridge)
+- CAUSA BUG: iframe.contentWindow.print() non funziona con PDF su Chrome Android 7; backend cloud non raggiunge 192.168.x.x.
+- Architettura: coda print_jobs in Mongo (stati pending/sending/printed/failed/manual_required, tentativi, errore, richiesto_da, printer_ip, protocollo, device) + Print Bridge locale (script Python stdlib /app/backend/static/cleantec_print_bridge.py, scaricabile da GET /api/print-bridge/script) che polla il cloud (outbound only, X-Bridge-Token in company.stampa.bridge_token) e stampa via IPP (Print-Job RFC8011, conferma reale) con fallback RAW 9100.
+- Endpoints: GET/PUT /api/stampante-ddt (validazione IP/porta/protocollo, PUT solo admin; GET nasconde token ai non-admin), POST /api/stampante-ddt/bridge-token, POST /api/print-jobs (idempotente per ddt attivo), GET /api/print-jobs/{id}, POST retry, POST segna-manuale, bridge: GET /print-bridge/poll (claim atomico + heartbeat bridge_last_seen), GET jobs/{id}/pdf, POST jobs/{id}/status.
+- Totem: rilevazione ambiente — bridge online→job diretto con polling stato reale; Android senza bridge→Web Share a PrintHand (manual_required); desktop→iframe print invariato. Badge con stati veri + bottoni Riprova/Apri con PrintHand/Scarica PDF. Anti doppio-click (printingRef + idempotenza server).
+- Admin /stampa: card Stampante DDT (IP/porta/protocollo/formato/copie/colore/fronte-retro), Verifica connessione e Pagina di prova (job tipo check/test eseguiti DAL bridge), badge bridge ONLINE/OFFLINE, token + download script + istruzioni.
+- Bridge NOTA: User-Agent custom necessario (Cloudflare blocca Python-urllib). Testato e2e con stampante finta su 9100: PDF ricevuto integro, stati printed/failed corretti, idempotenza OK, zero DDT duplicati.
