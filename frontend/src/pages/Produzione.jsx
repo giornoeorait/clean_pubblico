@@ -375,6 +375,70 @@ function OrderDetail({ order, onBack, onFinalized }) {
   );
 }
 
+// ---------- Vista Ristampa DDT (bassa risoluzione) ----------
+function RistampaDDT({ onBack, onStampa, printState }) {
+  const [ddts, setDdts] = useState(null);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    api.get("/ddt?limit=60").then(r => {
+      const sorted = [...r.data].sort((a, b) => (b.numero || "").localeCompare(a.numero || ""));
+      setDdts(sorted);
+    }).catch(() => setDdts([]));
+  }, []);
+
+  const filtered = (ddts || []).filter(d => {
+    if (!search.trim()) return true;
+    const s = search.toLowerCase();
+    return (d.numero || "").toLowerCase().includes(s) ||
+      `${d.cliente_denominazione || ""} ${d.cliente_nome || ""}`.toLowerCase().includes(s);
+  });
+
+  const fmtData = (x) => { try { return new Date(x).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" }); } catch { return ""; } };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col" data-testid="ristampa-view">
+      <div className="flex items-center gap-3 px-4 py-3 bg-slate-900 border-b border-slate-700 sticky top-0 z-20">
+        <button onClick={onBack} data-testid="ristampa-back-btn"
+          className="flex items-center gap-2 px-5 py-3 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-base font-bold rounded-xl transition-all flex-shrink-0">
+          <ArrowLeft size={20} weight="bold" />INDIETRO
+        </button>
+        <h1 className="font-display text-xl font-bold text-white flex-shrink-0">Ristampa D.D.T.</h1>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cerca numero o cliente…"
+          data-testid="ristampa-search"
+          className="flex-1 min-w-0 px-4 py-3 text-base bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {ddts === null && <div className="text-slate-500 text-lg p-6 text-center">Caricamento…</div>}
+        {ddts !== null && filtered.length === 0 && <div className="text-slate-600 text-lg p-6 text-center border-2 border-dashed border-slate-800 rounded-2xl">Nessun DDT trovato</div>}
+        {filtered.map(d => {
+          const st = printState[d.id];
+          return (
+            <div key={d.id} className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3" data-testid={`ristampa-row-${d.numero}`}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-white text-base">{d.numero}</span>
+                  <span className="text-slate-500 text-sm">{fmtData(d.data)}</span>
+                </div>
+                <div className="text-slate-300 text-sm truncate">{d.cliente_denominazione || d.cliente_nome || ""}{d.cliente_denominazione && d.cliente_nome && d.cliente_denominazione !== d.cliente_nome ? ` · ${d.cliente_nome}` : ""}</div>
+              </div>
+              {st && (
+                <span className={`text-xs font-bold flex-shrink-0 ${st === "printed" ? "text-emerald-400" : st === "failed" ? "text-red-400" : "text-amber-300"}`} data-testid={`ristampa-stato-${d.numero}`}>
+                  {st === "printed" ? "✓ Inviato" : st === "failed" ? "✗ Errore" : "Invio…"}
+                </span>
+              )}
+              <button onClick={() => onStampa(d)} disabled={st === "sending"} data-testid={`ristampa-btn-${d.numero}`}
+                className="flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-base font-bold rounded-xl transition-all flex-shrink-0 disabled:opacity-50">
+                <Printer size={20} weight="bold" />STAMPA
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Main page ----------
 export default function Produzione() {
   const { user, logout } = useAuth();
@@ -382,6 +446,8 @@ export default function Produzione() {
   const [selected, setSelected] = useState(null);
   const [newAlert, setNewAlert] = useState(false);
   const [successBadge, setSuccessBadge] = useState(null); // {numero, ddt_numero}
+  const [view, setView] = useState("board"); // board | ristampa
+  const [ristampaState, setRistampaState] = useState({});
   const [isFull, setIsFull] = useState(false);
   const [autoPrint, setAutoPrint] = useState(true);
   const [printerCfg, setPrinterCfg] = useState({ configurata: false, bridge_online: false });
@@ -535,8 +601,30 @@ export default function Produzione() {
     if (autoPrint && converted.ddt_id) await avviaStampa(converted.ddt_id, converted.ddt_numero);
   };
 
+  const stampaRistampa = async (d) => {
+    const setSt = (s) => setRistampaState(prev => ({ ...prev, [d.id]: s }));
+    if (printerCfg.configurata && printerCfg.bridge_online) {
+      setSt("sending");
+      try {
+        const { data: job } = await api.post("/print-jobs", { ddt_id: d.id });
+        const done = await pollJob(job.id, (j) => setSt(j.stato));
+        if (!done) setSt("failed");
+      } catch { setSt("failed"); }
+    } else if (isAndroid) {
+      await scaricaPdf(d.id, d.numero);
+      setSt("printed");
+    } else {
+      const ok = await printDdt(d.id);
+      setSt(ok ? "printed" : "failed");
+    }
+  };
+
   if (user === null) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-2xl">Verifica sessione…</div>;
   if (user === false) return <TotemLogin />;
+
+  if (view === "ristampa") {
+    return <RistampaDDT onBack={() => { setView("board"); setRistampaState({}); }} onStampa={stampaRistampa} printState={ristampaState} />;
+  }
 
   if (selected) {
     return <OrderDetail order={selected} onBack={() => { setSelected(null); fetchOrders(); }} onFinalized={onFinalized} />;
@@ -553,6 +641,10 @@ export default function Produzione() {
           <div className="text-emerald-400 font-mono uppercase tracking-[0.25em] text-[10px]">Totem Produzione</div>
           <h1 className="font-display text-2xl font-bold text-white">{newAlert ? "⚠ NUOVO ORDINE ARRIVATO!" : "Ordini in Lavanderia"}</h1>
         </div>
+        <button onClick={() => setView("ristampa")} data-testid="ristampa-ddt-btn"
+          className="flex items-center gap-2 px-5 py-3 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white text-base font-bold rounded-xl transition-all">
+          <Printer size={20} weight="bold" />RISTAMPA DDT
+        </button>
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
             <div className="text-white font-mono text-lg">{new Date().toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })}</div>

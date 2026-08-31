@@ -440,3 +440,7 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 - OrdinativoIn.ordine_di_prova (bool, default false); salvato sul doc ordinativo. Se true, _create_ordinativo SALTA l'email di conferma al cliente (client_email_last_status='skipped' con motivazione); le notifiche interne restano attive.
 - Checkbox "Ordine di prova" nel form Nuovo ordinativo (Ordinativi.jsx, data-testid ord-prova-checkbox).
 - Testato: ordine prova → 0 email al cliente; ordine normale → email inviata (regressione OK).
+
+## 2026-06 — Ristampa DDT sul totem
+- Bottone "RISTAMPA DDT" nell'header del totem → vista dedicata bassa risoluzione: lista ultimi 60 DDT (numero, data, denominazione+cliente), ricerca per numero/cliente, bottone STAMPA per riga con stato inline (Invio…/✓ Inviato/✗ Errore).
+- Stampa: bridge online→print job con polling; Android senza bridge→download PDF; desktop→iframe print. Bottone INDIETRO torna alla board.
