@@ -8,6 +8,13 @@ import { usePermissions } from "../lib/permissions";
 
 const MESI_LBL = { 1: "Gen", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mag", 6: "Giu", 7: "Lug", 8: "Ago", 9: "Set", 10: "Ott", 11: "Nov", 12: "Dic" };
 
+// kg → quintali/tonnellate (mai kg)
+const fmtPeso = (kg) => {
+  const v = Number(kg) || 0;
+  if (Math.abs(v) >= 1000) return `${(v / 1000).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`;
+  return `${(v / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} q`;
+};
+
 const KpiCard = ({ icon: Icon, label, value, hint, accent = "indaco", testId, badge }) => (
   <div className="kpi-card" data-testid={testId}>
     <div className="flex items-start justify-between">
@@ -113,44 +120,44 @@ export default function Dashboard() {
         <div className="mb-6" data-testid="dashboard-produzione-kg">
           <div className="flex items-center gap-2 mb-3">
             <Scales size={20} className="text-emerald-600" weight="duotone" />
-            <h3 className="font-display text-lg font-bold">Produzione in chilogrammi</h3>
+            <h3 className="font-display text-lg font-bold">Produzione (quintali / tonnellate)</h3>
           </div>
           {/* KPI mese */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
             <div className="kpi-card">
               <div className="overline">Mese corrente</div>
               <div className="font-display text-3xl font-bold text-emerald-700 mt-1" data-testid="kg-mese-totale">
-                {(kpi.kg_mese.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                {fmtPeso(kpi.kg_mese.totale)}
               </div>
               <div className="text-xs text-slate-500 mt-1">Prodotti in {MESI_LBL[new Date().getMonth() + 1] || "mese"}</div>
             </div>
             <div className="kpi-card bg-sky-50 border-l-4 border-sky-300">
               <div className="overline text-sky-700">Biancheria piana</div>
               <div className="font-display text-2xl font-bold text-sky-700 mt-1" data-testid="kg-mese-biancheria">
-                {(kpi.kg_mese.biancheria_piana || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                {fmtPeso(kpi.kg_mese.biancheria_piana)}
               </div>
             </div>
             <div className="kpi-card bg-emerald-50 border-l-4 border-emerald-300">
               <div className="overline text-emerald-700">Spugna</div>
               <div className="font-display text-2xl font-bold text-emerald-700 mt-1" data-testid="kg-mese-spugna">
-                {(kpi.kg_mese.spugna || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                {fmtPeso(kpi.kg_mese.spugna)}
               </div>
             </div>
             <div className="kpi-card bg-violet-50 border-l-4 border-violet-300">
               <div className="overline text-violet-700">Varie</div>
               <div className="font-display text-2xl font-bold text-violet-700 mt-1" data-testid="kg-mese-varie">
-                {(kpi.kg_mese.varie || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                {fmtPeso(kpi.kg_mese.varie)}
               </div>
             </div>
             <div className="kpi-card">
               <div className="overline">Anno {kpi.anno_corrente}</div>
               <div className="font-display text-2xl font-bold text-indaco mt-1" data-testid="kg-anno-totale">
-                {(kpi.kg_anno.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                {fmtPeso(kpi.kg_anno.totale)}
               </div>
               <div className="text-[11px] text-slate-500 mt-1 leading-snug">
-                Bianch.: <span className="font-mono text-sky-700">{(kpi.kg_anno.biancheria_piana || 0).toFixed(1)}</span>{" "}·{" "}
-                Spugna: <span className="font-mono text-emerald-700">{(kpi.kg_anno.spugna || 0).toFixed(1)}</span>{" "}·{" "}
-                Varie: <span className="font-mono text-violet-700">{(kpi.kg_anno.varie || 0).toFixed(1)}</span>
+                Bianch.: <span className="font-mono text-sky-700">{fmtPeso(kpi.kg_anno.biancheria_piana)}</span>{" "}·{" "}
+                Spugna: <span className="font-mono text-emerald-700">{fmtPeso(kpi.kg_anno.spugna)}</span>{" "}·{" "}
+                Varie: <span className="font-mono text-violet-700">{fmtPeso(kpi.kg_anno.varie)}</span>
               </div>
             </div>
           </div>
@@ -159,7 +166,7 @@ export default function Dashboard() {
             <div className="kpi-card" data-testid="kg-serie-chart">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold text-slate-700">
-                  Andamento mensile kg (ultimi 12 mesi) — confronto tra categorie
+                  Andamento mensile produzione (ultimi 12 mesi) — confronto tra categorie
                 </div>
                 <div className="text-[11px] text-slate-500 italic">Barre impilate = totale mensile</div>
               </div>
@@ -167,12 +174,9 @@ export default function Dashboard() {
                 <BarChart data={kpi.kg_serie_mensile}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="mese" fontSize={11} tick={{ fill: "#64748b" }} />
-                  <YAxis fontSize={11} tick={{ fill: "#64748b" }} tickFormatter={(v) => `${v} kg`} />
+                  <YAxis fontSize={11} tick={{ fill: "#64748b" }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toLocaleString("it-IT")} t` : `${(v / 100).toLocaleString("it-IT")} q`} />
                   <Tooltip
-                    formatter={(v, name) => [
-                      `${Number(v).toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`,
-                      name,
-                    ]}
+                    formatter={(v, name) => [fmtPeso(v), name]}
                     contentStyle={{ borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
