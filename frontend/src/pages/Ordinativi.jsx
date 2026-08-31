@@ -222,7 +222,9 @@ export default function Ordinativi() {
                 return (
                   <tr key={o.id} data-testid={`ord-row-${o.id}`}>
                     <td>
-                      <div className="font-mono font-bold">{o.numero}</div>
+                      <div className="font-mono font-bold flex items-center gap-1.5">{o.numero}
+                        {o.ordine_di_prova && <span className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-bold tracking-wider" data-testid={`badge-prova-${o.numero}`}>PROVA</span>}
+                      </div>
                       {o.ddt_numero && <div className="text-[11px] text-emerald-700 font-mono">→ {o.ddt_numero}</div>}
                       {o.ritiro_lavanderia && <div className="text-[10px] text-amber-700 font-mono mt-0.5">↳ Ritiro lavanderia</div>}
                       {o.client_email_last_status === "sent" && (

@@ -108,7 +108,10 @@ function OrderCard({ o, onOpen }) {
         <span className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap ${isNew ? "bg-amber-500 text-amber-950" : "bg-sky-500 text-sky-950"}`}>
           {isNew ? "Nuovo" : "In lavorazione"}
         </span>
-        <span className="font-mono text-slate-400 text-sm whitespace-nowrap">{o.numero}</span>
+        <span className="font-mono text-slate-400 text-sm whitespace-nowrap flex items-center gap-1.5">
+          {o.ordine_di_prova && <span className="px-1.5 py-0.5 rounded bg-violet-500 text-white text-[10px] font-bold tracking-wider">PROVA</span>}
+          {o.numero}
+        </span>
       </div>
       <div className="font-display text-2xl font-bold text-white leading-tight line-clamp-2">{clienteName(o)}</div>
       <div className="flex items-center gap-4 text-slate-300 text-sm whitespace-nowrap overflow-hidden">
@@ -239,7 +242,10 @@ function OrderDetail({ order, onBack, onFinalized }) {
           <ArrowLeft size={26} weight="bold" />INDIETRO
         </button>
         <div className="text-center">
-          <div className="font-mono text-slate-400 text-lg">{o.numero}</div>
+          <div className="font-mono text-slate-400 text-lg flex items-center justify-center gap-2">
+            {o.ordine_di_prova && <span className="px-2 py-0.5 rounded bg-violet-500 text-white text-xs font-bold tracking-wider">PROVA</span>}
+            {o.numero}
+          </div>
           <div className="font-display text-2xl font-bold text-white">{clienteName(o)}</div>
         </div>
         <div className="text-right">
