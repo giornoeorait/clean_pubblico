@@ -444,3 +444,11 @@ Login, Register, Pricing, VerifyEmail, Dashboard, Clienti, Articoli, Listini, DD
 ## 2026-06 — Ristampa DDT sul totem
 - Bottone "RISTAMPA DDT" nell'header del totem → vista dedicata bassa risoluzione: lista ultimi 60 DDT (numero, data, denominazione+cliente), ricerca per numero/cliente, bottone STAMPA per riga con stato inline (Invio…/✓ Inviato/✗ Errore).
 - Stampa: bridge online→print job con polling; Android senza bridge→download PDF; desktop→iframe print. Bottone INDIETRO torna alla board.
+
+## 2026-06: Ordine minimo per cliente (portale)
+- Scheda cliente: flag "Ordine minimo (portale)" + importo € (default attivo a 50€ per tutti, personalizzabile per cliente; disattivabile).
+- Campi: `ordine_minimo_attivo` (bool, default True), `ordine_minimo` (float, default 50) in ClienteIn/PatchClienteIn.
+- Portale pubblico (/ordina/{token}): blocco TOTALE sotto soglia (scelta utente) — bottone disabilitato + avviso rosso con importo mancante; rimosso il fallback "ritiro in lavanderia" (dialog eliminato; il campo ritiro_lavanderia resta sui dati storici).
+- Validazione anche server-side in POST /api/public/portale/{token}/ordinativo (400 se totale < minimo).
+- GET /api/public/portale/{token} ritorna `ordine_minimo` (0 se flag disattivo).
+- Testato: curl (sotto/sopra soglia, flag off, patch importo) + screenshot form cliente e portale.

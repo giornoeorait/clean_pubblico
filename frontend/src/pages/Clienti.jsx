@@ -19,6 +19,7 @@ const EMPTY = {
   denominazione_struttura: "", indirizzo_scarico: "",
   tipologia: "hotel", listino_id: "",
   condizioni_pagamento: "30gg", giorni_ritiro: [], note: "", attivo: true,
+  ordine_minimo_attivo: true, ordine_minimo: 50,
 };
 
 const REQUIRED_RS = ["ragione_sociale", "partita_iva", "indirizzo", "email", "telefono"];
@@ -77,6 +78,7 @@ export default function Clienti() {
     try {
       const payload = { ...form };
       if (!payload.listino_id) delete payload.listino_id;
+      payload.ordine_minimo = parseFloat(payload.ordine_minimo) || 0;
       if (editing) { await api.patch(`/clienti/${editing}`, payload); toast.success("Cliente aggiornato"); }
       else { await api.post("/clienti", payload); toast.success("Cliente creato"); }
       setOpen(false); setEditing(null); setForm(EMPTY);
@@ -257,6 +259,29 @@ export default function Clienti() {
                           {listini.map(l => <SelectItem key={l.id} value={l.id}>{l.nome} · {l.tipo}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="col-span-2 flex items-center gap-4 pt-1">
+                      <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!!form.ordine_minimo_attivo}
+                          onChange={e => setForm({...form, ordine_minimo_attivo: e.target.checked})}
+                          className="w-4 h-4 accent-indaco"
+                          data-testid="cliente-ordine-minimo-flag"
+                        />
+                        Ordine minimo (portale)
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 text-sm">€</span>
+                        <Input
+                          type="number" min={0} step="0.01"
+                          value={form.ordine_minimo}
+                          disabled={!form.ordine_minimo_attivo}
+                          onChange={e => setForm({...form, ordine_minimo: e.target.value})}
+                          className="w-28"
+                          data-testid="cliente-ordine-minimo"
+                        />
+                      </div>
                     </div>
                   </div>
                 </section>

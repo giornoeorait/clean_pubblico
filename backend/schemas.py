@@ -46,6 +46,8 @@ class ClienteIn(BaseModel):
     giorni_ritiro: List[int] = Field(default_factory=list)
     note: Optional[str] = ""
     attivo: bool = True
+    ordine_minimo_attivo: bool = True
+    ordine_minimo: float = 50.0
 
 
 class ArticoloIn(BaseModel):
@@ -217,6 +219,8 @@ class PatchUserIn(_PatchBase):
 
 
 class PatchClienteIn(_PatchBase):
+    ordine_minimo_attivo: Optional[bool] = None
+    ordine_minimo: Optional[float] = None
     ragione_sociale: Optional[str] = None
     partita_iva: Optional[str] = None
     codice_fiscale: Optional[str] = None

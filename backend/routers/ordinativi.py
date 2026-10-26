@@ -831,6 +831,7 @@ async def portale_info(token: str):
             "telefono": company.get("telefono") or "",
         },
         "listino": {"nome": (listino or {}).get("nome"), "tipo": tipo} if listino else None,
+        "ordine_minimo": round(float(cli.get("ordine_minimo", 50) or 0), 2) if cli.get("ordine_minimo_attivo", True) else 0,
         "articoli": articoli,
     }
 
@@ -841,6 +842,13 @@ async def portale_crea_ordinativo(token: str, body: PortaleOrdIn):
     if not cli: raise HTTPException(404, "Link non valido")
     if not cli.get("attivo", True): raise HTTPException(403, "Account disattivato")
     if not body.righe: raise HTTPException(400, "Almeno una riga")
+    if cli.get("ordine_minimo_attivo", True):
+        minimo = round(float(cli.get("ordine_minimo", 50) or 0), 2)
+        if minimo > 0:
+            rows = await _resolve_righe(cli["tenant_id"], cli["id"], body.righe)
+            tot = round(sum(r["totale"] for r in rows), 2)
+            if tot < minimo:
+                raise HTTPException(400, f"Ordine minimo € {minimo:.2f}: il totale attuale è € {tot:.2f}. Aggiungi articoli per raggiungere la soglia.")
     doc = await _create_ordinativo(
         cli["tenant_id"], cli["id"], body, "portale",
         body.data_consegna_richiesta, body.note_cliente or "",
